@@ -48,11 +48,12 @@ export interface PrintroomEntry {
 
 export interface StagingDoor {
   id: number
-  door_number: number
-  position1_truck: string | null
-  position2_truck: string | null
-  position3_truck: string | null
-  position4_truck: string | null
+  door_label: string    // '18A', '18B', etc.
+  door_number: number   // 18, 19, 20...
+  door_side: 'A' | 'B'
+  in_front: string | null
+  in_back: string | null
+  updated_at: string
 }
 
 export interface LiveMovement {

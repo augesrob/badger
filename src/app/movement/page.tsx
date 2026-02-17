@@ -5,11 +5,11 @@ import { useToast } from '@/components/Toast'
 import { LoadingDoor, LiveMovement, StatusValue, PrintroomEntry, DOOR_STATUSES, doorStatusColor } from '@/lib/types'
 
 export default function Movement() {
-  useToast()
+  const toast = useToast()
   const [doors, setDoors] = useState<LoadingDoor[]>([])
   const [trucks, setTrucks] = useState<LiveMovement[]>([])
   const [statuses, setStatuses] = useState<StatusValue[]>([])
-  const [printroom, setPrintroom] = useState<PrintroomEntry[]>([])
+  const [printroom, setPrintroom] = useState<(PrintroomEntry & { loading_doors?: { door_name: string } })[]>([])
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [lastUpdate, setLastUpdate] = useState('')
@@ -40,25 +40,20 @@ export default function Movement() {
 
   useEffect(() => {
     loadAll()
-
-    // REAL-TIME subscriptions — instant updates for everyone
     const channel = supabase.channel('movement-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'live_movement' }, () => loadAll())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, () => loadAll())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'printroom_entries' }, () => loadAll())
       .subscribe()
-
     return () => { supabase.removeChannel(channel) }
   }, [loadAll])
 
-  // Build truck→door mapping from printroom
-  const truckToDoor: Record<string, { door_name: string; door_id: number; route: string; batch: number }> = {}
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  printroom.forEach((pe: any) => {
+  // Build truck→door mapping
+  const truckToDoor: Record<string, { door_name: string; route: string; batch: number }> = {}
+  printroom.forEach(pe => {
     if (pe.truck_number && pe.truck_number !== 'end') {
       truckToDoor[pe.truck_number] = {
         door_name: pe.loading_doors?.door_name || '?',
-        door_id: pe.loading_door_id,
         route: pe.route_info || '',
         batch: pe.batch_number,
       }
@@ -83,7 +78,7 @@ export default function Movement() {
     }
   })
 
-  // Status counts for filter chips
+  // Status counts
   const statusCounts: Record<string, number> = {}
   trucks.forEach(t => {
     const name = t.status_name || 'No Status'
@@ -91,7 +86,8 @@ export default function Movement() {
   })
 
   const updateStatus = async (truckNumber: string, statusId: number) => {
-    await supabase.from('live_movement').update({ status_id: statusId, last_updated: new Date().toISOString() }).eq('truck_number', truckNumber)
+    const { error } = await supabase.from('live_movement').update({ status_id: statusId, last_updated: new Date().toISOString() }).eq('truck_number', truckNumber)
+    if (error) toast('Update failed', 'error')
   }
 
   const updateLocation = async (truckNumber: string, location: string) => {
@@ -110,7 +106,6 @@ export default function Movement() {
 
   return (
     <div>
-      {/* Header */}
       <div className="flex items-center gap-3 mb-3">
         <h1 className="text-2xl font-bold">🚚 Live Movement</h1>
         <span className="text-xs text-green-500 animate-pulse">● LIVE</span>
@@ -138,12 +133,12 @@ export default function Movement() {
       {/* Filter chips */}
       <div className="flex gap-2 mb-3 overflow-x-auto pb-1 flex-wrap">
         <button onClick={() => setFilter('all')}
-          className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${filter === 'all' ? 'bg-amber-500 text-black border-amber-500' : 'bg-[#1a1a1a] text-gray-400 border-[#333] hover:text-amber-500'}`}>
+          className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${filter === 'all' ? 'bg-amber-500 text-black border-amber-500' : 'bg-[#1a1a1a] text-gray-400 border-[#333] hover:text-amber-500'}`}>
           All ({trucks.length})
         </button>
         {statuses.filter(s => statusCounts[s.status_name]).map(s => (
           <button key={s.id} onClick={() => setFilter(s.status_name)}
-            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${filter === s.status_name ? 'text-black' : 'bg-[#1a1a1a] text-gray-400'}`}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${filter === s.status_name ? 'text-black' : 'bg-[#1a1a1a] text-gray-400'}`}
             style={filter === s.status_name ? { background: s.status_color, borderColor: s.status_color } : { borderColor: s.status_color }}>
             {s.status_name} ({statusCounts[s.status_name]})
           </button>
@@ -152,7 +147,7 @@ export default function Movement() {
 
       {/* Search */}
       <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-        placeholder="🔍 Search truck #..." className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2 mb-4 text-sm focus:border-amber-500 outline-none" />
+        placeholder="🔍 Search truck #..." className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2.5 mb-4 text-sm focus:border-amber-500 outline-none" />
 
       {/* Door sections */}
       {doorOrder.map(doorName => {
@@ -170,19 +165,17 @@ export default function Movement() {
               <span className="text-xs text-gray-500">{group.length} trucks</span>
             </div>
 
-            {/* Column headers */}
-            <div className="grid grid-cols-[65px_70px_45px_120px_100px_80px] gap-2 px-4 py-1 text-[10px] text-gray-500 font-bold uppercase border-b border-[#222]">
-              <span>Truck#</span><span>Location</span><span>Route</span><span>Status</span><span>Loc Edit</span><span>In Front</span>
+            <div className="grid grid-cols-[65px_45px_1fr_100px_80px] gap-2 px-4 py-1 text-[10px] text-gray-500 font-bold uppercase border-b border-[#222]">
+              <span>Truck#</span><span>Route</span><span>Status</span><span>Location</span><span>In Front</span>
             </div>
 
             {group.map(t => {
               const di = truckToDoor[t.truck_number]
               return (
-                <div key={t.id} className="grid grid-cols-[65px_70px_45px_120px_100px_80px] gap-2 items-center px-4 py-1.5 border-b border-white/5 hover:bg-white/[0.02]">
+                <div key={t.id} className="grid grid-cols-[65px_45px_1fr_100px_80px] gap-2 items-center px-4 py-1.5 border-b border-white/5 hover:bg-white/[0.02]">
                   <div className="text-base font-extrabold text-amber-500 pl-1" style={{ borderLeft: `3px solid ${t.status_color || '#6b7280'}` }}>
                     {t.truck_number}
                   </div>
-                  <div className="text-xs text-gray-400 truncate">{t.current_location || '—'}</div>
                   <div className="text-xs text-gray-500">{di?.route || ''}</div>
                   <select
                     value={t.status_id || ''}
@@ -204,7 +197,6 @@ export default function Movement() {
         )
       })}
 
-      {/* Unassigned */}
       {unassigned.length > 0 && (
         <div className="bg-[#1a1a1a] border border-[#333] rounded-xl mb-3 overflow-hidden border-l-4 border-l-gray-600">
           <div className="flex items-center gap-3 px-4 py-2 bg-[#111] border-b border-[#333]">
