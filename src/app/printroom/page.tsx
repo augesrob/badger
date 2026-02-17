@@ -61,14 +61,21 @@ export default function PrintRoom() {
           await supabase.from('live_movement').delete().eq('truck_number', oldTruckNumber)
         }
       }
-      // Add new truck to movement
+      // Add new truck to movement with preshift location
       if (value && value !== 'end') {
         const { data: existing } = await supabase.from('live_movement').select('id').eq('truck_number', String(value)).maybeSingle()
         if (!existing) {
           const { data: defaultStatus } = await supabase.from('status_values').select('id').eq('status_name', 'On Route').maybeSingle()
+          // Look up preshift location
+          let preshiftLoc: string | null = null
+          for (const sd of stagingDoors) {
+            if (sd.in_front === String(value)) { preshiftLoc = `Dr${sd.door_label} Front`; break }
+            if (sd.in_back === String(value)) { preshiftLoc = `Dr${sd.door_label} Back`; break }
+          }
           await supabase.from('live_movement').insert({
             truck_number: String(value),
             status_id: defaultStatus?.id || null,
+            current_location: preshiftLoc,
           })
         }
       }
