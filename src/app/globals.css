@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary: #0f0f0f;
+  --bg-card: #1a1a1a;
+  --bg-input: #222222;
+  --border: #333333;
+  --accent: #f59e0b;
+}
+
+body {
+  background: var(--bg-primary);
+  color: #f0f0f0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Toast */
+.toast-container {
+  position: fixed; bottom: 20px; right: 20px; z-index: 9999;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.toast {
+  padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 0.9rem;
+  animation: slideIn 0.3s ease; max-width: 350px;
+}
+.toast-success { background: #22c55e; color: #000; }
+.toast-error { background: #ef4444; color: #fff; }
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* Form inputs */
+input, select, textarea {
+  min-height: 36px;
+}
+
+/* Status select with color */
+select.status-select {
+  border: none; border-radius: 6px; padding: 4px 8px;
+  font-weight: 700; font-size: 0.75rem; color: #fff; cursor: pointer;
+}
