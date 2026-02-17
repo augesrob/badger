@@ -43,18 +43,34 @@ export default function PrintRoom() {
   }, [loadData])
 
   const saveField = useCallback(async (id: number, field: string, value: string | number) => {
-    const { error } = await supabase.from('printroom_entries').update({ [field]: value || null }).eq('id', id)
-    if (error) toast('Save failed', 'error')
+    // If truck_number is changing, get old value first for cleanup
+    let oldTruckNumber: string | null = null
+    if (field === 'truck_number') {
+      const { data: oldEntry } = await supabase.from('printroom_entries').select('truck_number').eq('id', id).maybeSingle()
+      oldTruckNumber = oldEntry?.truck_number || null
+    }
 
-    // If truck_number changed, auto-create in movement
-    if (field === 'truck_number' && value && value !== 'end') {
-      const { data: existing } = await supabase.from('live_movement').select('id').eq('truck_number', String(value)).maybeSingle()
-      if (!existing) {
-        const { data: defaultStatus } = await supabase.from('status_values').select('id').eq('status_name', 'On Route').maybeSingle()
-        await supabase.from('live_movement').insert({
-          truck_number: String(value),
-          status_id: defaultStatus?.id || null,
-        })
+    const { error } = await supabase.from('printroom_entries').update({ [field]: value || null }).eq('id', id)
+    if (error) { toast('Save failed', 'error'); return }
+
+    if (field === 'truck_number') {
+      // Clean up old truck from movement if no longer in any printroom entry
+      if (oldTruckNumber && oldTruckNumber !== 'end' && oldTruckNumber !== String(value)) {
+        const { count } = await supabase.from('printroom_entries').select('id', { count: 'exact' }).eq('truck_number', oldTruckNumber)
+        if (count === 0) {
+          await supabase.from('live_movement').delete().eq('truck_number', oldTruckNumber)
+        }
+      }
+      // Add new truck to movement
+      if (value && value !== 'end') {
+        const { data: existing } = await supabase.from('live_movement').select('id').eq('truck_number', String(value)).maybeSingle()
+        if (!existing) {
+          const { data: defaultStatus } = await supabase.from('status_values').select('id').eq('status_name', 'On Route').maybeSingle()
+          await supabase.from('live_movement').insert({
+            truck_number: String(value),
+            status_id: defaultStatus?.id || null,
+          })
+        }
       }
     }
   }, [toast])

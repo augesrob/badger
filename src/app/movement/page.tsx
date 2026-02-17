@@ -60,27 +60,25 @@ export default function Movement() {
     }
   })
 
-  // Filter & search
-  let filtered = trucks
+  // Filter & search — ONLY show trucks that exist in printroom
+  let filtered = trucks.filter(t => truckToDoor[t.truck_number])
   if (filter !== 'all') filtered = filtered.filter(t => (t.status_name || 'No Status') === filter)
   if (search) filtered = filtered.filter(t => t.truck_number.toLowerCase().includes(search.toLowerCase()))
 
   // Group by door
   const doorGroups: Record<string, LiveMovement[]> = {}
-  const unassigned: LiveMovement[] = []
   filtered.forEach(t => {
     const di = truckToDoor[t.truck_number]
     if (di) {
       if (!doorGroups[di.door_name]) doorGroups[di.door_name] = []
       doorGroups[di.door_name].push(t)
-    } else {
-      unassigned.push(t)
     }
   })
 
-  // Status counts
+  // Status counts (only printroom trucks)
+  const printroomTrucks = trucks.filter(t => truckToDoor[t.truck_number])
   const statusCounts: Record<string, number> = {}
-  trucks.forEach(t => {
+  printroomTrucks.forEach(t => {
     const name = t.status_name || 'No Status'
     statusCounts[name] = (statusCounts[name] || 0) + 1
   })
@@ -134,7 +132,7 @@ export default function Movement() {
       <div className="flex gap-2 mb-3 overflow-x-auto pb-1 flex-wrap">
         <button onClick={() => setFilter('all')}
           className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${filter === 'all' ? 'bg-amber-500 text-black border-amber-500' : 'bg-[#1a1a1a] text-gray-400 border-[#333] hover:text-amber-500'}`}>
-          All ({trucks.length})
+          All ({printroomTrucks.length})
         </button>
         {statuses.filter(s => statusCounts[s.status_name]).map(s => (
           <button key={s.id} onClick={() => setFilter(s.status_name)}
@@ -197,28 +195,9 @@ export default function Movement() {
         )
       })}
 
-      {unassigned.length > 0 && (
-        <div className="bg-[#1a1a1a] border border-[#333] rounded-xl mb-3 overflow-hidden border-l-4 border-l-gray-600">
-          <div className="flex items-center gap-3 px-4 py-2 bg-[#111] border-b border-[#333]">
-            <span className="text-xl font-extrabold text-gray-400">Unassigned</span>
-            <span className="text-xs text-gray-500">{unassigned.length} trucks</span>
-          </div>
-          {unassigned.map(t => (
-            <div key={t.id} className="flex items-center gap-3 px-4 py-2 border-b border-white/5">
-              <span className="text-base font-extrabold text-amber-500 min-w-[60px]">{t.truck_number}</span>
-              <select value={t.status_id || ''} onChange={e => updateStatus(t.truck_number, Number(e.target.value))}
-                className="status-select text-[11px]" style={{ background: t.status_color || '#6b7280' }}>
-                {statuses.map(s => <option key={s.id} value={s.id}>{s.status_name}</option>)}
-              </select>
-              <span className="text-xs text-gray-500">{t.current_location || '—'}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
       {filtered.length === 0 && (
         <div className="text-center py-20 text-gray-500">
-          {trucks.length === 0 ? 'No trucks yet. Add trucks in Print Room first.' : 'No trucks match your filter.'}
+          {printroomTrucks.length === 0 ? 'No trucks yet. Add trucks in Print Room first.' : 'No trucks match your filter.'}
         </div>
       )}
     </div>
