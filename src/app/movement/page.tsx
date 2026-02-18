@@ -60,7 +60,7 @@ export default function Movement() {
   })
 
   // Build truck→door mapping AND preserve printroom order
-  const truckToDoor: Record<string, { door_name: string; route: string; batch: number; order: number }> = {}
+  const truckToDoor: Record<string, { door_name: string; route: string; batch: number; order: number; pods: number; pallets: number; notes: string }> = {}
   let orderIndex = 0
   printroom.forEach(pe => {
     if (pe.truck_number && pe.truck_number !== 'end') {
@@ -69,6 +69,9 @@ export default function Movement() {
         route: pe.route_info || '',
         batch: pe.batch_number,
         order: orderIndex++,
+        pods: pe.pods || 0,
+        pallets: pe.pallets_trays || 0,
+        notes: pe.notes || '',
       }
     }
   })
@@ -105,14 +108,6 @@ export default function Movement() {
     if (error) toast('Update failed', 'error')
   }
 
-  const updateLocation = async (truckNumber: string, location: string) => {
-    await supabase.from('live_movement').update({ current_location: location || null, last_updated: new Date().toISOString() }).eq('truck_number', truckNumber)
-  }
-
-  const updateInFront = async (truckNumber: string, value: string) => {
-    await supabase.from('live_movement').update({ in_front_of: value || null, last_updated: new Date().toISOString() }).eq('truck_number', truckNumber)
-  }
-
   const setDoorStatus = async (doorId: number, status: string) => {
     await supabase.from('loading_doors').update({ door_status: status }).eq('id', doorId)
   }
@@ -139,36 +134,38 @@ export default function Movement() {
         </div>
 
         {/* Column headers */}
-        <div className="grid grid-cols-[55px_35px_65px_1fr_70px_60px] gap-1 px-2 py-1 text-[9px] text-gray-500 font-bold uppercase border-b border-[#222]">
-          <span>Truck#</span><span>Rt</span><span>Location</span><span>Status</span><span>Loc Edit</span><span>In Front</span>
+        <div className="grid grid-cols-[55px_35px_65px_1fr_40px_40px] gap-1 px-2 py-1 text-[9px] text-gray-500 font-bold uppercase border-b border-[#222]">
+          <span>Truck#</span><span>Rt</span><span>Location</span><span>Status</span><span>Pods</span><span>Pal</span>
         </div>
 
         {/* Truck rows */}
         {group.length > 0 ? group.map(t => {
           const di = truckToDoor[t.truck_number]
           const preshiftLoc = preshiftLookup[t.truck_number] || ''
-          // Show preshift location if no manual location set
           const displayLoc = t.current_location || preshiftLoc
           return (
-            <div key={t.id} className="grid grid-cols-[55px_35px_65px_1fr_70px_60px] gap-1 items-center px-2 py-1 border-b border-white/5 hover:bg-white/[0.02]">
-              <div className="text-sm font-extrabold text-amber-500 pl-1" style={{ borderLeft: `3px solid ${t.status_color || '#6b7280'}` }}>
-                {t.truck_number}
+            <div key={t.id} className="border-b border-white/5 hover:bg-white/[0.02]">
+              <div className="grid grid-cols-[55px_35px_65px_1fr_40px_40px] gap-1 items-center px-2 py-1">
+                <div className="text-sm font-extrabold text-amber-500 pl-1" style={{ borderLeft: `3px solid ${t.status_color || '#6b7280'}` }}>
+                  {t.truck_number}
+                </div>
+                <div className="text-[11px] text-gray-500">{di?.route || ''}</div>
+                <div className="text-[11px] text-blue-400 font-medium truncate" title={displayLoc}>{displayLoc || '—'}</div>
+                <select
+                  value={t.status_id || ''}
+                  onChange={e => updateStatus(t.truck_number, Number(e.target.value))}
+                  className="status-select text-[10px] w-full"
+                  style={{ background: t.status_color || '#6b7280' }}>
+                  {statuses.map(s => <option key={s.id} value={s.id}>{s.status_name}</option>)}
+                </select>
+                <div className="text-[11px] text-gray-300 text-center font-semibold">{di?.pods || '—'}</div>
+                <div className="text-[11px] text-gray-300 text-center font-semibold">{di?.pallets || '—'}</div>
               </div>
-              <div className="text-[11px] text-gray-500">{di?.route || ''}</div>
-              <div className="text-[11px] text-blue-400 font-medium truncate" title={displayLoc}>{displayLoc || '—'}</div>
-              <select
-                value={t.status_id || ''}
-                onChange={e => updateStatus(t.truck_number, Number(e.target.value))}
-                className="status-select text-[10px] w-full"
-                style={{ background: t.status_color || '#6b7280' }}>
-                {statuses.map(s => <option key={s.id} value={s.id}>{s.status_name}</option>)}
-              </select>
-              <input defaultValue={t.current_location || ''} placeholder={preshiftLoc || 'Loc'}
-                onBlur={e => updateLocation(t.truck_number, e.target.value)}
-                className="bg-[#222] border border-[#333] rounded px-1 py-0.5 text-[11px] focus:border-amber-500 outline-none w-full" />
-              <input defaultValue={t.in_front_of || ''} placeholder="—"
-                onBlur={e => updateInFront(t.truck_number, e.target.value)}
-                className="bg-[#222] border border-[#333] rounded px-1 py-0.5 text-[11px] focus:border-amber-500 outline-none w-full" />
+              {di?.notes && (
+                <div className="px-3 pb-1 -mt-0.5">
+                  <span className="text-[10px] text-yellow-500/80 italic">📝 {di.notes}</span>
+                </div>
+              )}
             </div>
           )
         }) : (
