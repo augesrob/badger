@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { Truck, Trailer, StatusValue, Route, TrailerItem, Tractor, AutomationRule } from '@/lib/types'
+import { TTSPanel } from '@/components/TTSPanel'
 
 const NAV_ITEMS = [
   { id: 'trucks', label: '🚚 Truck Database', ready: true },
@@ -11,7 +12,7 @@ const NAV_ITEMS = [
   { id: 'statuses', label: '🏷️ Status Values', ready: true },
   { id: 'routes', label: '🗺️ Routes', ready: true },
   { id: 'reset', label: '⚠️ Data Reset', ready: true },
-  { id: 'notifications', label: '🔔 Notifications', ready: false },
+  { id: 'notifications', label: '🔔 Notifications', ready: true },
   { id: 'api', label: '🔌 API', ready: false },
   { id: 'accounts', label: '👤 Accounts', ready: false },
 ]
@@ -395,6 +396,7 @@ export default function Admin() {
       case 'statuses': return <StatusSection />
       case 'routes': return <RouteSection />
       case 'reset': return <ResetSection />
+      case 'notifications': return <NotificationsSection />
       default: return <PlannedSection title={NAV_ITEMS.find(n => n.id === activeSection)?.label || ''} />
     }
   }
@@ -684,6 +686,46 @@ export default function Admin() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><label className="text-xs text-gray-500 uppercase font-bold block mb-1">{label}</label>{children}</div>
+}
+
+function NotificationsSection() {
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-2">🔔 Notifications</h2>
+      <p className="text-xs text-gray-500 mb-4">Settings are saved per browser/device. Each user controls their own notifications.</p>
+
+      {/* TTS / Sound */}
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-sm font-bold text-amber-500">🔊 TTS / Sound</span>
+          <span className="text-[10px] text-gray-500 bg-[#222] px-2 py-0.5 rounded">Voice Announcements</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <h3 className="text-xs text-gray-400 font-bold uppercase mb-2">Movement Page</h3>
+            <TTSPanel page="movement" />
+          </div>
+          <div>
+            <h3 className="text-xs text-gray-400 font-bold uppercase mb-2">Print Room Page</h3>
+            <TTSPanel page="printroom" />
+          </div>
+        </div>
+      </div>
+
+      {/* Future categories */}
+      <div className="border-t border-[#333] pt-4 mt-4">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-sm font-bold text-gray-500">📱 Push Notifications</span>
+          <span className="text-[9px] bg-[#222] text-gray-500 px-1.5 py-0.5 rounded">Coming Soon</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold text-gray-500">💬 Slack / Discord</span>
+          <span className="text-[9px] bg-[#222] text-gray-500 px-1.5 py-0.5 rounded">Coming Soon</span>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function PlannedSection({ title }: { title: string }) {

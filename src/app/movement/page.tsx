@@ -3,6 +3,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { LoadingDoor, LiveMovement, StatusValue, PrintroomEntry, StagingDoor, Tractor, TrailerItem, DOOR_STATUSES, doorStatusColor } from '@/lib/types'
+import { getTTSSettings, useMovementTTS } from '@/lib/tts'
+import { TTSMiniToggle } from '@/components/TTSPanel'
 
 export default function Movement() {
   const toast = useToast()
@@ -15,6 +17,7 @@ export default function Movement() {
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [lastUpdate, setLastUpdate] = useState('')
+  const [ttsSettings, setTtsSettings] = useState(() => getTTSSettings('movement'))
 
   const loadAll = useCallback(async () => {
     const [doorsRes, trucksRes, statusRes, prRes, stagingRes, tractorRes] = await Promise.all([
@@ -54,6 +57,21 @@ export default function Movement() {
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [loadAll])
+
+  // Refresh TTS settings when localStorage changes (from admin panel in another tab)
+  useEffect(() => {
+    const handler = () => setTtsSettings(getTTSSettings('movement'))
+    window.addEventListener('storage', handler)
+    return () => window.removeEventListener('storage', handler)
+  }, [])
+
+  // TTS: announce door/truck status changes
+  const truckTTSData = trucks.map(t => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sv = (t as any).status_values
+    return { truck_number: t.truck_number, status_name: sv?.status_name || '' }
+  })
+  useMovementTTS(doors, truckTTSData, ttsSettings)
 
   // Build preshift location lookup: truck_number → just door label "22B"
   // And behind lookup: if truck is in back, show which truck is in front
@@ -222,6 +240,7 @@ export default function Movement() {
             )
           })}
           <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+            <TTSMiniToggle page="movement" />
             <span className="text-xs text-green-500 animate-pulse">● LIVE</span>
             <span className="text-[10px] text-gray-500">{lastUpdate}</span>
           </div>
