@@ -24,6 +24,36 @@ export async function runAutomation(entry: PrintroomContext) {
   }
 }
 
+// Run preshift automation: when a truck is placed in front or back
+export async function runPreshiftAutomation() {
+  const { data: rules } = await supabase
+    .from('automation_rules')
+    .select('*')
+    .eq('is_active', true)
+    .in('trigger_type', ['preshift_in_front', 'preshift_in_back'])
+    .order('sort_order')
+
+  if (!rules || rules.length === 0) return
+
+  // Get all staging doors
+  const { data: stagingDoors } = await supabase
+    .from('staging_doors')
+    .select('*')
+
+  if (!stagingDoors) return
+
+  for (const rule of rules as AutomationRule[]) {
+    for (const sd of stagingDoors) {
+      if (rule.trigger_type === 'preshift_in_front' && sd.in_front) {
+        await executeActionForTruck(rule, sd.in_front)
+      }
+      if (rule.trigger_type === 'preshift_in_back' && sd.in_back) {
+        await executeActionForTruck(rule, sd.in_back)
+      }
+    }
+  }
+}
+
 async function processRule(rule: AutomationRule, entry: PrintroomContext) {
   const truckLower = (entry.truck_number || '').toLowerCase().trim()
 
@@ -43,10 +73,7 @@ async function processRule(rule: AutomationRule, entry: PrintroomContext) {
     }
 
     case 'is_last_truck_with_status': {
-      // Check if this is the last non-end truck in the door and its status matches
-      // For "END" trigger: if the entry IS an end marker, check if it's the last entry
       if (rule.trigger_value?.toUpperCase() === 'END' && entry.is_end_marker) {
-        // Check: is this the very last entry for this door?
         const { data: laterEntries } = await supabase
           .from('printroom_entries')
           .select('id')
@@ -55,7 +82,6 @@ async function processRule(rule: AutomationRule, entry: PrintroomContext) {
           .eq('batch_number', entry.batch_number)
           .limit(1)
 
-        // Also check if there's a higher batch
         const { data: higherBatch } = await supabase
           .from('printroom_entries')
           .select('id')
@@ -78,7 +104,6 @@ async function processRule(rule: AutomationRule, entry: PrintroomContext) {
     }
 
     case 'status_equals': {
-      // Check current movement status
       const { data: mv } = await supabase
         .from('live_movement')
         .select('*, status_values(status_name)')
@@ -95,10 +120,54 @@ async function processRule(rule: AutomationRule, entry: PrintroomContext) {
   }
 }
 
+async function executeActionForTruck(rule: AutomationRule, truckNumber: string) {
+  switch (rule.action_type) {
+    case 'set_truck_status': {
+      const { data: status } = await supabase
+        .from('status_values')
+        .select('id')
+        .ilike('status_name', rule.action_value)
+        .maybeSingle()
+
+      if (status) {
+        // Only update if truck exists in movement
+        const { data: existing } = await supabase
+          .from('live_movement')
+          .select('id')
+          .eq('truck_number', truckNumber)
+          .maybeSingle()
+
+        if (existing) {
+          await supabase
+            .from('live_movement')
+            .update({ status_id: status.id, last_updated: new Date().toISOString() })
+            .eq('truck_number', truckNumber)
+        }
+      }
+      break
+    }
+
+    case 'set_truck_location': {
+      const { data: existing } = await supabase
+        .from('live_movement')
+        .select('id')
+        .eq('truck_number', truckNumber)
+        .maybeSingle()
+
+      if (existing) {
+        await supabase
+          .from('live_movement')
+          .update({ current_location: rule.action_value, last_updated: new Date().toISOString() })
+          .eq('truck_number', truckNumber)
+      }
+      break
+    }
+  }
+}
+
 async function executeAction(rule: AutomationRule, entry: PrintroomContext) {
   switch (rule.action_type) {
     case 'set_truck_status': {
-      // Find the status ID by name
       const { data: status } = await supabase
         .from('status_values')
         .select('id')

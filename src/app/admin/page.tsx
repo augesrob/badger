@@ -322,14 +322,22 @@ export default function Admin() {
                 <div className="space-y-2">
                   <Field label="When">
                     <select value={ruleForm.trigger_type} onChange={e => setRuleForm({ ...ruleForm, trigger_type: e.target.value })} className="input-field">
-                      <option value="truck_number_equals">Truck # equals exactly</option>
-                      <option value="truck_number_contains">Truck # contains text</option>
-                      <option value="is_last_truck_with_status">Last entry in door is END</option>
-                      <option value="truck_is_end_marker">Entry is an END marker</option>
-                      <option value="status_equals">Truck status equals</option>
+                      <optgroup label="Print Room Triggers">
+                        <option value="truck_number_equals">Truck # equals exactly</option>
+                        <option value="truck_number_contains">Truck # contains text</option>
+                        <option value="is_last_truck_with_status">Last entry in door is END</option>
+                        <option value="truck_is_end_marker">Entry is an END marker</option>
+                        <option value="status_equals">Truck status equals</option>
+                      </optgroup>
+                      <optgroup label="PreShift Triggers">
+                        <option value="preshift_in_front">Truck is In Front (PreShift)</option>
+                        <option value="preshift_in_back">Truck is In Back (PreShift)</option>
+                      </optgroup>
                     </select>
                   </Field>
-                  <Field label="Match Value"><input value={ruleForm.trigger_value} onChange={e => setRuleForm({ ...ruleForm, trigger_value: e.target.value })} placeholder="e.g. gap, cpu, 999, END" className="input-field" /></Field>
+                  {!ruleForm.trigger_type.startsWith('preshift_') && (
+                    <Field label="Match Value"><input value={ruleForm.trigger_value} onChange={e => setRuleForm({ ...ruleForm, trigger_value: e.target.value })} placeholder="e.g. gap, cpu, 999, END" className="input-field" /></Field>
+                  )}
                 </div>
               </div>
 
@@ -535,6 +543,8 @@ export default function Admin() {
       is_last_truck_with_status: 'Last entry is',
       truck_is_end_marker: 'Is END marker',
       status_equals: 'Status equals',
+      preshift_in_front: 'Truck is In Front',
+      preshift_in_back: 'Truck is In Back',
     }
     const actionLabels: Record<string, string> = {
       set_truck_status: 'Set truck status →',
@@ -568,7 +578,7 @@ export default function Admin() {
                   {r.description && <p className="text-xs text-gray-500 mb-2">{r.description}</p>}
                   <div className="flex flex-wrap gap-2">
                     <span className="text-xs bg-green-900/30 text-green-400 px-2 py-1 rounded font-medium">
-                      IF {triggerLabels[r.trigger_type] || r.trigger_type} &quot;{r.trigger_value}&quot;
+                      IF {triggerLabels[r.trigger_type] || r.trigger_type}{r.trigger_value ? ` "${r.trigger_value}"` : ''}
                     </span>
                     <span className="text-xs text-gray-500">→</span>
                     <span className="text-xs bg-amber-900/30 text-amber-400 px-2 py-1 rounded font-medium">

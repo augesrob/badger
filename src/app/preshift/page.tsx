@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { StagingDoor } from '@/lib/types'
 import { PreShiftTable } from '@/components/PreShiftTable'
+import { runPreshiftAutomation } from '@/lib/automation'
 
 export default function PreShift() {
   const toast = useToast()
@@ -26,7 +27,9 @@ export default function PreShift() {
 
   const saveField = async (id: number, field: 'in_front' | 'in_back', value: string) => {
     const { error } = await supabase.from('staging_doors').update({ [field]: value || null }).eq('id', id)
-    if (error) toast('Save failed', 'error')
+    if (error) { toast('Save failed', 'error'); return }
+    // Run preshift automation rules (In Front → Ready, In Back → In Back)
+    await runPreshiftAutomation()
   }
 
   if (loading) return <div className="text-center py-20 text-gray-500">Loading...</div>
