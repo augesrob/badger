@@ -59,14 +59,16 @@ export default function Movement() {
     if (sd.in_back) preshiftLookup[sd.in_back] = `Dr${sd.door_label} Back`
   })
 
-  // Build truck→door mapping
-  const truckToDoor: Record<string, { door_name: string; route: string; batch: number }> = {}
+  // Build truck→door mapping AND preserve printroom order
+  const truckToDoor: Record<string, { door_name: string; route: string; batch: number; order: number }> = {}
+  let orderIndex = 0
   printroom.forEach(pe => {
     if (pe.truck_number && pe.truck_number !== 'end') {
       truckToDoor[pe.truck_number] = {
         door_name: pe.loading_doors?.door_name || '?',
         route: pe.route_info || '',
         batch: pe.batch_number,
+        order: orderIndex++,
       }
     }
   })
@@ -76,7 +78,7 @@ export default function Movement() {
   if (filter !== 'all') filtered = filtered.filter(t => (t.status_name || 'No Status') === filter)
   if (search) filtered = filtered.filter(t => t.truck_number.toLowerCase().includes(search.toLowerCase()))
 
-  // Group by door
+  // Group by door, preserving printroom order
   const doorGroups: Record<string, LiveMovement[]> = {}
   filtered.forEach(t => {
     const di = truckToDoor[t.truck_number]
@@ -84,6 +86,10 @@ export default function Movement() {
       if (!doorGroups[di.door_name]) doorGroups[di.door_name] = []
       doorGroups[di.door_name].push(t)
     }
+  })
+  // Sort each door's trucks by printroom order
+  Object.keys(doorGroups).forEach(doorName => {
+    doorGroups[doorName].sort((a, b) => (truckToDoor[a.truck_number]?.order || 0) - (truckToDoor[b.truck_number]?.order || 0))
   })
 
   // Status counts (only printroom trucks)
@@ -174,11 +180,31 @@ export default function Movement() {
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-3">
-        <h1 className="text-2xl font-bold">🚚 Live Movement</h1>
-        <span className="text-xs text-green-500 animate-pulse">● LIVE</span>
-        <span className="ml-auto text-xs text-gray-500">Updated: {lastUpdate}</span>
+      {/* STICKY Door Status Bar - always visible at top */}
+      <div className="sticky top-[49px] z-40 bg-[#0f0f0f] border-b border-[#333] -mx-4 px-4 py-2 mb-3">
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          {doors.map(d => {
+            const st = d.door_status || 'Loading'
+            const col = doorStatusColor(st)
+            return (
+              <div key={d.id} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 flex-shrink-0 border"
+                style={{ borderColor: col, background: `${col}15` }}>
+                <span className="text-xs font-extrabold text-white">{d.door_name}</span>
+                <select value={st} onChange={e => setDoorStatus(d.id, e.target.value)}
+                  className="status-select text-[10px] py-0.5 px-1" style={{ background: col }}>
+                  {DOOR_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            )
+          })}
+          <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+            <span className="text-xs text-green-500 animate-pulse">● LIVE</span>
+            <span className="text-[10px] text-gray-500">{lastUpdate}</span>
+          </div>
+        </div>
       </div>
+
+      <h1 className="text-xl font-bold mb-2">🚚 Live Movement</h1>
 
       {/* Filter chips */}
       <div className="flex gap-2 mb-3 overflow-x-auto pb-1 flex-wrap">
@@ -201,10 +227,6 @@ export default function Movement() {
 
       {/* Door pairs: A and B side by side */}
       {doorPairs.map(([doorA, doorB]) => {
-        const doorAData = doors.find(d => d.door_name === doorA)
-        const doorBData = doors.find(d => d.door_name === doorB)
-        const doorACol = doorStatusColor(doorAData?.door_status || 'Loading')
-        const doorBCol = doorStatusColor(doorBData?.door_status || 'Loading')
         const doorNum = doorA.replace(/[AB]/, '')
 
         return (
@@ -212,14 +234,6 @@ export default function Movement() {
             {/* Pair header */}
             <div className="flex items-center gap-2 mb-1">
               <span className="text-base font-extrabold text-white">Door {doorNum}</span>
-              <div className="flex gap-1 ml-2">
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded text-white" style={{ background: doorACol }}>
-                  A: {doorAData?.door_status || 'Loading'}
-                </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded text-white" style={{ background: doorBCol }}>
-                  B: {doorBData?.door_status || 'Loading'}
-                </span>
-              </div>
             </div>
 
             {/* Side by side on desktop, stacked on mobile */}

@@ -204,17 +204,17 @@ export default function PrintRoom() {
           </div>
         </div>
 
-        {/* RIGHT: PreShift Sidebar */}
-        <div className="hidden lg:block w-[280px] flex-shrink-0 sticky top-16">
+        {/* RIGHT: PreShift Sidebar - reversed order 28→18, compact */}
+        <div className="hidden lg:block w-[250px] flex-shrink-0 sticky top-16">
           <h3 className="text-sm font-bold text-amber-500 uppercase tracking-wider mb-2">📋 Truck Order – Door Placement</h3>
-          <PreShiftTable doors={stagingDoors} onSave={saveStagingField} />
+          <PreShiftTable doors={[...stagingDoors].reverse()} onSave={saveStagingField} compact />
         </div>
       </div>
 
-      {/* Mobile: PreShift below */}
+      {/* Mobile: PreShift below - also reversed */}
       <div className="lg:hidden mt-6">
         <h3 className="text-sm font-bold text-amber-500 uppercase tracking-wider mb-2">📋 Truck Order – Door Placement</h3>
-        <PreShiftTable doors={stagingDoors} onSave={saveStagingField} />
+        <PreShiftTable doors={[...stagingDoors].reverse()} onSave={saveStagingField} compact />
       </div>
     </div>
   )
