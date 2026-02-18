@@ -3,7 +3,6 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { LoadingDoor, PrintroomEntry, StagingDoor } from '@/lib/types'
-import { PreShiftTable } from '@/components/PreShiftTable'
 
 export default function PrintRoom() {
   const toast = useToast()
@@ -81,11 +80,6 @@ export default function PrintRoom() {
       }
     }
   }, [toast])
-
-  const saveStagingField = async (id: number, field: 'in_front' | 'in_back', value: string) => {
-    const { error } = await supabase.from('staging_doors').update({ [field]: value || null }).eq('id', id)
-    if (error) toast('Save failed', 'error')
-  }
 
   const addRow = async (doorId: number, batch: number) => {
     const doorEntries = entries[doorId]?.filter(e => e.batch_number === batch) || []
@@ -204,17 +198,39 @@ export default function PrintRoom() {
           </div>
         </div>
 
-        {/* RIGHT: PreShift Sidebar - reversed order 28→18, compact */}
-        <div className="hidden lg:block w-[250px] flex-shrink-0 sticky top-16">
-          <h3 className="text-sm font-bold text-amber-500 uppercase tracking-wider mb-2">📋 Truck Order – Door Placement</h3>
-          <PreShiftTable doors={[...stagingDoors].reverse()} onSave={saveStagingField} compact />
+        {/* RIGHT: PreShift Sidebar - just truck numbers, 28→18 */}
+        <div className="hidden lg:block w-[200px] flex-shrink-0 sticky top-16">
+          <h3 className="text-sm font-bold text-amber-500 uppercase tracking-wider mb-2">📋 Door Placement</h3>
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-xl overflow-hidden">
+            <div className="grid grid-cols-2 gap-0 bg-[#111] border-b-2 border-amber-500">
+              <div className="px-3 py-2 text-xs font-bold text-amber-500 uppercase">In Front</div>
+              <div className="px-3 py-2 text-xs font-bold text-amber-500 uppercase border-l border-[#333]">In Back</div>
+            </div>
+            {[...stagingDoors].reverse().map(sd => (
+              <div key={sd.id} className={`grid grid-cols-2 gap-0 border-b border-white/5 ${sd.door_side === 'A' ? 'bg-white/[0.02]' : ''}`}>
+                <div className="px-2 py-0.5 text-center text-sm font-semibold text-green-400">{sd.in_front || ''}</div>
+                <div className="px-2 py-0.5 text-center text-sm font-semibold text-blue-400 border-l border-[#333]">{sd.in_back || ''}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Mobile: PreShift below - also reversed */}
+      {/* Mobile: PreShift below - just truck numbers */}
       <div className="lg:hidden mt-6">
-        <h3 className="text-sm font-bold text-amber-500 uppercase tracking-wider mb-2">📋 Truck Order – Door Placement</h3>
-        <PreShiftTable doors={[...stagingDoors].reverse()} onSave={saveStagingField} compact />
+        <h3 className="text-sm font-bold text-amber-500 uppercase tracking-wider mb-2">📋 Door Placement</h3>
+        <div className="bg-[#1a1a1a] border border-[#333] rounded-xl overflow-hidden">
+          <div className="grid grid-cols-2 gap-0 bg-[#111] border-b-2 border-amber-500">
+            <div className="px-3 py-2 text-xs font-bold text-amber-500 uppercase">In Front</div>
+            <div className="px-3 py-2 text-xs font-bold text-amber-500 uppercase border-l border-[#333]">In Back</div>
+          </div>
+          {[...stagingDoors].reverse().map(sd => (
+            <div key={sd.id} className={`grid grid-cols-2 gap-0 border-b border-white/5 ${sd.door_side === 'A' ? 'bg-white/[0.02]' : ''}`}>
+              <div className="px-2 py-0.5 text-center text-sm font-semibold text-green-400">{sd.in_front || ''}</div>
+              <div className="px-2 py-0.5 text-center text-sm font-semibold text-blue-400 border-l border-[#333]">{sd.in_back || ''}</div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
