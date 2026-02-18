@@ -42,3 +42,18 @@ select.status-select {
   border: none; border-radius: 6px; padding: 4px 8px;
   font-weight: 700; font-size: 0.75rem; color: #fff; cursor: pointer;
 }
+
+/* Reusable input field */
+.input-field {
+  width: 100%;
+  background: #222;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  color: #f0f0f0;
+  outline: none;
+}
+.input-field:focus {
+  border-color: #f59e0b;
+}

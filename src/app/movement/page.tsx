@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
-import { LoadingDoor, LiveMovement, StatusValue, PrintroomEntry, StagingDoor, DOOR_STATUSES, doorStatusColor } from '@/lib/types'
+import { LoadingDoor, LiveMovement, StatusValue, PrintroomEntry, StagingDoor, Tractor, TrailerItem, DOOR_STATUSES, doorStatusColor } from '@/lib/types'
 
 export default function Movement() {
   const toast = useToast()
@@ -11,17 +11,19 @@ export default function Movement() {
   const [statuses, setStatuses] = useState<StatusValue[]>([])
   const [printroom, setPrintroom] = useState<(PrintroomEntry & { loading_doors?: { door_name: string } })[]>([])
   const [stagingDoors, setStagingDoors] = useState<StagingDoor[]>([])
+  const [tractors, setTractors] = useState<Tractor[]>([])
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [lastUpdate, setLastUpdate] = useState('')
 
   const loadAll = useCallback(async () => {
-    const [doorsRes, trucksRes, statusRes, prRes, stagingRes] = await Promise.all([
+    const [doorsRes, trucksRes, statusRes, prRes, stagingRes, tractorRes] = await Promise.all([
       supabase.from('loading_doors').select('*').order('sort_order'),
       supabase.from('live_movement').select('*, status_values(status_name, status_color)').order('truck_number'),
       supabase.from('status_values').select('*').eq('is_active', true).order('sort_order'),
       supabase.from('printroom_entries').select('*, loading_doors(door_name)').order('loading_door_id').order('batch_number').order('row_order'),
       supabase.from('staging_doors').select('*').order('door_number').order('door_side'),
+      supabase.from('tractors').select('*, trailer_1:trailer_list!tractors_trailer_1_id_fkey(*), trailer_2:trailer_list!tractors_trailer_2_id_fkey(*), trailer_3:trailer_list!tractors_trailer_3_id_fkey(*), trailer_4:trailer_list!tractors_trailer_4_id_fkey(*)').order('truck_number'),
     ])
 
     if (doorsRes.data) setDoors(doorsRes.data)
@@ -38,6 +40,7 @@ export default function Movement() {
     if (statusRes.data) setStatuses(statusRes.data)
     if (prRes.data) setPrintroom(prRes.data)
     if (stagingRes.data) setStagingDoors(stagingRes.data)
+    if (tractorRes.data) setTractors(tractorRes.data)
     setLastUpdate(new Date().toLocaleTimeString())
   }, [])
 
@@ -58,6 +61,19 @@ export default function Movement() {
     if (sd.in_front) preshiftLookup[sd.in_front] = `Dr${sd.door_label} Front`
     if (sd.in_back) preshiftLookup[sd.in_back] = `Dr${sd.door_label} Back`
   })
+
+  // Resolve tractor-trailer: "170-1" → trailer number "203"
+  const resolveTrailer = (truckNum: string): string | null => {
+    const match = truckNum.match(/^(\d+)-(\d+)$/)
+    if (!match) return null
+    const tractorNum = parseInt(match[1])
+    const slot = parseInt(match[2]) as 1|2|3|4
+    if (slot < 1 || slot > 4) return null
+    const tractor = tractors.find(t => t.truck_number === tractorNum)
+    if (!tractor) return null
+    const trailer = tractor[`trailer_${slot}` as keyof Tractor] as TrailerItem | null
+    return trailer?.trailer_number || null
+  }
 
   // Build truck→door mapping AND preserve printroom order
   const truckToDoor: Record<string, { door_name: string; route: string; batch: number; order: number; pods: number; pallets: number; notes: string }> = {}
@@ -143,11 +159,13 @@ export default function Movement() {
           const di = truckToDoor[t.truck_number]
           const preshiftLoc = preshiftLookup[t.truck_number] || ''
           const displayLoc = t.current_location || preshiftLoc
+          const trailerNum = resolveTrailer(t.truck_number)
           return (
             <div key={t.id} className="border-b border-white/5 hover:bg-white/[0.02]">
               <div className="grid grid-cols-[55px_35px_65px_1fr_40px_40px] gap-1 items-center px-2 py-1">
                 <div className="text-sm font-extrabold text-amber-500 pl-1" style={{ borderLeft: `3px solid ${t.status_color || '#6b7280'}` }}>
                   {t.truck_number}
+                  {trailerNum && <div className="text-[9px] text-purple-400 font-normal">TR: {trailerNum}</div>}
                 </div>
                 <div className="text-[11px] text-gray-500">{di?.route || ''}</div>
                 <div className="text-[11px] text-blue-400 font-medium truncate" title={displayLoc}>{displayLoc || '—'}</div>

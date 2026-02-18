@@ -78,6 +78,31 @@ export interface Route {
   is_active: boolean
 }
 
+export interface TrailerItem {
+  id: number
+  trailer_number: string
+  notes: string | null
+  is_active: boolean
+}
+
+export interface Tractor {
+  id: number
+  truck_number: number
+  driver_name: string | null
+  driver_cell: string | null
+  trailer_1_id: number | null
+  trailer_2_id: number | null
+  trailer_3_id: number | null
+  trailer_4_id: number | null
+  notes: string | null
+  is_active: boolean
+  // Joined
+  trailer_1?: TrailerItem | null
+  trailer_2?: TrailerItem | null
+  trailer_3?: TrailerItem | null
+  trailer_4?: TrailerItem | null
+}
+
 export const DOOR_STATUSES = [
   'Loading',
   'End Of Tote',

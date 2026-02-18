@@ -2,11 +2,11 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
-import { Truck, Trailer, StatusValue, Route } from '@/lib/types'
+import { Truck, Trailer, StatusValue, Route, TrailerItem, Tractor } from '@/lib/types'
 
 const NAV_ITEMS = [
   { id: 'trucks', label: '🚚 Truck Database', ready: true },
-  { id: 'tractors', label: '🚛 Tractor Trailer Database', ready: false },
+  { id: 'tractors', label: '🚛 Tractor Trailers', ready: true },
   { id: 'statuses', label: '🏷️ Status Values', ready: true },
   { id: 'routes', label: '🗺️ Routes', ready: true },
   { id: 'reset', label: '⚠️ Data Reset', ready: true },
@@ -18,20 +18,41 @@ const NAV_ITEMS = [
 export default function Admin() {
   const toast = useToast()
   const [activeSection, setActiveSection] = useState('trucks')
+
+  // Truck state
   const [trucks, setTrucks] = useState<(Truck & { trailers: Trailer[] })[]>([])
-  const [statuses, setStatuses] = useState<StatusValue[]>([])
-  const [routes, setRoutes] = useState<Route[]>([])
   const [showTruckModal, setShowTruckModal] = useState(false)
   const [editTruck, setEditTruck] = useState<Truck | null>(null)
-  const [form, setForm] = useState({ truck_number: '', truck_type: 'box_truck', transmission: 'automatic', trailer_count: '1', notes: '' })
+  const [truckForm, setTruckForm] = useState({ truck_number: '', truck_type: 'box_truck', transmission: 'automatic', trailer_count: '1', notes: '' })
+
+  // Tractor/Trailer state
+  const [tractors, setTractors] = useState<Tractor[]>([])
+  const [trailerList, setTrailerList] = useState<TrailerItem[]>([])
+  const [showTractorModal, setShowTractorModal] = useState(false)
+  const [editTractor, setEditTractor] = useState<Tractor | null>(null)
+  const [tractorForm, setTractorForm] = useState({ truck_number: '', driver_name: '', driver_cell: '', trailer_1: '', trailer_2: '', trailer_3: '', trailer_4: '', notes: '' })
+  const [newTrailer, setNewTrailer] = useState('')
+  const [tractorTab, setTractorTab] = useState<'tractors' | 'trailers'>('tractors')
+
+  // Status/Route state
+  const [statuses, setStatuses] = useState<StatusValue[]>([])
+  const [routes, setRoutes] = useState<Route[]>([])
   const [newStatus, setNewStatus] = useState({ name: '', color: '#6b7280' })
   const [newRoute, setNewRoute] = useState({ name: '', number: '' })
   const [resetLog, setResetLog] = useState<{ id: number; reset_type: string; reset_at: string; reset_by: string }[]>([])
 
   const loadAll = useCallback(async () => {
-    const { data: t } = await supabase.from('trucks').select('*').order('truck_number')
-    if (t) {
-      const withTrailers = await Promise.all(t.map(async (truck: Truck) => {
+    const [trucksRes, statusRes, routeRes, resetRes, tractorRes, trailerRes] = await Promise.all([
+      supabase.from('trucks').select('*').order('truck_number'),
+      supabase.from('status_values').select('*').order('sort_order'),
+      supabase.from('routes').select('*').order('sort_order'),
+      supabase.from('reset_log').select('*').order('reset_at', { ascending: false }).limit(20),
+      supabase.from('tractors').select('*, trailer_1:trailer_list!tractors_trailer_1_id_fkey(*), trailer_2:trailer_list!tractors_trailer_2_id_fkey(*), trailer_3:trailer_list!tractors_trailer_3_id_fkey(*), trailer_4:trailer_list!tractors_trailer_4_id_fkey(*)').order('truck_number'),
+      supabase.from('trailer_list').select('*').eq('is_active', true).order('trailer_number'),
+    ])
+
+    if (trucksRes.data) {
+      const withTrailers = await Promise.all(trucksRes.data.map(async (truck: Truck) => {
         if (truck.truck_type === 'semi') {
           const { data: tr } = await supabase.from('trailers').select('*').eq('truck_id', truck.id).eq('is_active', true).order('trailer_number')
           return { ...truck, trailers: tr || [] }
@@ -40,124 +61,113 @@ export default function Admin() {
       }))
       setTrucks(withTrailers)
     }
-    const { data: s } = await supabase.from('status_values').select('*').order('sort_order')
-    if (s) setStatuses(s)
-    const { data: r } = await supabase.from('routes').select('*').order('sort_order')
-    if (r) setRoutes(r)
-    const { data: rl } = await supabase.from('reset_log').select('*').order('reset_at', { ascending: false }).limit(20)
-    if (rl) setResetLog(rl)
+    if (statusRes.data) setStatuses(statusRes.data)
+    if (routeRes.data) setRoutes(routeRes.data)
+    if (resetRes.data) setResetLog(resetRes.data)
+    if (tractorRes.data) setTractors(tractorRes.data)
+    if (trailerRes.data) setTrailerList(trailerRes.data)
   }, [])
 
   useEffect(() => { loadAll() }, [loadAll])
 
-  // Truck CRUD
+  // === TRUCK CRUD ===
   const saveTruck = async () => {
-    const num = parseInt(form.truck_number)
+    const num = parseInt(truckForm.truck_number)
     if (!num) { toast('Truck number required', 'error'); return }
     if (editTruck) {
-      await supabase.from('trucks').update({
-        truck_number: num, truck_type: form.truck_type, transmission: form.transmission, notes: form.notes || null,
-      }).eq('id', editTruck.id)
-      if (form.truck_type === 'semi') {
-        const count = parseInt(form.trailer_count) || 1
-        const { data: existing } = await supabase.from('trailers').select('trailer_number').eq('truck_id', editTruck.id)
-        const maxExisting = existing ? Math.max(...existing.map(e => e.trailer_number), 0) : 0
-        for (let i = maxExisting + 1; i <= count; i++) {
-          await supabase.from('trailers').insert({ truck_id: editTruck.id, trailer_number: i })
-        }
-      }
+      await supabase.from('trucks').update({ truck_number: num, truck_type: truckForm.truck_type, transmission: truckForm.transmission, notes: truckForm.notes || null }).eq('id', editTruck.id)
     } else {
-      const { data: newTruck, error } = await supabase.from('trucks').insert({
-        truck_number: num, truck_type: form.truck_type, transmission: form.transmission, notes: form.notes || null,
-      }).select().single()
-      if (error) { toast(error.message.includes('unique') ? 'Truck number already exists' : error.message, 'error'); return }
-      if (form.truck_type === 'semi' && newTruck) {
-        const count = parseInt(form.trailer_count) || 1
-        for (let i = 1; i <= count; i++) {
-          await supabase.from('trailers').insert({ truck_id: newTruck.id, trailer_number: i })
-        }
-      }
+      const { error } = await supabase.from('trucks').insert({ truck_number: num, truck_type: truckForm.truck_type, transmission: truckForm.transmission, notes: truckForm.notes || null })
+      if (error) { toast(error.message.includes('unique') ? 'Truck # already exists' : error.message, 'error'); return }
     }
-    setShowTruckModal(false)
-    toast('Truck saved!')
-    loadAll()
+    setShowTruckModal(false); toast('Truck saved!'); loadAll()
+  }
+  const deleteTruck = async (id: number) => { if (!confirm('Delete truck?')) return; await supabase.from('trucks').delete().eq('id', id); toast('Deleted'); loadAll() }
+  const openEditTruck = (t: Truck & { trailers: Trailer[] }) => { setEditTruck(t); setTruckForm({ truck_number: String(t.truck_number), truck_type: t.truck_type, transmission: t.transmission, trailer_count: String(t.trailers.length || 1), notes: t.notes || '' }); setShowTruckModal(true) }
+  const openAddTruck = () => { setEditTruck(null); setTruckForm({ truck_number: '', truck_type: 'box_truck', transmission: 'automatic', trailer_count: '1', notes: '' }); setShowTruckModal(true) }
+
+  // === TRACTOR CRUD ===
+  const saveTractor = async () => {
+    const num = parseInt(tractorForm.truck_number)
+    if (!num) { toast('Truck number required', 'error'); return }
+    const payload = {
+      truck_number: num,
+      driver_name: tractorForm.driver_name || null,
+      driver_cell: tractorForm.driver_cell || null,
+      trailer_1_id: tractorForm.trailer_1 ? Number(tractorForm.trailer_1) : null,
+      trailer_2_id: tractorForm.trailer_2 ? Number(tractorForm.trailer_2) : null,
+      trailer_3_id: tractorForm.trailer_3 ? Number(tractorForm.trailer_3) : null,
+      trailer_4_id: tractorForm.trailer_4 ? Number(tractorForm.trailer_4) : null,
+      notes: tractorForm.notes || null,
+    }
+    if (editTractor) {
+      await supabase.from('tractors').update(payload).eq('id', editTractor.id)
+    } else {
+      const { error } = await supabase.from('tractors').insert(payload)
+      if (error) { toast(error.message.includes('unique') ? 'Truck # already exists' : error.message, 'error'); return }
+    }
+    setShowTractorModal(false); toast('Tractor saved!'); loadAll()
+  }
+  const deleteTractor = async (id: number) => { if (!confirm('Delete tractor?')) return; await supabase.from('tractors').delete().eq('id', id); toast('Deleted'); loadAll() }
+  const openEditTractor = (t: Tractor) => {
+    setEditTractor(t)
+    setTractorForm({
+      truck_number: String(t.truck_number), driver_name: t.driver_name || '', driver_cell: t.driver_cell || '',
+      trailer_1: t.trailer_1_id ? String(t.trailer_1_id) : '', trailer_2: t.trailer_2_id ? String(t.trailer_2_id) : '',
+      trailer_3: t.trailer_3_id ? String(t.trailer_3_id) : '', trailer_4: t.trailer_4_id ? String(t.trailer_4_id) : '',
+      notes: t.notes || '',
+    })
+    setShowTractorModal(true)
+  }
+  const openAddTractor = () => {
+    setEditTractor(null)
+    setTractorForm({ truck_number: '', driver_name: '', driver_cell: '', trailer_1: '', trailer_2: '', trailer_3: '', trailer_4: '', notes: '' })
+    setShowTractorModal(true)
   }
 
-  const deleteTruck = async (id: number) => {
-    if (!confirm('Delete this truck? Cannot be undone.')) return
-    await supabase.from('trucks').delete().eq('id', id)
-    toast('Truck deleted')
-    loadAll()
+  // === TRAILER LIST CRUD ===
+  const addTrailer = async () => {
+    if (!newTrailer.trim()) { toast('Enter trailer number', 'error'); return }
+    const { error } = await supabase.from('trailer_list').insert({ trailer_number: newTrailer.trim() })
+    if (error) { toast('Trailer already exists', 'error'); return }
+    setNewTrailer(''); toast('Trailer added'); loadAll()
   }
+  const deleteTrailer = async (id: number) => { if (!confirm('Delete trailer?')) return; await supabase.from('trailer_list').delete().eq('id', id); toast('Deleted'); loadAll() }
 
-  const openEdit = (t: Truck & { trailers: Trailer[] }) => {
-    setEditTruck(t)
-    setForm({ truck_number: String(t.truck_number), truck_type: t.truck_type, transmission: t.transmission, trailer_count: String(t.trailers.length || 1), notes: t.notes || '' })
-    setShowTruckModal(true)
-  }
-
-  const openAdd = () => {
-    setEditTruck(null)
-    setForm({ truck_number: '', truck_type: 'box_truck', transmission: 'automatic', trailer_count: '1', notes: '' })
-    setShowTruckModal(true)
-  }
-
-  // Status CRUD
+  // === STATUS CRUD ===
   const addStatus = async () => {
-    if (!newStatus.name) { toast('Enter a status name', 'error'); return }
+    if (!newStatus.name) { toast('Enter status name', 'error'); return }
     const maxOrder = statuses.length > 0 ? Math.max(...statuses.map(s => s.sort_order)) + 1 : 1
     const { error } = await supabase.from('status_values').insert({ status_name: newStatus.name, status_color: newStatus.color, sort_order: maxOrder })
-    if (error) { toast('Status already exists', 'error'); return }
-    setNewStatus({ name: '', color: '#6b7280' })
-    toast('Status added')
-    loadAll()
+    if (error) { toast('Already exists', 'error'); return }
+    setNewStatus({ name: '', color: '#6b7280' }); toast('Status added'); loadAll()
   }
+  const deleteStatus = async (id: number) => { if (!confirm('Delete?')) return; await supabase.from('status_values').delete().eq('id', id); loadAll() }
 
-  const deleteStatus = async (id: number) => {
-    if (!confirm('Delete this status?')) return
-    await supabase.from('status_values').delete().eq('id', id)
-    loadAll()
-  }
-
-  // Route CRUD
+  // === ROUTE CRUD ===
   const addRoute = async () => {
-    if (!newRoute.name) { toast('Enter a route name', 'error'); return }
+    if (!newRoute.name) { toast('Enter route name', 'error'); return }
     await supabase.from('routes').insert({ route_name: newRoute.name, route_number: newRoute.number || null })
-    setNewRoute({ name: '', number: '' })
-    toast('Route added')
-    loadAll()
+    setNewRoute({ name: '', number: '' }); toast('Route added'); loadAll()
   }
+  const deleteRoute = async (id: number) => { if (!confirm('Delete?')) return; await supabase.from('routes').delete().eq('id', id); loadAll() }
 
-  const deleteRoute = async (id: number) => {
-    if (!confirm('Delete this route?')) return
-    await supabase.from('routes').delete().eq('id', id)
-    loadAll()
-  }
-
-  // Reset
+  // === RESET ===
   const resetData = async (type: string) => {
-    if (type === 'all') {
-      const input = prompt('⚠️ This resets ALL daily data. Truck database is protected.\n\nType "RESET" to confirm:')
-      if (input !== 'RESET') { toast('Cancelled', 'error'); return }
-    } else {
-      if (!confirm(`Reset ${type}? Cannot be undone.`)) return
-    }
-    if (type === 'printroom' || type === 'all') {
-      await supabase.from('printroom_entries').delete().neq('id', 0)
-      await supabase.from('loading_doors').update({ is_done_for_night: false, door_status: 'Loading' }).neq('id', 0)
-    }
-    if (type === 'preshift' || type === 'all') {
-      await supabase.from('staging_doors').update({ in_front: null, in_back: null }).neq('id', 0)
-    }
-    if (type === 'movement' || type === 'all') {
-      await supabase.from('live_movement').delete().neq('id', 0)
-    }
+    if (type === 'all') { const input = prompt('Type RESET to confirm:'); if (input !== 'RESET') return }
+    else { if (!confirm(`Reset ${type}?`)) return }
+    if (type === 'printroom' || type === 'all') { await supabase.from('printroom_entries').delete().neq('id', 0); await supabase.from('loading_doors').update({ is_done_for_night: false, door_status: 'Loading' }).neq('id', 0) }
+    if (type === 'preshift' || type === 'all') { await supabase.from('staging_doors').update({ in_front: null, in_back: null }).neq('id', 0) }
+    if (type === 'movement' || type === 'all') { await supabase.from('live_movement').delete().neq('id', 0) }
     await supabase.from('reset_log').insert({ reset_type: type, reset_by: 'manual' })
-    toast(`Reset ${type} complete`)
-    loadAll()
+    toast(`Reset ${type} complete`); loadAll()
   }
 
   const typeIcons: Record<string, string> = { box_truck: '🚚 Box', van: '🚐 Van', tandem: '🚛 Tandem', semi: '🚛 Semi' }
+  const getTrailerNum = (t: Tractor, slot: 1|2|3|4): string => {
+    const trailer = t[`trailer_${slot}` as keyof Tractor] as TrailerItem | null
+    return trailer?.trailer_number || '—'
+  }
 
   return (
     <div className="flex gap-0 -mx-4 -mt-4" style={{ minHeight: 'calc(100vh - 49px)' }}>
@@ -165,8 +175,7 @@ export default function Admin() {
       <div className="w-[220px] flex-shrink-0 bg-[#111] border-r border-[#333] py-4 hidden md:block">
         <h2 className="px-4 text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Admin Settings</h2>
         {NAV_ITEMS.map(item => (
-          <button key={item.id}
-            onClick={() => item.ready && setActiveSection(item.id)}
+          <button key={item.id} onClick={() => item.ready && setActiveSection(item.id)}
             className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors flex items-center gap-2
               ${activeSection === item.id ? 'bg-amber-500/10 text-amber-500 border-r-2 border-amber-500' : ''}
               ${item.ready ? 'hover:bg-white/5 text-gray-300 cursor-pointer' : 'text-gray-600 cursor-not-allowed'}`}>
@@ -176,7 +185,7 @@ export default function Admin() {
         ))}
       </div>
 
-      {/* MOBILE NAV - horizontal scroll */}
+      {/* MOBILE NAV */}
       <div className="md:hidden w-full">
         <div className="flex overflow-x-auto border-b border-[#333] bg-[#111] px-2 py-1 gap-1">
           {NAV_ITEMS.filter(i => i.ready).map(item => (
@@ -187,17 +196,11 @@ export default function Admin() {
             </button>
           ))}
         </div>
-
-        {/* Mobile content */}
-        <div className="p-4">
-          {renderSection()}
-        </div>
+        <div className="p-4">{renderSection()}</div>
       </div>
 
       {/* RIGHT CONTENT - desktop */}
-      <div className="flex-1 p-6 overflow-auto hidden md:block">
-        {renderSection()}
-      </div>
+      <div className="flex-1 p-6 overflow-auto hidden md:block">{renderSection()}</div>
 
       {/* TRUCK MODAL */}
       {showTruckModal && (
@@ -205,42 +208,60 @@ export default function Admin() {
           <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-6 max-w-md w-full">
             <h3 className="text-amber-500 font-bold text-lg mb-4">{editTruck ? `Edit Truck ${editTruck.truck_number}` : 'Add Truck'}</h3>
             <div className="space-y-3">
-              <div>
-                <label className="text-xs text-gray-500 uppercase font-bold">Truck Number</label>
-                <input type="number" value={form.truck_number} onChange={e => setForm({ ...form, truck_number: e.target.value })}
-                  className="w-full bg-[#222] border border-[#333] rounded px-3 py-2 mt-1 focus:border-amber-500 outline-none" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 uppercase font-bold">Type</label>
-                <select value={form.truck_type} onChange={e => setForm({ ...form, truck_type: e.target.value })}
-                  className="w-full bg-[#222] border border-[#333] rounded px-3 py-2 mt-1 focus:border-amber-500 outline-none">
-                  <option value="box_truck">🚚 Box Truck</option><option value="van">🚐 Van</option>
-                  <option value="tandem">🚛 Tandem</option><option value="semi">🚛 Semi</option>
+              <Field label="Truck Number"><input type="number" value={truckForm.truck_number} onChange={e => setTruckForm({ ...truckForm, truck_number: e.target.value })} className="input-field" /></Field>
+              <Field label="Type">
+                <select value={truckForm.truck_type} onChange={e => setTruckForm({ ...truckForm, truck_type: e.target.value })} className="input-field">
+                  <option value="box_truck">🚚 Box Truck</option><option value="van">🚐 Van</option><option value="tandem">🚛 Tandem</option><option value="semi">🚛 Semi</option>
                 </select>
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 uppercase font-bold">Transmission</label>
-                <select value={form.transmission} onChange={e => setForm({ ...form, transmission: e.target.value })}
-                  className="w-full bg-[#222] border border-[#333] rounded px-3 py-2 mt-1 focus:border-amber-500 outline-none">
+              </Field>
+              <Field label="Transmission">
+                <select value={truckForm.transmission} onChange={e => setTruckForm({ ...truckForm, transmission: e.target.value })} className="input-field">
                   <option value="automatic">Automatic</option><option value="manual">Manual</option>
                 </select>
-              </div>
-              {form.truck_type === 'semi' && (
-                <div>
-                  <label className="text-xs text-gray-500 uppercase font-bold">Number of Trailers</label>
-                  <input type="number" value={form.trailer_count} onChange={e => setForm({ ...form, trailer_count: e.target.value })}
-                    min="1" max="10" className="w-full bg-[#222] border border-[#333] rounded px-3 py-2 mt-1 focus:border-amber-500 outline-none" />
-                </div>
-              )}
-              <div>
-                <label className="text-xs text-gray-500 uppercase font-bold">Notes</label>
-                <input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
-                  placeholder="Optional" className="w-full bg-[#222] border border-[#333] rounded px-3 py-2 mt-1 focus:border-amber-500 outline-none" />
-              </div>
+              </Field>
+              <Field label="Notes"><input value={truckForm.notes} onChange={e => setTruckForm({ ...truckForm, notes: e.target.value })} placeholder="Optional" className="input-field" /></Field>
             </div>
             <div className="flex gap-2 mt-4">
               <button onClick={saveTruck} className="flex-1 bg-amber-500 text-black py-2 rounded font-bold hover:bg-amber-400">Save</button>
               <button onClick={() => setShowTruckModal(false)} className="bg-[#333] text-white px-4 py-2 rounded">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TRACTOR MODAL */}
+      {showTractorModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-6 max-w-lg w-full max-h-[90vh] overflow-auto">
+            <h3 className="text-amber-500 font-bold text-lg mb-4">{editTractor ? `Edit Tractor ${editTractor.truck_number}` : 'Add Tractor'}</h3>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Driver Name"><input value={tractorForm.driver_name} onChange={e => setTractorForm({ ...tractorForm, driver_name: e.target.value })} placeholder="Robert" className="input-field" /></Field>
+                <Field label="Cell #"><input value={tractorForm.driver_cell} onChange={e => setTractorForm({ ...tractorForm, driver_cell: e.target.value })} placeholder="555-1234" className="input-field" /></Field>
+              </div>
+              <Field label="Truck Number"><input type="number" value={tractorForm.truck_number} onChange={e => setTractorForm({ ...tractorForm, truck_number: e.target.value })} placeholder="170" className="input-field" /></Field>
+
+              <div className="border border-[#333] rounded-lg p-3 bg-[#111]">
+                <label className="text-xs text-amber-500 uppercase font-bold block mb-2">Trailer Assignments</label>
+                <p className="text-[10px] text-gray-500 mb-3">Print Room: {tractorForm.truck_number || '___'}-1, {tractorForm.truck_number || '___'}-2, etc.</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {([1,2,3,4] as const).map(n => (
+                    <div key={n}>
+                      <label className="text-[10px] text-gray-500 font-bold">Trailer {n} ({tractorForm.truck_number || '?'}-{n})</label>
+                      <select value={tractorForm[`trailer_${n}` as keyof typeof tractorForm]} onChange={e => setTractorForm({ ...tractorForm, [`trailer_${n}`]: e.target.value })} className="input-field mt-0.5">
+                        <option value="">— None —</option>
+                        {trailerList.map(tl => <option key={tl.id} value={tl.id}>{tl.trailer_number}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <Field label="Notes"><input value={tractorForm.notes} onChange={e => setTractorForm({ ...tractorForm, notes: e.target.value })} placeholder="Optional" className="input-field" /></Field>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={saveTractor} className="flex-1 bg-amber-500 text-black py-2 rounded font-bold hover:bg-amber-400">Save</button>
+              <button onClick={() => setShowTractorModal(false)} className="bg-[#333] text-white px-4 py-2 rounded">Cancel</button>
             </div>
           </div>
         </div>
@@ -251,14 +272,11 @@ export default function Admin() {
   function renderSection() {
     switch (activeSection) {
       case 'trucks': return <TruckSection />
-      case 'tractors': return <PlannedSection title="Tractor Trailer Database" desc="Manage tractor trailers separately from box trucks. Assign trailers to tractors, track trailer locations independently." />
+      case 'tractors': return <TractorSection />
       case 'statuses': return <StatusSection />
       case 'routes': return <RouteSection />
       case 'reset': return <ResetSection />
-      case 'notifications': return <PlannedSection title="Notifications" desc="Get alerts when trucks arrive, doors change status, or shifts end. Push notifications, Slack, and Discord integration." />
-      case 'api': return <PlannedSection title="API Access" desc="REST API endpoints for integrating with other warehouse systems, TMS, and custom dashboards." />
-      case 'accounts': return <PlannedSection title="Accounts & Permissions" desc="User accounts with roles: Admin, Supervisor, Driver. Control who can edit Print Room, manage trucks, or reset data." />
-      default: return null
+      default: return <PlannedSection title={NAV_ITEMS.find(n => n.id === activeSection)?.label || ''} />
     }
   }
 
@@ -266,17 +284,13 @@ export default function Admin() {
     return (
       <div>
         <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-xl font-bold">🚚 Truck Database</h2>
-            <p className="text-xs text-gray-500 mt-1">Protected — never auto-deleted during resets</p>
-          </div>
-          <button onClick={openAdd} className="bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-400">+ Add Truck</button>
+          <div><h2 className="text-xl font-bold">🚚 Truck Database</h2><p className="text-xs text-gray-500 mt-1">Protected — never auto-deleted during resets</p></div>
+          <button onClick={openAddTruck} className="bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-400">+ Add Truck</button>
         </div>
         <div className="bg-[#1a1a1a] border border-[#333] rounded-xl overflow-hidden">
           <table className="w-full text-sm">
             <thead><tr className="text-xs text-amber-500 uppercase border-b border-[#333] bg-[#111]">
-              <th className="py-2.5 px-3 text-left">Truck#</th><th className="text-left px-3">Type</th><th className="text-left px-3">Trans.</th>
-              <th className="text-left px-3">Trailers</th><th className="text-left px-3">Notes</th><th className="px-3"></th>
+              <th className="py-2.5 px-3 text-left">Truck#</th><th className="text-left px-3">Type</th><th className="text-left px-3">Trans.</th><th className="text-left px-3">Notes</th><th className="px-3"></th>
             </tr></thead>
             <tbody>
               {trucks.map(t => (
@@ -284,18 +298,121 @@ export default function Admin() {
                   <td className="py-2.5 px-3 font-extrabold text-amber-500 text-lg">{t.truck_number}</td>
                   <td className="px-3">{typeIcons[t.truck_type]}</td>
                   <td className="px-3">{t.transmission === 'manual' ? '⚙️ Manual' : '🅰️ Auto'}</td>
-                  <td className="px-3 text-xs text-gray-400">{t.trailers.length > 0 ? t.trailers.map(tr => `${t.truck_number}-${tr.trailer_number}`).join(', ') : '—'}</td>
                   <td className="px-3 text-xs text-gray-500">{t.notes || ''}</td>
                   <td className="px-3 text-right">
-                    <button onClick={() => openEdit(t)} className="text-gray-400 hover:text-white mr-2">✏️</button>
+                    <button onClick={() => openEditTruck(t)} className="text-gray-400 hover:text-white mr-2">✏️</button>
                     <button onClick={() => deleteTruck(t.id)} className="text-red-500/50 hover:text-red-500">✕</button>
                   </td>
                 </tr>
               ))}
-              {trucks.length === 0 && <tr><td colSpan={6} className="py-10 text-center text-gray-500">No trucks yet. Click + Add Truck to get started.</td></tr>}
+              {trucks.length === 0 && <tr><td colSpan={5} className="py-10 text-center text-gray-500">No trucks. Click + Add Truck.</td></tr>}
             </tbody>
           </table>
         </div>
+      </div>
+    )
+  }
+
+  function TractorSection() {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div><h2 className="text-xl font-bold">🚛 Tractor Trailer Database</h2><p className="text-xs text-gray-500 mt-1">Assign trailers to tractors. Print Room uses format: 170-1, 170-2, etc.</p></div>
+        </div>
+
+        {/* Sub-tabs: Tractors / Trailers */}
+        <div className="flex gap-1 mb-4 bg-[#111] rounded-lg p-1 w-fit">
+          <button onClick={() => setTractorTab('tractors')} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${tractorTab === 'tractors' ? 'bg-amber-500 text-black' : 'text-gray-400 hover:text-white'}`}>
+            🚛 Tractors ({tractors.length})
+          </button>
+          <button onClick={() => setTractorTab('trailers')} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${tractorTab === 'trailers' ? 'bg-amber-500 text-black' : 'text-gray-400 hover:text-white'}`}>
+            📦 Trailer List ({trailerList.length})
+          </button>
+        </div>
+
+        {tractorTab === 'tractors' ? (
+          <div>
+            <div className="flex justify-end mb-3">
+              <button onClick={openAddTractor} className="bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-400">+ Add Tractor</button>
+            </div>
+            <div className="bg-[#1a1a1a] border border-[#333] rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead><tr className="text-xs text-amber-500 uppercase border-b border-[#333] bg-[#111]">
+                  <th className="py-2.5 px-3 text-left">Driver</th>
+                  <th className="px-3 text-left">Cell</th>
+                  <th className="px-3 text-left">Truck#</th>
+                  <th className="px-3 text-left">Trailer 1</th>
+                  <th className="px-3 text-left">Trailer 2</th>
+                  <th className="px-3 text-left">Trailer 3</th>
+                  <th className="px-3 text-left">Trailer 4</th>
+                  <th className="px-3"></th>
+                </tr></thead>
+                <tbody>
+                  {tractors.map(t => (
+                    <tr key={t.id} className="border-b border-white/5 hover:bg-white/[0.02]">
+                      <td className="py-2.5 px-3 font-bold text-white">{t.driver_name || '—'}</td>
+                      <td className="px-3 text-xs text-gray-400">{t.driver_cell || '—'}</td>
+                      <td className="px-3 font-extrabold text-amber-500 text-lg">{t.truck_number}</td>
+                      <td className="px-3">
+                        <span className="text-xs text-gray-500">{t.truck_number}-1:</span>{' '}
+                        <span className="font-bold text-green-400">{getTrailerNum(t, 1)}</span>
+                      </td>
+                      <td className="px-3">
+                        <span className="text-xs text-gray-500">{t.truck_number}-2:</span>{' '}
+                        <span className="font-bold text-blue-400">{getTrailerNum(t, 2)}</span>
+                      </td>
+                      <td className="px-3">
+                        <span className="text-xs text-gray-500">{t.truck_number}-3:</span>{' '}
+                        <span className="font-bold text-purple-400">{getTrailerNum(t, 3)}</span>
+                      </td>
+                      <td className="px-3">
+                        <span className="text-xs text-gray-500">{t.truck_number}-4:</span>{' '}
+                        <span className="font-bold text-pink-400">{getTrailerNum(t, 4)}</span>
+                      </td>
+                      <td className="px-3 text-right">
+                        <button onClick={() => openEditTractor(t)} className="text-gray-400 hover:text-white mr-2">✏️</button>
+                        <button onClick={() => deleteTractor(t.id)} className="text-red-500/50 hover:text-red-500">✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {tractors.length === 0 && <tr><td colSpan={8} className="py-10 text-center text-gray-500">No tractors. Add trailers first, then add tractors.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 mb-4">
+              <div className="flex gap-2 items-end mb-4">
+                <div className="flex-1">
+                  <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Add Trailer</label>
+                  <input value={newTrailer} onChange={e => setNewTrailer(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addTrailer()}
+                    placeholder="Trailer # (e.g. 203)" className="input-field" />
+                </div>
+                <button onClick={addTrailer} className="bg-amber-500 text-black px-4 py-2.5 rounded text-sm font-bold hover:bg-amber-400">+ Add</button>
+              </div>
+
+              <div className="flex gap-2 flex-wrap">
+                {trailerList.map(tl => {
+                  // Check if this trailer is assigned
+                  const assignedTo = tractors.find(tr =>
+                    tr.trailer_1_id === tl.id || tr.trailer_2_id === tl.id ||
+                    tr.trailer_3_id === tl.id || tr.trailer_4_id === tl.id
+                  )
+                  return (
+                    <div key={tl.id} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm border ${assignedTo ? 'bg-green-900/20 border-green-800' : 'bg-[#222] border-[#333]'}`}>
+                      <span className="font-bold text-white">{tl.trailer_number}</span>
+                      {assignedTo && <span className="text-[10px] text-green-500">→ {assignedTo.truck_number}</span>}
+                      <button onClick={() => deleteTrailer(tl.id)} className="text-red-500/30 hover:text-red-500 ml-1">&times;</button>
+                    </div>
+                  )
+                })}
+                {trailerList.length === 0 && <span className="text-gray-500 text-sm">No trailers added yet.</span>}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -304,25 +421,18 @@ export default function Admin() {
     return (
       <div>
         <h2 className="text-xl font-bold mb-4">🏷️ Status Values</h2>
-        <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 mb-4">
+        <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
           <div className="flex gap-2 mb-4 flex-wrap items-end">
-            <div>
-              <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Status Name</label>
-              <input value={newStatus.name} onChange={e => setNewStatus({ ...newStatus, name: e.target.value })}
-                placeholder="New status..." className="bg-[#222] border border-[#333] rounded px-3 py-2 text-sm focus:border-amber-500 outline-none" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Color</label>
-              <input type="color" value={newStatus.color} onChange={e => setNewStatus({ ...newStatus, color: e.target.value })}
-                className="w-10 h-[38px] rounded cursor-pointer border-0" />
-            </div>
+            <div><label className="text-xs text-gray-500 uppercase font-bold block mb-1">Status Name</label>
+              <input value={newStatus.name} onChange={e => setNewStatus({ ...newStatus, name: e.target.value })} placeholder="New status..." className="input-field" /></div>
+            <div><label className="text-xs text-gray-500 uppercase font-bold block mb-1">Color</label>
+              <input type="color" value={newStatus.color} onChange={e => setNewStatus({ ...newStatus, color: e.target.value })} className="w-10 h-[38px] rounded cursor-pointer border-0" /></div>
             <button onClick={addStatus} className="bg-amber-500 text-black px-4 py-2 rounded text-sm font-bold hover:bg-amber-400">+ Add</button>
           </div>
           <div className="flex gap-2 flex-wrap">
             {statuses.map(s => (
               <span key={s.id} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: s.status_color }}>
-                {s.status_name}
-                <button onClick={() => deleteStatus(s.id)} className="text-white/50 hover:text-white ml-1">&times;</button>
+                {s.status_name}<button onClick={() => deleteStatus(s.id)} className="text-white/50 hover:text-white ml-1">&times;</button>
               </span>
             ))}
           </div>
@@ -337,16 +447,10 @@ export default function Admin() {
         <h2 className="text-xl font-bold mb-4">🗺️ Routes</h2>
         <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
           <div className="flex gap-2 mb-4 flex-wrap items-end">
-            <div>
-              <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Route Name</label>
-              <input value={newRoute.name} onChange={e => setNewRoute({ ...newRoute, name: e.target.value })}
-                placeholder="Route name" className="bg-[#222] border border-[#333] rounded px-3 py-2 text-sm focus:border-amber-500 outline-none" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Code</label>
-              <input value={newRoute.number} onChange={e => setNewRoute({ ...newRoute, number: e.target.value })}
-                placeholder="FDL" className="bg-[#222] border border-[#333] rounded px-3 py-2 text-sm w-20 focus:border-amber-500 outline-none" />
-            </div>
+            <div><label className="text-xs text-gray-500 uppercase font-bold block mb-1">Route Name</label>
+              <input value={newRoute.name} onChange={e => setNewRoute({ ...newRoute, name: e.target.value })} placeholder="Route name" className="input-field" /></div>
+            <div><label className="text-xs text-gray-500 uppercase font-bold block mb-1">Code</label>
+              <input value={newRoute.number} onChange={e => setNewRoute({ ...newRoute, number: e.target.value })} placeholder="FDL" className="input-field w-20" /></div>
             <button onClick={addRoute} className="bg-amber-500 text-black px-4 py-2 rounded text-sm font-bold hover:bg-amber-400">+ Add</button>
           </div>
           <div className="flex gap-2 flex-wrap">
@@ -366,45 +470,27 @@ export default function Admin() {
     return (
       <div>
         <h2 className="text-xl font-bold text-red-400 mb-2">⚠️ Data Reset</h2>
-        <p className="text-sm text-gray-500 mb-4">Truck database is <strong className="text-green-500">always protected</strong> and never deleted.</p>
-
+        <p className="text-sm text-gray-500 mb-4">Truck &amp; Tractor databases are <strong className="text-green-500">always protected</strong>.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-          <button onClick={() => resetData('printroom')}
-            className="bg-[#1a1a1a] border border-red-900 rounded-xl p-4 text-left hover:bg-red-900/10 transition-colors">
-            <div className="text-red-400 font-bold mb-1">🖨️ Reset Print Room</div>
-            <div className="text-xs text-gray-500">Clears all print room entries and resets door statuses to Loading.</div>
-          </button>
-          <button onClick={() => resetData('preshift')}
-            className="bg-[#1a1a1a] border border-red-900 rounded-xl p-4 text-left hover:bg-red-900/10 transition-colors">
-            <div className="text-red-400 font-bold mb-1">📋 Reset PreShift</div>
-            <div className="text-xs text-gray-500">Clears all staging door truck assignments.</div>
-          </button>
-          <button onClick={() => resetData('movement')}
-            className="bg-[#1a1a1a] border border-red-900 rounded-xl p-4 text-left hover:bg-red-900/10 transition-colors">
-            <div className="text-red-400 font-bold mb-1">🚚 Reset Movement</div>
-            <div className="text-xs text-gray-500">Clears all live movement tracking data.</div>
-          </button>
-          <button onClick={() => resetData('all')}
-            className="bg-red-900/20 border-2 border-red-600 rounded-xl p-4 text-left hover:bg-red-900/30 transition-colors">
-            <div className="text-red-400 font-bold mb-1">💣 RESET ALL</div>
-            <div className="text-xs text-gray-400">Clears Print Room, PreShift, and Movement. Requires typing &quot;RESET&quot;.</div>
+          {[
+            { type: 'printroom', icon: '🖨️', label: 'Reset Print Room', desc: 'Clears entries and resets door statuses.' },
+            { type: 'preshift', icon: '📋', label: 'Reset PreShift', desc: 'Clears staging door assignments.' },
+            { type: 'movement', icon: '🚚', label: 'Reset Movement', desc: 'Clears live movement data.' },
+          ].map(r => (
+            <button key={r.type} onClick={() => resetData(r.type)} className="bg-[#1a1a1a] border border-red-900 rounded-xl p-4 text-left hover:bg-red-900/10 transition-colors">
+              <div className="text-red-400 font-bold mb-1">{r.icon} {r.label}</div><div className="text-xs text-gray-500">{r.desc}</div>
+            </button>
+          ))}
+          <button onClick={() => resetData('all')} className="bg-red-900/20 border-2 border-red-600 rounded-xl p-4 text-left hover:bg-red-900/30 transition-colors">
+            <div className="text-red-400 font-bold mb-1">💣 RESET ALL</div><div className="text-xs text-gray-400">Requires typing RESET.</div>
           </button>
         </div>
-
         {resetLog.length > 0 && (
           <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
             <h3 className="text-sm font-bold text-gray-400 mb-2">Recent Resets</h3>
-            <div className="space-y-1">
-              {resetLog.map(l => (
-                <div key={l.id} className="text-xs text-gray-500 flex gap-2">
-                  <span>📋</span>
-                  <span className="font-bold text-gray-400">{l.reset_type}</span>
-                  <span>—</span>
-                  <span>{new Date(l.reset_at).toLocaleString()}</span>
-                  <span className="text-gray-600">({l.reset_by})</span>
-                </div>
-              ))}
-            </div>
+            {resetLog.map(l => (
+              <div key={l.id} className="text-xs text-gray-500 flex gap-2 py-0.5"><span className="font-bold text-gray-400">{l.reset_type}</span><span>—</span><span>{new Date(l.reset_at).toLocaleString()}</span></div>
+            ))}
           </div>
         )}
       </div>
@@ -412,13 +498,16 @@ export default function Admin() {
   }
 }
 
-function PlannedSection({ title, desc }: { title: string; desc: string }) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div><label className="text-xs text-gray-500 uppercase font-bold block mb-1">{label}</label>{children}</div>
+}
+
+function PlannedSection({ title }: { title: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="text-4xl mb-4">🚧</div>
       <h2 className="text-xl font-bold text-gray-400 mb-2">{title}</h2>
-      <p className="text-sm text-gray-600 max-w-md">{desc}</p>
-      <span className="mt-4 text-xs bg-[#222] text-gray-500 px-3 py-1 rounded-full">Coming Soon</span>
+      <span className="mt-2 text-xs bg-[#222] text-gray-500 px-3 py-1 rounded-full">Coming Soon</span>
     </div>
   )
 }
