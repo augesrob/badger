@@ -137,7 +137,7 @@ export default function Movement() {
   const doorPairs = [['13A', '13B'], ['14A', '14B'], ['15A', '15B']]
 
   // Render a single door panel
-  const renderDoorPanel = (doorName: string) => {
+  const renderDoorPanel = (doorName: string, accent: string) => {
     const group = doorGroups[doorName] || []
     const door = doors.find(d => d.door_name === doorName)
     const doorSt = door?.door_status || 'Loading'
@@ -146,8 +146,8 @@ export default function Movement() {
     return (
       <div className="flex-1 min-w-0">
         {/* Door header */}
-        <div className="flex items-center gap-2 px-3 py-2 bg-[#111] border-b border-[#333]">
-          <span className="text-lg font-extrabold text-amber-500">{doorName}</span>
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-[#333]" style={{ background: `${accent}12` }}>
+          <span className="text-lg font-extrabold" style={{ color: accent }}>{doorName}</span>
           <select value={doorSt} onChange={e => door && setDoorStatus(door.id, e.target.value)}
             className="status-select text-[10px] ml-auto" style={{ background: doorCol }}>
             {DOOR_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -250,24 +250,27 @@ export default function Movement() {
         placeholder="🔍 Search truck #..." className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2.5 mb-4 text-sm focus:border-amber-500 outline-none" />
 
       {/* Door pairs: A and B side by side */}
-      {doorPairs.map(([doorA, doorB]) => {
+      {doorPairs.map(([doorA, doorB], pairIdx) => {
         const doorNum = doorA.replace(/[AB]/, '')
+        const pairColors = ['#3b82f6', '#8b5cf6', '#10b981'] // blue, purple, green
+        const accent = pairColors[pairIdx] || '#6b7280'
 
         return (
           <div key={doorNum} className="mb-4">
             {/* Pair header */}
             <div className="flex items-center gap-2 mb-1">
+              <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: accent }} />
               <span className="text-base font-extrabold text-white">Door {doorNum}</span>
             </div>
 
             {/* Side by side on desktop, stacked on mobile */}
-            <div className="bg-[#1a1a1a] border border-[#333] rounded-xl overflow-hidden">
+            <div className="bg-[#1a1a1a] rounded-xl overflow-hidden" style={{ border: `1px solid ${accent}40` }}>
               <div className="flex flex-col md:flex-row">
-                <div className="flex-1 min-w-0 border-b md:border-b-0 md:border-r border-[#333]">
-                  {renderDoorPanel(doorA)}
+                <div className="flex-1 min-w-0 border-b md:border-b-0 md:border-r" style={{ borderColor: `${accent}40` }}>
+                  {renderDoorPanel(doorA, accent)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  {renderDoorPanel(doorB)}
+                  {renderDoorPanel(doorB, accent)}
                 </div>
               </div>
             </div>
