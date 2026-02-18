@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { LoadingDoor, PrintroomEntry, StagingDoor } from '@/lib/types'
+import { runAutomation } from '@/lib/automation'
 
 export default function PrintRoom() {
   const toast = useToast()
@@ -77,6 +78,18 @@ export default function PrintRoom() {
             current_location: preshiftLoc,
           })
         }
+
+        // Run automation rules on this truck
+        const { data: entry } = await supabase.from('printroom_entries').select('*').eq('id', id).maybeSingle()
+        if (entry) {
+          await runAutomation({
+            truck_number: String(value),
+            loading_door_id: entry.loading_door_id,
+            is_end_marker: entry.is_end_marker || false,
+            batch_number: entry.batch_number,
+            row_order: entry.row_order,
+          })
+        }
       }
     }
   }, [toast])
@@ -95,6 +108,14 @@ export default function PrintRoom() {
     await supabase.from('printroom_entries').insert({
       loading_door_id: doorId, batch_number: batch, row_order: nextOrder,
       truck_number: 'end', is_end_marker: true,
+    })
+    // Run automation - this triggers "last END → Done for Night"
+    await runAutomation({
+      truck_number: 'end',
+      loading_door_id: doorId,
+      is_end_marker: true,
+      batch_number: batch,
+      row_order: nextOrder,
     })
   }
 

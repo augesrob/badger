@@ -103,6 +103,19 @@ export interface Tractor {
   trailer_4?: TrailerItem | null
 }
 
+export interface AutomationRule {
+  id: number
+  rule_name: string
+  description: string | null
+  is_active: boolean
+  trigger_type: string
+  trigger_field: string | null
+  trigger_value: string | null
+  action_type: string
+  action_value: string
+  sort_order: number
+}
+
 export const DOOR_STATUSES = [
   'Loading',
   'End Of Tote',

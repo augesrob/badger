@@ -2,11 +2,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
-import { Truck, Trailer, StatusValue, Route, TrailerItem, Tractor } from '@/lib/types'
+import { Truck, Trailer, StatusValue, Route, TrailerItem, Tractor, AutomationRule } from '@/lib/types'
 
 const NAV_ITEMS = [
   { id: 'trucks', label: '🚚 Truck Database', ready: true },
   { id: 'tractors', label: '🚛 Tractor Trailers', ready: true },
+  { id: 'automation', label: '⚡ Automation', ready: true },
   { id: 'statuses', label: '🏷️ Status Values', ready: true },
   { id: 'routes', label: '🗺️ Routes', ready: true },
   { id: 'reset', label: '⚠️ Data Reset', ready: true },
@@ -41,14 +42,21 @@ export default function Admin() {
   const [newRoute, setNewRoute] = useState({ name: '', number: '' })
   const [resetLog, setResetLog] = useState<{ id: number; reset_type: string; reset_at: string; reset_by: string }[]>([])
 
+  // Automation state
+  const [autoRules, setAutoRules] = useState<AutomationRule[]>([])
+  const [showRuleModal, setShowRuleModal] = useState(false)
+  const [editRule, setEditRule] = useState<AutomationRule | null>(null)
+  const [ruleForm, setRuleForm] = useState({ rule_name: '', description: '', trigger_type: 'truck_number_equals', trigger_value: '', action_type: 'set_truck_status', action_value: '', sort_order: '100' })
+
   const loadAll = useCallback(async () => {
-    const [trucksRes, statusRes, routeRes, resetRes, tractorRes, trailerRes] = await Promise.all([
+    const [trucksRes, statusRes, routeRes, resetRes, tractorRes, trailerRes, rulesRes] = await Promise.all([
       supabase.from('trucks').select('*').order('truck_number'),
       supabase.from('status_values').select('*').order('sort_order'),
       supabase.from('routes').select('*').order('sort_order'),
       supabase.from('reset_log').select('*').order('reset_at', { ascending: false }).limit(20),
       supabase.from('tractors').select('*, trailer_1:trailer_list!tractors_trailer_1_id_fkey(*), trailer_2:trailer_list!tractors_trailer_2_id_fkey(*), trailer_3:trailer_list!tractors_trailer_3_id_fkey(*), trailer_4:trailer_list!tractors_trailer_4_id_fkey(*)').order('truck_number'),
       supabase.from('trailer_list').select('*').eq('is_active', true).order('trailer_number'),
+      supabase.from('automation_rules').select('*').order('sort_order'),
     ])
 
     if (trucksRes.data) {
@@ -66,6 +74,7 @@ export default function Admin() {
     if (resetRes.data) setResetLog(resetRes.data)
     if (tractorRes.data) setTractors(tractorRes.data)
     if (trailerRes.data) setTrailerList(trailerRes.data)
+    if (rulesRes.data) setAutoRules(rulesRes.data)
   }, [])
 
   useEffect(() => { loadAll() }, [loadAll])
@@ -151,6 +160,38 @@ export default function Admin() {
     setNewRoute({ name: '', number: '' }); toast('Route added'); loadAll()
   }
   const deleteRoute = async (id: number) => { if (!confirm('Delete?')) return; await supabase.from('routes').delete().eq('id', id); loadAll() }
+
+  // === AUTOMATION CRUD ===
+  const saveRule = async () => {
+    if (!ruleForm.rule_name) { toast('Rule name required', 'error'); return }
+    const payload = {
+      rule_name: ruleForm.rule_name,
+      description: ruleForm.description || null,
+      trigger_type: ruleForm.trigger_type,
+      trigger_value: ruleForm.trigger_value || null,
+      action_type: ruleForm.action_type,
+      action_value: ruleForm.action_value,
+      sort_order: parseInt(ruleForm.sort_order) || 100,
+    }
+    if (editRule) {
+      await supabase.from('automation_rules').update(payload).eq('id', editRule.id)
+    } else {
+      await supabase.from('automation_rules').insert(payload)
+    }
+    setShowRuleModal(false); toast('Rule saved!'); loadAll()
+  }
+  const deleteRule = async (id: number) => { if (!confirm('Delete rule?')) return; await supabase.from('automation_rules').delete().eq('id', id); loadAll() }
+  const toggleRule = async (id: number, active: boolean) => { await supabase.from('automation_rules').update({ is_active: !active }).eq('id', id); loadAll() }
+  const openEditRule = (r: AutomationRule) => {
+    setEditRule(r)
+    setRuleForm({ rule_name: r.rule_name, description: r.description || '', trigger_type: r.trigger_type, trigger_value: r.trigger_value || '', action_type: r.action_type, action_value: r.action_value, sort_order: String(r.sort_order) })
+    setShowRuleModal(true)
+  }
+  const openAddRule = () => {
+    setEditRule(null)
+    setRuleForm({ rule_name: '', description: '', trigger_type: 'truck_number_equals', trigger_value: '', action_type: 'set_truck_status', action_value: '', sort_order: '100' })
+    setShowRuleModal(true)
+  }
 
   // === RESET ===
   const resetData = async (type: string) => {
@@ -266,6 +307,75 @@ export default function Admin() {
           </div>
         </div>
       )}
+
+      {/* RULE MODAL */}
+      {showRuleModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-6 max-w-lg w-full max-h-[90vh] overflow-auto">
+            <h3 className="text-amber-500 font-bold text-lg mb-4">{editRule ? 'Edit Rule' : 'Add Rule'}</h3>
+            <div className="space-y-3">
+              <Field label="Rule Name"><input value={ruleForm.rule_name} onChange={e => setRuleForm({ ...ruleForm, rule_name: e.target.value })} placeholder="e.g. GAP → Gap Status" className="input-field" /></Field>
+              <Field label="Description"><input value={ruleForm.description} onChange={e => setRuleForm({ ...ruleForm, description: e.target.value })} placeholder="What does this rule do?" className="input-field" /></Field>
+
+              <div className="border border-[#333] rounded-lg p-3 bg-[#111]">
+                <label className="text-xs text-green-500 uppercase font-bold block mb-2">IF (Condition)</label>
+                <div className="space-y-2">
+                  <Field label="When">
+                    <select value={ruleForm.trigger_type} onChange={e => setRuleForm({ ...ruleForm, trigger_type: e.target.value })} className="input-field">
+                      <option value="truck_number_equals">Truck # equals exactly</option>
+                      <option value="truck_number_contains">Truck # contains text</option>
+                      <option value="is_last_truck_with_status">Last entry in door is END</option>
+                      <option value="truck_is_end_marker">Entry is an END marker</option>
+                      <option value="status_equals">Truck status equals</option>
+                    </select>
+                  </Field>
+                  <Field label="Match Value"><input value={ruleForm.trigger_value} onChange={e => setRuleForm({ ...ruleForm, trigger_value: e.target.value })} placeholder="e.g. gap, cpu, 999, END" className="input-field" /></Field>
+                </div>
+              </div>
+
+              <div className="border border-[#333] rounded-lg p-3 bg-[#111]">
+                <label className="text-xs text-amber-500 uppercase font-bold block mb-2">THEN (Action)</label>
+                <div className="space-y-2">
+                  <Field label="Do">
+                    <select value={ruleForm.action_type} onChange={e => setRuleForm({ ...ruleForm, action_type: e.target.value })} className="input-field">
+                      <option value="set_truck_status">Set truck status to...</option>
+                      <option value="set_door_status">Set door status to...</option>
+                      <option value="set_truck_location">Set truck location to...</option>
+                    </select>
+                  </Field>
+                  <Field label="Value">
+                    {ruleForm.action_type === 'set_truck_status' ? (
+                      <select value={ruleForm.action_value} onChange={e => setRuleForm({ ...ruleForm, action_value: e.target.value })} className="input-field">
+                        <option value="">— Select Status —</option>
+                        {statuses.map(s => <option key={s.id} value={s.status_name}>{s.status_name}</option>)}
+                      </select>
+                    ) : ruleForm.action_type === 'set_door_status' ? (
+                      <select value={ruleForm.action_value} onChange={e => setRuleForm({ ...ruleForm, action_value: e.target.value })} className="input-field">
+                        <option value="">— Select Door Status —</option>
+                        <option value="Loading">Loading</option>
+                        <option value="End Of Tote">End Of Tote</option>
+                        <option value="EOT+1">EOT+1</option>
+                        <option value="Change Truck/Trailer">Change Truck/Trailer</option>
+                        <option value="Waiting">Waiting</option>
+                        <option value="Done for Night">Done for Night</option>
+                        <option value="100%">100%</option>
+                      </select>
+                    ) : (
+                      <input value={ruleForm.action_value} onChange={e => setRuleForm({ ...ruleForm, action_value: e.target.value })} placeholder="Value..." className="input-field" />
+                    )}
+                  </Field>
+                </div>
+              </div>
+
+              <Field label="Priority (lower = runs first)"><input type="number" value={ruleForm.sort_order} onChange={e => setRuleForm({ ...ruleForm, sort_order: e.target.value })} className="input-field w-24" /></Field>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={saveRule} className="flex-1 bg-amber-500 text-black py-2 rounded font-bold hover:bg-amber-400">Save Rule</button>
+              <button onClick={() => setShowRuleModal(false)} className="bg-[#333] text-white px-4 py-2 rounded">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 
@@ -273,6 +383,7 @@ export default function Admin() {
     switch (activeSection) {
       case 'trucks': return <TruckSection />
       case 'tractors': return <TractorSection />
+      case 'automation': return <AutomationSection />
       case 'statuses': return <StatusSection />
       case 'routes': return <RouteSection />
       case 'reset': return <ResetSection />
@@ -413,6 +524,69 @@ export default function Admin() {
             </div>
           </div>
         )}
+      </div>
+    )
+  }
+
+  function AutomationSection() {
+    const triggerLabels: Record<string, string> = {
+      truck_number_equals: 'Truck # equals',
+      truck_number_contains: 'Truck # contains',
+      is_last_truck_with_status: 'Last entry is',
+      truck_is_end_marker: 'Is END marker',
+      status_equals: 'Status equals',
+    }
+    const actionLabels: Record<string, string> = {
+      set_truck_status: 'Set truck status →',
+      set_door_status: 'Set door status →',
+      set_truck_location: 'Set location →',
+    }
+
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-xl font-bold">⚡ Automation Rules</h2>
+            <p className="text-xs text-gray-500 mt-1">IF condition is met THEN action runs automatically when Print Room data changes.</p>
+          </div>
+          <button onClick={openAddRule} className="bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-400">+ Add Rule</button>
+        </div>
+
+        <div className="space-y-2">
+          {autoRules.map(r => (
+            <div key={r.id} className={`bg-[#1a1a1a] border rounded-xl p-4 transition-colors ${r.is_active ? 'border-[#333]' : 'border-[#222] opacity-50'}`}>
+              <div className="flex items-start gap-3">
+                <button onClick={() => toggleRule(r.id, r.is_active)}
+                  className={`mt-0.5 w-10 h-5 rounded-full flex-shrink-0 transition-colors relative ${r.is_active ? 'bg-green-500' : 'bg-[#333]'}`}>
+                  <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-all ${r.is_active ? 'left-5' : 'left-0.5'}`} />
+                </button>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-bold text-white">{r.rule_name}</span>
+                    <span className="text-[10px] text-gray-500 bg-[#222] px-2 py-0.5 rounded">Priority: {r.sort_order}</span>
+                  </div>
+                  {r.description && <p className="text-xs text-gray-500 mb-2">{r.description}</p>}
+                  <div className="flex flex-wrap gap-2">
+                    <span className="text-xs bg-green-900/30 text-green-400 px-2 py-1 rounded font-medium">
+                      IF {triggerLabels[r.trigger_type] || r.trigger_type} &quot;{r.trigger_value}&quot;
+                    </span>
+                    <span className="text-xs text-gray-500">→</span>
+                    <span className="text-xs bg-amber-900/30 text-amber-400 px-2 py-1 rounded font-medium">
+                      THEN {actionLabels[r.action_type] || r.action_type} &quot;{r.action_value}&quot;
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  <button onClick={() => openEditRule(r)} className="text-gray-400 hover:text-white">✏️</button>
+                  <button onClick={() => deleteRule(r.id)} className="text-red-500/50 hover:text-red-500">✕</button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {autoRules.length === 0 && (
+            <div className="text-center py-10 text-gray-500">No rules yet. Click + Add Rule to create your first automation.</div>
+          )}
+        </div>
       </div>
     )
   }
