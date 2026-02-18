@@ -69,8 +69,8 @@ export default function PrintRoom() {
           // Look up preshift location
           let preshiftLoc: string | null = null
           for (const sd of stagingDoors) {
-            if (sd.in_front === String(value)) { preshiftLoc = `Dr${sd.door_label} Front`; break }
-            if (sd.in_back === String(value)) { preshiftLoc = `Dr${sd.door_label} Back`; break }
+            if (sd.in_front === String(value)) { preshiftLoc = sd.door_label; break }
+            if (sd.in_back === String(value)) { preshiftLoc = sd.door_label; break }
           }
           await supabase.from('live_movement').insert({
             truck_number: String(value),

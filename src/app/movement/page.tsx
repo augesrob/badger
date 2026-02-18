@@ -55,11 +55,16 @@ export default function Movement() {
     return () => { supabase.removeChannel(channel) }
   }, [loadAll])
 
-  // Build preshift location lookup: truck_number → "Dr19 In Back"
+  // Build preshift location lookup: truck_number → just door label "22B"
+  // And behind lookup: if truck is in back, show which truck is in front
   const preshiftLookup: Record<string, string> = {}
+  const behindLookup: Record<string, string> = {} // truck_in_back → truck_in_front
   stagingDoors.forEach(sd => {
-    if (sd.in_front) preshiftLookup[sd.in_front] = `Dr${sd.door_label} Front`
-    if (sd.in_back) preshiftLookup[sd.in_back] = `Dr${sd.door_label} Back`
+    if (sd.in_front) preshiftLookup[sd.in_front] = sd.door_label
+    if (sd.in_back) {
+      preshiftLookup[sd.in_back] = sd.door_label
+      if (sd.in_front) behindLookup[sd.in_back] = sd.in_front
+    }
   })
 
   // Resolve tractor-trailer: "170-1" → trailer number "203"
@@ -160,6 +165,7 @@ export default function Movement() {
           const preshiftLoc = preshiftLookup[t.truck_number] || ''
           const displayLoc = t.current_location || preshiftLoc
           const trailerNum = resolveTrailer(t.truck_number)
+          const behind = behindLookup[t.truck_number]
           return (
             <div key={t.id} className="border-b border-white/5 hover:bg-white/[0.02]">
               <div className="grid grid-cols-[55px_35px_65px_1fr_40px_40px] gap-1 items-center px-2 py-1">
@@ -168,7 +174,10 @@ export default function Movement() {
                   {trailerNum && <div className="text-[9px] text-purple-400 font-normal">TR: {trailerNum}</div>}
                 </div>
                 <div className="text-[11px] text-gray-500">{di?.route || ''}</div>
-                <div className="text-[11px] text-blue-400 font-medium truncate" title={displayLoc}>{displayLoc || '—'}</div>
+                <div className="text-[11px] font-medium truncate" title={displayLoc}>
+                  <span className="text-blue-400">{displayLoc || '—'}</span>
+                  {behind && <div className="text-[9px] text-red-400/80">Behind {behind}</div>}
+                </div>
                 <select
                   value={t.status_id || ''}
                   onChange={e => updateStatus(t.truck_number, Number(e.target.value))}
