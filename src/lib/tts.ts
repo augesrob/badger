@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
 
 interface TTSSettings {
   enabled: boolean
@@ -56,54 +56,56 @@ export function useMovementTTS(
   trucks: { truck_number: string; status_name?: string }[],
   settings: TTSSettings,
 ) {
-  const prevDoorStatus = useRef<Record<number, string>>({})
-  const prevTruckStatus = useRef<Record<string, string>>({})
+  const prevDoorSnapshot = useRef<string>('')
+  const prevTruckSnapshot = useRef<string>('')
   const initialized = useRef(false)
 
-  // Initialize refs on first load without announcing
-  const initRefs = useCallback(() => {
-    if (initialized.current) return
-    if (doors.length === 0 && trucks.length === 0) return
-
-    const doorMap: Record<number, string> = {}
-    doors.forEach(d => { doorMap[d.id] = d.door_status })
-    prevDoorStatus.current = doorMap
-
-    const truckMap: Record<string, string> = {}
-    trucks.forEach(t => { truckMap[t.truck_number] = t.status_name || '' })
-    prevTruckStatus.current = truckMap
-
-    initialized.current = true
-  }, [doors, trucks])
-
   useEffect(() => {
-    initRefs()
-  }, [initRefs])
+    const doorSnap = JSON.stringify(doors.map(d => [d.id, d.door_status]))
+    const truckSnap = JSON.stringify(trucks.map(t => [t.truck_number, t.status_name || '']))
 
-  // Watch for door status changes
-  useEffect(() => {
-    if (!initialized.current || !settings.enabled || !settings.doorStatus) return
-
-    doors.forEach(d => {
-      const prev = prevDoorStatus.current[d.id]
-      if (prev !== undefined && prev !== d.door_status) {
-        speak(`Door ${d.door_name} is now ${d.door_status}`, settings)
+    // First load — store snapshot without announcing
+    if (!initialized.current) {
+      if (doors.length > 0 || trucks.length > 0) {
+        prevDoorSnapshot.current = doorSnap
+        prevTruckSnapshot.current = truckSnap
+        initialized.current = true
       }
-      prevDoorStatus.current[d.id] = d.door_status
-    })
-  }, [doors, settings])
+      return
+    }
 
-  // Watch for truck status changes
-  useEffect(() => {
-    if (!initialized.current || !settings.enabled || !settings.truckStatus) return
+    if (!settings.enabled) {
+      prevDoorSnapshot.current = doorSnap
+      prevTruckSnapshot.current = truckSnap
+      return
+    }
 
-    trucks.forEach(t => {
-      const prev = prevTruckStatus.current[t.truck_number]
-      if (prev !== undefined && prev !== (t.status_name || '')) {
-        const statusName = t.status_name || 'unknown'
-        speak(`Truck ${t.truck_number}, ${statusName}`, settings)
-      }
-      prevTruckStatus.current[t.truck_number] = t.status_name || ''
-    })
-  }, [trucks, settings])
+    // Detect door changes
+    if (settings.doorStatus && doorSnap !== prevDoorSnapshot.current) {
+      const prevDoors: [number, string][] = prevDoorSnapshot.current ? JSON.parse(prevDoorSnapshot.current) : []
+      const prevMap = new Map(prevDoors)
+      doors.forEach(d => {
+        const prev = prevMap.get(d.id)
+        if (prev !== undefined && prev !== d.door_status) {
+          speak(`Door ${d.door_name} is now ${d.door_status}`, settings)
+        }
+      })
+    }
+
+    // Detect truck changes
+    if (settings.truckStatus && truckSnap !== prevTruckSnapshot.current) {
+      const prevTrucks: [string, string][] = prevTruckSnapshot.current ? JSON.parse(prevTruckSnapshot.current) : []
+      const prevMap = new Map(prevTrucks)
+      trucks.forEach(t => {
+        const prev = prevMap.get(t.truck_number)
+        const curr = t.status_name || ''
+        if (prev !== undefined && prev !== curr) {
+          speak(`Truck ${t.truck_number}, ${curr || 'unknown'}`, settings)
+        }
+      })
+    }
+
+    prevDoorSnapshot.current = doorSnap
+    prevTruckSnapshot.current = truckSnap
+  }, [doors, trucks, settings])
 }
