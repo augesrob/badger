@@ -38,13 +38,18 @@ export default function RouteSheet() {
   const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
 
   const loadData = useCallback(async () => {
-    const [doorsRes, entriesRes] = await Promise.all([
+    const [doorsRes, entriesRes, tractorsRes] = await Promise.all([
       supabase.from('loading_doors').select('*').order('sort_order'),
       supabase.from('printroom_entries').select('*, loading_doors(door_name)').order('batch_number').order('row_order'),
+      supabase.from('tractors').select('truck_number'),
     ])
 
     const doors = doorsRes.data || []
     const allEntries = (entriesRes.data || []) as (PrintroomEntry & { loading_doors: { door_name: string } | null })[]
+    
+    // Build set of tractor numbers for semi detection
+    const tNums = new Set<string>()
+    ;(tractorsRes.data || []).forEach((t: { truck_number: number }) => tNums.add(String(t.truck_number)))
 
     // Group entries by door
     const grouped: Record<string, (PrintroomEntry & { loading_doors: { door_name: string } | null })[]> = {}
@@ -75,13 +80,13 @@ export default function RouteSheet() {
 
     setBlocks(newBlocks)
     setLoading(false)
-    return newBlocks
+    return { blocks: newBlocks, tNums }
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
 
   // Parse CSV data and merge with blocks
-  const parseAndMergeCSV = useCallback((csvText: string, currentBlocks: DoorBlock[]) => {
+  const parseAndMergeCSV = useCallback((csvText: string, currentBlocks: DoorBlock[], tractorNumbers: Set<string>) => {
     const lines = csvText.trim().replace(/\r/g, '').split('\n')
     if (lines.length < 2) return currentBlocks
 
@@ -107,6 +112,24 @@ export default function RouteSheet() {
       routesByTruck[r.truckKey].push(r)
     })
 
+    // Check if a printroom truck is a semi:
+    // 1. Has a dash (e.g. 231-1)
+    // 2. Is in the tractors table (e.g. bare 222)
+    const isSemi = (truckKey: string): boolean => {
+      if (/^\d+-\d+$/.test(truckKey)) return true
+      if (tractorNumbers.has(truckKey)) return true
+      return false
+    }
+
+    // For a semi entered without a dash (e.g. "222"), find all CSV routes
+    // that belong to it. CSV may have TR222 directly, or we already have the exact key.
+    const getSemiRoutes = (truckKey: string): CSVRoute[] => {
+      // Direct match first (handles both "222" and "231-1")
+      const direct = routesByTruck[truckKey]
+      if (direct && direct.length > 0) return direct
+      return []
+    }
+
     // Merge into blocks
     const merged = currentBlocks.map(block => {
       const newRows: RowData[] = []
@@ -118,22 +141,25 @@ export default function RouteSheet() {
         }
 
         const truckKey = row.truckNumber
-        const truckRoutes = routesByTruck[truckKey]
+
+        // CPU/TR999 special handling
+        if (truckKey === '999' || truckKey.toLowerCase() === 'cpu') {
+          const cpuRoutes = routesByTruck['999'] || routesByTruck['cpu'] || []
+          newRows.push({ ...row, route: 'CPU', caseQty: cpuRoutes.length > 0 ? String(cpuRoutes[0].casesExpected) : '' })
+          return
+        }
+
+        const semi = isSemi(truckKey)
+        const truckRoutes = getSemiRoutes(truckKey)
 
         if (!truckRoutes || truckRoutes.length === 0) {
-          // No CSV data for this truck - keep as is
+          // No CSV data for this truck
           newRows.push(row)
           return
         }
 
-        // CPU/TR999 special handling
-        if (truckKey === '999' || truckKey.toLowerCase() === 'cpu') {
-          newRows.push({ ...row, route: 'CPU', caseQty: String(truckRoutes[0].casesExpected) })
-          return
-        }
-
-        // Single route truck (box truck)
-        if (truckRoutes.length === 1) {
+        if (!semi) {
+          // Box truck — single route
           newRows.push({
             ...row,
             route: truckRoutes[0].route,
@@ -142,12 +168,13 @@ export default function RouteSheet() {
           return
         }
 
-        // Semi with multiple routes - one row per route, truck# shown on all rows like original
-        truckRoutes.forEach((r, idx) => {
+        // Semi — multiple routes, sorted DESCENDING (highest route first)
+        const sorted = [...truckRoutes].sort((a, b) => parseInt(b.route) - parseInt(a.route))
+        sorted.forEach((r, idx) => {
           newRows.push({
             route: r.route,
             signature: '',
-            truckNumber: row.truckNumber,  // Show truck# on every row
+            truckNumber: row.truckNumber,
             caseQty: String(r.casesExpected),
             notes: idx === 0 ? row.notes : '',
           })
@@ -169,9 +196,9 @@ export default function RouteSheet() {
     const text = await file.text()
 
     // Load fresh printroom data then merge
-    const freshBlocks = await loadData()
-    if (freshBlocks) {
-      const merged = parseAndMergeCSV(text, freshBlocks)
+    const result = await loadData()
+    if (result) {
+      const merged = parseAndMergeCSV(text, result.blocks, result.tNums)
       setBlocks(merged)
       setSyncStatus('synced')
       toast('Route data synced!')
