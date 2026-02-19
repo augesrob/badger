@@ -145,7 +145,7 @@ export default function RouteSheet() {
         // CPU/TR999 special handling
         if (truckKey === '999' || truckKey.toLowerCase() === 'cpu') {
           const cpuRoutes = routesByTruck['999'] || routesByTruck['cpu'] || []
-          newRows.push({ ...row, route: 'CPU', caseQty: cpuRoutes.length > 0 ? String(cpuRoutes[0].casesExpected) : '' })
+          newRows.push({ ...row, truckNumber: '999', route: 'CPU', caseQty: cpuRoutes.length > 0 ? String(cpuRoutes[0].casesExpected) : '' })
           return
         }
 
