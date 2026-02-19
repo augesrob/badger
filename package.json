@@ -11,12 +11,15 @@
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.95.3",
+    "imapflow": "^1.2.10",
     "next": "14.2.35",
+    "nodemailer": "^8.0.1",
     "react": "^18",
     "react-dom": "^18"
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/nodemailer": "^7.0.10",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "eslint": "^8",

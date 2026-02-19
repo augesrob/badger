@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { PrintroomEntry } from '@/lib/types'
 import { useToast } from '@/components/Toast'
@@ -235,6 +235,111 @@ export default function RouteSheet() {
     }))
   }
 
+  // Email ping system
+  const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'waiting' | 'checking' | 'error'>('idle')
+  const [emailError, setEmailError] = useState('')
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Send ping email
+  const sendPing = async () => {
+    setEmailStatus('sending')
+    setEmailError('')
+    try {
+      const res = await fetch('/api/route-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'send' }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setEmailStatus('error')
+        setEmailError(data.error)
+        return
+      }
+      setEmailStatus('waiting')
+      // Start polling for reply every 15 seconds
+      startPolling()
+    } catch {
+      setEmailStatus('error')
+      setEmailError('Network error')
+    }
+  }
+
+  // Poll for reply
+  const checkReply = async () => {
+    try {
+      const res = await fetch('/api/route-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'check' }),
+      })
+      const data = await res.json()
+      if (data.found) {
+        // Stop polling
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+        // Fetch the stored CSV data
+        const statusRes = await fetch('/api/route-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'status' }),
+        })
+        const statusData = await statusRes.json()
+        if (statusData.data?.csv_data) {
+          const result = await loadData()
+          if (result) {
+            const merged = parseAndMergeCSV(statusData.data.csv_data, result.blocks, result.tNums)
+            setBlocks(merged)
+            setSyncStatus('synced')
+            setEmailStatus('idle')
+            toast('Route data received and synced!')
+          }
+        }
+      }
+    } catch {
+      // Silent fail, will retry
+    }
+  }
+
+  const startPolling = () => {
+    if (pollRef.current) clearInterval(pollRef.current)
+    pollRef.current = setInterval(checkReply, 15000) // Check every 15 seconds
+  }
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [])
+
+  // Check for existing import data on page load
+  useEffect(() => {
+    const checkExisting = async () => {
+      try {
+        const res = await fetch('/api/route-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'status' }),
+        })
+        const data = await res.json()
+        if (data.data?.status === 'sent' && !data.data?.csv_data) {
+          setEmailStatus('waiting')
+          startPolling()
+        } else if (data.data?.csv_data && syncStatus === 'idle') {
+          // Auto-load existing data
+          const result = await loadData()
+          if (result) {
+            const merged = parseAndMergeCSV(data.data.csv_data, result.blocks, result.tNums)
+            setBlocks(merged)
+            setSyncStatus('synced')
+          }
+        }
+      } catch {
+        // API not configured yet, that's fine
+      }
+    }
+    if (!loading) checkExisting()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
+
   if (loading) return <div className="text-center py-20 text-gray-500">Loading...</div>
 
   return (
@@ -244,7 +349,7 @@ export default function RouteSheet() {
         <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
           <div>
             <h1 className="text-xl font-bold">📄 Routes at the Door</h1>
-            <p className="text-xs text-muted">Truck # pulled from Print Room • Upload route data CSV to fill routes &amp; case counts</p>
+            <p className="text-xs text-muted">Truck # pulled from Print Room • Sync route data via email or CSV upload</p>
           </div>
           <button onClick={() => window.print()}
             className="bg-amber-500 text-black px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-amber-400 flex items-center gap-2 flex-shrink-0">
@@ -254,17 +359,30 @@ export default function RouteSheet() {
 
         {/* Sync status bar */}
         <div className="flex items-center gap-3 bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3">
-          <div className="flex items-center gap-2 flex-1">
-            {syncStatus === 'idle' && (
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            {syncStatus === 'idle' && emailStatus === 'idle' && (
               <>
                 <span className="text-yellow-500 text-lg">📡</span>
-                <span className="text-sm text-gray-400">No route data loaded — upload CSV from email</span>
+                <span className="text-sm text-gray-400">No route data — send request or upload CSV</span>
               </>
             )}
-            {syncStatus === 'waiting' && (
+            {emailStatus === 'sending' && (
               <>
-                <span className="text-blue-500 text-lg animate-pulse">⏳</span>
-                <span className="text-sm text-blue-400">Processing route data...</span>
+                <span className="text-blue-500 text-lg animate-spin">📨</span>
+                <span className="text-sm text-blue-400">Sending request to fdlwhsestatus...</span>
+              </>
+            )}
+            {emailStatus === 'waiting' && syncStatus !== 'synced' && (
+              <>
+                <span className="text-amber-500 text-lg animate-pulse">⏳</span>
+                <span className="text-sm text-amber-400">Waiting for reply... checking every 15s</span>
+                <button onClick={checkReply} className="text-xs text-blue-400 hover:text-blue-300 underline ml-2">Check Now</button>
+              </>
+            )}
+            {emailStatus === 'error' && (
+              <>
+                <span className="text-red-500 text-lg">❌</span>
+                <span className="text-sm text-red-400">{emailError || 'Email error'}</span>
               </>
             )}
             {syncStatus === 'synced' && (
@@ -275,10 +393,17 @@ export default function RouteSheet() {
             )}
           </div>
 
-          <label className="cursor-pointer bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-500 flex items-center gap-1.5 flex-shrink-0">
-            📎 Upload CSV
-            <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
-          </label>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={sendPing}
+              disabled={emailStatus === 'sending' || emailStatus === 'waiting'}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
+              📨 Request Data
+            </button>
+            <label className="cursor-pointer bg-[#333] text-gray-300 px-4 py-2 rounded-lg text-xs font-bold hover:bg-[#444] flex items-center gap-1.5">
+              📎 CSV
+              <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+            </label>
+          </div>
         </div>
       </div>
 
