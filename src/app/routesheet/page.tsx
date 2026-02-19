@@ -267,6 +267,7 @@ export default function RouteSheet() {
 
   // Poll for reply
   const checkReply = async () => {
+    setEmailStatus('checking')
     try {
       const res = await fetch('/api/route-email', {
         method: 'POST',
@@ -274,6 +275,14 @@ export default function RouteSheet() {
         body: JSON.stringify({ action: 'check' }),
       })
       const data = await res.json()
+
+      if (data.error) {
+        setEmailStatus('error')
+        setEmailError(data.error)
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+        return
+      }
+
       if (data.found) {
         // Stop polling
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
@@ -294,9 +303,13 @@ export default function RouteSheet() {
             toast('Route data received and synced!')
           }
         }
+      } else {
+        // Not found yet, keep waiting
+        setEmailStatus('waiting')
+        if (data.message) toast(data.message, 'error')
       }
     } catch {
-      // Silent fail, will retry
+      setEmailStatus('waiting') // Keep polling on network errors
     }
   }
 
@@ -377,6 +390,12 @@ export default function RouteSheet() {
                 <span className="text-amber-500 text-lg animate-pulse">⏳</span>
                 <span className="text-sm text-amber-400">Waiting for reply... checking every 15s</span>
                 <button onClick={checkReply} className="text-xs text-blue-400 hover:text-blue-300 underline ml-2">Check Now</button>
+              </>
+            )}
+            {emailStatus === 'checking' && (
+              <>
+                <span className="text-blue-500 text-lg animate-spin">🔍</span>
+                <span className="text-sm text-blue-400">Checking inbox...</span>
               </>
             )}
             {emailStatus === 'error' && (

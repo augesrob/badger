@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
-import { ImapFlow } from 'imapflow'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -8,36 +7,35 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-// Email config from environment
+// Email config
 const EMAIL_USER = process.env.BADGER_EMAIL_USER || ''
 const EMAIL_PASS = process.env.BADGER_EMAIL_PASS || ''
-const EMAIL_HOST_SMTP = process.env.BADGER_SMTP_HOST || 'smtp.gmail.com'
-const EMAIL_HOST_IMAP = process.env.BADGER_IMAP_HOST || 'imap.gmail.com'
 const TARGET_EMAIL = 'fdlwhsestatus@badgerliquor.com'
+
+// Gmail API config (OAuth2)
+const GMAIL_CLIENT_ID = process.env.GMAIL_CLIENT_ID || ''
+const GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || ''
+const GMAIL_REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN || ''
 
 export async function POST(req: NextRequest) {
   const { action } = await req.json()
 
-  if (action === 'send') {
-    return handleSend()
-  } else if (action === 'check') {
-    return handleCheck()
-  } else if (action === 'status') {
-    return handleStatus()
-  }
+  if (action === 'send') return handleSend()
+  if (action === 'check') return handleCheck()
+  if (action === 'status') return handleStatus()
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 }
 
-// Send the ping email
+// Send the ping email via SMTP (works fine on Vercel)
 async function handleSend() {
   if (!EMAIL_USER || !EMAIL_PASS) {
-    return NextResponse.json({ error: 'Email not configured' }, { status: 500 })
+    return NextResponse.json({ error: 'Email not configured. Set BADGER_EMAIL_USER and BADGER_EMAIL_PASS in Vercel env vars.' }, { status: 500 })
   }
 
   try {
     const transporter = nodemailer.createTransport({
-      host: EMAIL_HOST_SMTP,
+      host: 'smtp.gmail.com',
       port: 587,
       secure: false,
       auth: { user: EMAIL_USER, pass: EMAIL_PASS },
@@ -59,129 +57,134 @@ async function handleSend() {
       sent_at: timestamp,
       received_at: null,
       csv_data: null,
+      updated_at: new Date().toISOString(),
     })
 
     return NextResponse.json({ success: true, message: 'Email sent' })
   } catch (err) {
     console.error('Send error:', err)
-    return NextResponse.json({ error: 'Failed to send email' }, { status: 500 })
+    return NextResponse.json({ error: `Send failed: ${err instanceof Error ? err.message : 'Unknown'}` }, { status: 500 })
   }
 }
 
-// Check inbox for reply with CSV attachment
+// Check Gmail inbox via REST API for reply with CSV
 async function handleCheck() {
-  if (!EMAIL_USER || !EMAIL_PASS) {
-    return NextResponse.json({ error: 'Email not configured' }, { status: 500 })
+  // Try Gmail REST API first, fall back to basic check
+  if (GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN) {
+    return checkViaGmailAPI()
   }
 
+  // Fallback: If no OAuth configured, try simple SMTP check (limited)
+  return NextResponse.json({
+    success: true,
+    found: false,
+    message: 'Gmail API not configured. Set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN in Vercel. Or use manual CSV upload.',
+  })
+}
+
+// Gmail REST API check (fully compatible with Vercel serverless)
+async function checkViaGmailAPI() {
   try {
-    const client = new ImapFlow({
-      host: EMAIL_HOST_IMAP,
-      port: 993,
-      secure: true,
-      auth: { user: EMAIL_USER, pass: EMAIL_PASS },
-      logger: false,
+    // Get access token from refresh token
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: GMAIL_CLIENT_ID,
+        client_secret: GMAIL_CLIENT_SECRET,
+        refresh_token: GMAIL_REFRESH_TOKEN,
+        grant_type: 'refresh_token',
+      }),
     })
 
-    await client.connect()
-    const lock = await client.getMailboxLock('INBOX')
+    const tokenData = await tokenRes.json()
+    if (!tokenData.access_token) {
+      return NextResponse.json({ error: 'Failed to get Gmail access token' }, { status: 500 })
+    }
 
-    try {
-      // Search for recent unread messages from the target or containing Routes CSV
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
+    const accessToken = tokenData.access_token
 
-      const messages = client.fetch(
-        { since: today, seen: false },
-        { envelope: true, bodyStructure: true, uid: true }
+    // Search for unread messages with attachments from today
+    const today = new Date().toISOString().split('T')[0].replace(/-/g, '/')
+    const query = `is:unread has:attachment after:${today}`
+
+    const searchRes = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=5`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    )
+    const searchData = await searchRes.json()
+
+    if (!searchData.messages || searchData.messages.length === 0) {
+      return NextResponse.json({ success: true, found: false })
+    }
+
+    // Check each message for CSV attachment
+    for (const msgRef of searchData.messages) {
+      const msgRes = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
       )
+      const msg = await msgRes.json()
 
-      let csvContent: string | null = null
-      let foundUid: number | null = null
+      // Find CSV attachment
+      const parts = msg.payload?.parts || []
+      for (const part of parts) {
+        const filename = part.filename || ''
+        if (filename.toLowerCase().endsWith('.csv') && part.body?.attachmentId) {
+          // Download attachment
+          const attachRes = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}/attachments/${part.body.attachmentId}`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          )
+          const attachData = await attachRes.json()
 
-      for await (const msg of messages) {
-        // Look for CSV attachment in body structure
-        const parts = flattenParts(msg.bodyStructure)
-        for (const part of parts) {
-          if (
-            part.type === 'text/csv' ||
-            part.disposition === 'attachment' ||
-            (part.parameters?.name && part.parameters.name.toLowerCase().endsWith('.csv'))
-          ) {
-            // Found a CSV attachment - download it
-            const { content } = await client.download(String(msg.uid), part.part, { uid: true })
-            const chunks: Buffer[] = []
-            for await (const chunk of content) {
-              chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+          if (attachData.data) {
+            // Decode base64url to string
+            const csvContent = Buffer.from(attachData.data, 'base64url').toString('utf-8')
+
+            // Verify it looks like our Routes CSV
+            if (csvContent.includes('TruckNumber') && csvContent.includes('CasesExpected')) {
+              // Mark message as read
+              await fetch(
+                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}/modify`,
+                {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ removeLabelIds: ['UNREAD'] }),
+                }
+              )
+
+              // Store in database
+              const timestamp = new Date().toISOString()
+              await supabase.from('route_imports').upsert({
+                id: 1,
+                status: 'received',
+                received_at: timestamp,
+                csv_data: csvContent,
+                updated_at: timestamp,
+              })
+
+              const routeCount = csvContent.trim().split('\n').length - 1
+
+              return NextResponse.json({ success: true, found: true, routes: routeCount })
             }
-            csvContent = Buffer.concat(chunks).toString('utf-8')
-            foundUid = msg.uid
-            break
           }
         }
-        if (csvContent) break
       }
-
-      if (csvContent && foundUid) {
-        // Mark as read
-        await client.messageFlagsAdd(String(foundUid), ['\\Seen'], { uid: true })
-
-        // Store in database
-        const timestamp = new Date().toISOString()
-        await supabase.from('route_imports').upsert({
-          id: 1,
-          status: 'received',
-          received_at: timestamp,
-          csv_data: csvContent,
-        })
-
-        return NextResponse.json({ success: true, found: true, routes: csvContent.split('\n').length - 1 })
-      }
-
-      return NextResponse.json({ success: true, found: false })
-    } finally {
-      lock.release()
-      await client.logout()
     }
+
+    return NextResponse.json({ success: true, found: false })
   } catch (err) {
-    console.error('Check error:', err)
-    return NextResponse.json({ error: 'Failed to check inbox' }, { status: 500 })
+    console.error('Gmail API error:', err)
+    return NextResponse.json({ error: `Gmail check failed: ${err instanceof Error ? err.message : 'Unknown'}` }, { status: 500 })
   }
 }
 
-// Get current status
+// Get current import status
 async function handleStatus() {
   const { data } = await supabase.from('route_imports').select('*').eq('id', 1).maybeSingle()
   return NextResponse.json({ data })
-}
-
-// Helper: flatten IMAP body structure into parts list
-interface BodyPart {
-  part: string
-  type: string
-  disposition?: string
-  parameters?: Record<string, string>
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function flattenParts(structure: any, prefix = ''): BodyPart[] {
-  const parts: BodyPart[] = []
-  if (!structure) return parts
-
-  if (structure.childNodes) {
-    structure.childNodes.forEach((child: Record<string, unknown>, idx: number) => {
-      const partNum = prefix ? `${prefix}.${idx + 1}` : String(idx + 1)
-      parts.push(...flattenParts(child, partNum))
-    })
-  } else {
-    const partId = prefix || '1'
-    parts.push({
-      part: partId,
-      type: `${structure.type || 'application'}/${structure.subtype || 'octet-stream'}`.toLowerCase(),
-      disposition: structure.disposition,
-      parameters: structure.parameters || structure.dispositionParameters,
-    })
-  }
-
-  return parts
 }
