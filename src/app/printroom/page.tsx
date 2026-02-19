@@ -222,10 +222,13 @@ export default function PrintRoom() {
                       </div>
                     ))}
 
-                    <button onClick={() => addRow(door.id, maxBatch + 1)}
-                      className="w-full bg-amber-500/10 border border-amber-500/30 rounded py-2 mt-1 text-xs text-amber-500 font-bold hover:bg-amber-500/20 transition-colors">
-                      + Batch {maxBatch + 1}
-                    </button>
+                    {/* Only show + New Batch if there are actual entries */}
+                    {doorEntries.length > 0 && (
+                      <button onClick={() => addRow(door.id, maxBatch + 1)}
+                        className="w-full bg-amber-500/10 border border-amber-500/30 rounded py-2 mt-1 text-xs text-amber-500 font-bold hover:bg-amber-500/20 transition-colors">
+                        + Batch {maxBatch + 1}
+                      </button>
+                    )}
                   </div>
                 </div>
               )
