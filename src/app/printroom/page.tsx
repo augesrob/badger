@@ -65,7 +65,19 @@ export default function PrintRoom() {
       if (value && value !== 'end') {
         const { data: existing } = await supabase.from('live_movement').select('id').eq('truck_number', String(value)).maybeSingle()
         if (!existing) {
-          const { data: defaultStatus } = await supabase.from('status_values').select('id').eq('status_name', 'On Route').maybeSingle()
+          // Check if this is a semi tractor (matches pattern like 170-1, or is in tractors table)
+          const truckStr = String(value)
+          const isSemi = /^\d+-\d+$/.test(truckStr)
+          let isTractorNumber = false
+          if (!isSemi) {
+            const num = parseInt(truckStr)
+            if (!isNaN(num)) {
+              const { data: tractor } = await supabase.from('tractors').select('id').eq('truck_number', num).maybeSingle()
+              if (tractor) isTractorNumber = true
+            }
+          }
+          const defaultStatusName = (isSemi || isTractorNumber) ? 'Transfer' : 'On Route'
+          const { data: defaultStatus } = await supabase.from('status_values').select('id').eq('status_name', defaultStatusName).maybeSingle()
           // Look up preshift location
           let preshiftLoc: string | null = null
           for (const sd of stagingDoors) {
