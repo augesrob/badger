@@ -177,14 +177,25 @@ export default function Movement() {
         </div>
 
         {/* Truck rows */}
-        {group.length > 0 ? group.map(t => {
+        {group.length > 0 ? group.map((t, idx) => {
           const di = truckToDoor[t.truck_number]
           const preshiftLoc = preshiftLookup[t.truck_number] || ''
           const displayLoc = t.current_location || preshiftLoc
           const trailerNum = resolveTrailer(t.truck_number)
           const behind = behindLookup[t.truck_number]
+          // Batch divider: check if previous truck was a different batch
+          const prevBatch = idx > 0 ? truckToDoor[group[idx - 1].truck_number]?.batch : di?.batch
+          const showBatchDivider = idx > 0 && di?.batch && prevBatch && di.batch !== prevBatch
           return (
-            <div key={t.id} className="border-b border-white/5 hover:bg-white/[0.02]">
+            <div key={t.id}>
+              {showBatchDivider && (
+                <div className="flex items-center gap-2 px-2 py-0.5">
+                  <div className="flex-1 border-t border-dashed border-amber-500/30" />
+                  <span className="text-[8px] text-amber-500/40 font-bold uppercase tracking-wider">Next Wave</span>
+                  <div className="flex-1 border-t border-dashed border-amber-500/30" />
+                </div>
+              )}
+              <div className="border-b border-white/5 hover:bg-white/[0.02]">
               <div className="grid grid-cols-[55px_35px_65px_1fr_40px_40px] gap-1 items-center px-2 py-1">
                 <div className="text-sm font-extrabold text-amber-500 pl-1" style={{ borderLeft: `3px solid ${t.status_color || '#6b7280'}` }}>
                   {t.truck_number}
@@ -210,6 +221,7 @@ export default function Movement() {
                   <span className="text-[10px] text-yellow-500/80 italic">📝 {di.notes}</span>
                 </div>
               )}
+            </div>
             </div>
           )
         }) : (
