@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { Truck, Trailer, StatusValue, Route, TrailerItem, Tractor, AutomationRule } from '@/lib/types'
 import { TTSPanel } from '@/components/TTSPanel'
+import { runPreshiftAutomation, runAutomation } from '@/lib/automation'
 
 const NAV_ITEMS = [
   { id: 'trucks', label: '🚚 Truck Database', ready: true },
@@ -192,6 +193,47 @@ export default function Admin() {
     setEditRule(null)
     setRuleForm({ rule_name: '', description: '', trigger_type: 'truck_number_equals', trigger_value: '', action_type: 'set_truck_status', action_value: '', sort_order: '100' })
     setShowRuleModal(true)
+  }
+
+  const [syncing, setSyncing] = useState(false)
+  const forceSync = async () => {
+    setSyncing(true)
+    try {
+      // Run preshift automation for all current preshift positions
+      await runPreshiftAutomation()
+
+      // Run printroom automation for all current printroom entries
+      const { data: entries } = await supabase.from('printroom_entries').select('*').not('truck_number', 'is', null)
+      if (entries) {
+        for (const entry of entries) {
+          if (entry.truck_number && entry.truck_number !== 'end') {
+            await runAutomation({
+              truck_number: entry.truck_number,
+              loading_door_id: entry.loading_door_id,
+              is_end_marker: entry.is_end_marker || false,
+              batch_number: entry.batch_number,
+              row_order: entry.row_order,
+            })
+          }
+        }
+        // Also run END markers
+        for (const entry of entries) {
+          if (entry.is_end_marker) {
+            await runAutomation({
+              truck_number: entry.truck_number || 'end',
+              loading_door_id: entry.loading_door_id,
+              is_end_marker: true,
+              batch_number: entry.batch_number,
+              row_order: entry.row_order,
+            })
+          }
+        }
+      }
+      toast('Force sync complete — all rules re-evaluated')
+    } catch {
+      toast('Sync failed', 'error')
+    }
+    setSyncing(false)
   }
 
   // === RESET ===
@@ -559,9 +601,15 @@ export default function Admin() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-bold">⚡ Automation Rules</h2>
-            <p className="text-xs text-gray-500 mt-1">IF condition is met THEN action runs automatically when Print Room data changes.</p>
+            <p className="text-xs text-gray-500 mt-1">IF condition is met THEN action runs automatically when Print Room or PreShift data changes.</p>
           </div>
-          <button onClick={openAddRule} className="bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-400">+ Add Rule</button>
+          <div className="flex gap-2">
+            <button onClick={forceSync} disabled={syncing}
+              className={`px-4 py-2 rounded-lg text-sm font-bold border transition-colors ${syncing ? 'bg-[#222] text-gray-500 border-[#333]' : 'bg-[#1a1a1a] text-amber-500 border-amber-500/30 hover:bg-amber-500/10'}`}>
+              {syncing ? '⏳ Syncing...' : '🔄 Force Sync'}
+            </button>
+            <button onClick={openAddRule} className="bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-400">+ Add Rule</button>
+          </div>
         </div>
 
         <div className="space-y-2">

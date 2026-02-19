@@ -66,11 +66,10 @@ export default function Movement() {
   }, [])
 
   // TTS: announce door/truck status changes
-  const truckTTSData = trucks.map(t => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sv = (t as any).status_values
-    return { truck_number: t.truck_number, status_name: sv?.status_name || '' }
-  })
+  const truckTTSData = trucks.map(t => ({
+    truck_number: t.truck_number,
+    status_name: t.status_name || '',
+  }))
   useMovementTTS(doors, truckTTSData, ttsSettings)
 
   // Build preshift location lookup: truck_number → just door label "22B"

@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { LoadingDoor, PrintroomEntry, StagingDoor } from '@/lib/types'
-import { runAutomation } from '@/lib/automation'
+import { runAutomation, runPreshiftAutomation } from '@/lib/automation'
 
 export default function PrintRoom() {
   const toast = useToast()
@@ -90,6 +90,8 @@ export default function PrintRoom() {
             row_order: entry.row_order,
           })
         }
+        // Also run preshift rules (in case truck is already on preshift board)
+        await runPreshiftAutomation()
       }
     }
   }, [toast])
