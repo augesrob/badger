@@ -290,6 +290,15 @@ select.status-select { color: #fff !important; }
 }
 .rs-add-row:hover { color: #d97706; }
 
+/* Truck number display (non-editable, from printroom) */
+.rs-truck-value {
+  padding: 4px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  color: #000;
+}
+
 /* Footer */
 .rs-footer {
   display: flex;
