@@ -2,21 +2,71 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* ========== DARK THEME (default) ========== */
+[data-theme="dark"] {
   --bg-primary: #0f0f0f;
+  --bg-secondary: #111111;
   --bg-card: #1a1a1a;
   --bg-input: #222222;
+  --bg-hover: rgba(255,255,255,0.02);
   --border: #333333;
+  --border-light: #222222;
+  --border-accent: rgba(255,255,255,0.05);
+  --text-primary: #f0f0f0;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --text-inverse: #000000;
   --accent: #f59e0b;
+  --nav-bg: #1a1a1a;
+  --select-bg: #222222;
+  --modal-overlay: rgba(0,0,0,0.7);
+  --shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+
+/* ========== LIGHT THEME ========== */
+[data-theme="light"] {
+  --bg-primary: #f5f5f5;
+  --bg-secondary: #e8e8e8;
+  --bg-card: #ffffff;
+  --bg-input: #f0f0f0;
+  --bg-hover: rgba(0,0,0,0.02);
+  --border: #d1d5db;
+  --border-light: #e5e7eb;
+  --border-accent: rgba(0,0,0,0.05);
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;
+  --text-inverse: #ffffff;
+  --accent: #d97706;
+  --nav-bg: #ffffff;
+  --select-bg: #f0f0f0;
+  --modal-overlay: rgba(0,0,0,0.4);
+  --shadow: 0 4px 20px rgba(0,0,0,0.1);
 }
 
 body {
   background: var(--bg-primary);
-  color: #f0f0f0;
+  color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  transition: background 0.2s, color 0.2s;
 }
 
-/* Toast */
+/* ========== UTILITY CLASSES ========== */
+@layer utilities {
+  .bg-page { background: var(--bg-primary); }
+  .bg-secondary { background: var(--bg-secondary); }
+  .bg-card { background: var(--bg-card); }
+  .bg-input { background: var(--bg-input); }
+  .bg-nav { background: var(--nav-bg); }
+  .bg-hover { background: var(--bg-hover); }
+  .border-themed { border-color: var(--border); }
+  .border-light { border-color: var(--border-light); }
+  .text-foreground { color: var(--text-primary); }
+  .text-secondary { color: var(--text-secondary); }
+  .text-muted { color: var(--text-muted); }
+}
+
+/* ========== TOAST ========== */
 .toast-container {
   position: fixed; bottom: 20px; right: 20px; z-index: 9999;
   display: flex; flex-direction: column; gap: 8px;
@@ -32,7 +82,7 @@ body {
   to { transform: translateX(0); opacity: 1; }
 }
 
-/* Form inputs */
+/* ========== FORM INPUTS ========== */
 input, select, textarea {
   min-height: 36px;
 }
@@ -46,14 +96,55 @@ select.status-select {
 /* Reusable input field */
 .input-field {
   width: 100%;
-  background: #222;
-  border: 1px solid #333;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 12px;
   font-size: 0.875rem;
-  color: #f0f0f0;
+  color: var(--text-primary);
   outline: none;
 }
 .input-field:focus {
-  border-color: #f59e0b;
+  border-color: var(--accent);
 }
+
+/* ========== THEME-AWARE OVERRIDES ========== */
+/* Cards, panels, and containers used across all pages */
+[data-theme="light"] .bg-\[\#1a1a1a\] { background: var(--bg-card) !important; }
+[data-theme="light"] .bg-\[\#111\] { background: var(--bg-secondary) !important; }
+[data-theme="light"] .bg-\[\#0f0f0f\] { background: var(--bg-primary) !important; }
+[data-theme="light"] .bg-\[\#222\] { background: var(--bg-input) !important; }
+
+/* Borders */
+[data-theme="light"] .border-\[\#333\] { border-color: var(--border) !important; }
+[data-theme="light"] .border-\[\#222\] { border-color: var(--border-light) !important; }
+[data-theme="light"] .border-\[\#444\] { border-color: var(--border) !important; }
+[data-theme="light"] .border-white\/5 { border-color: var(--border-accent) !important; }
+
+/* Text colors */
+[data-theme="light"] .text-white { color: var(--text-primary) !important; }
+[data-theme="light"] .text-gray-300 { color: var(--text-secondary) !important; }
+[data-theme="light"] .text-gray-400 { color: var(--text-muted) !important; }
+[data-theme="light"] .text-gray-500 { color: var(--text-muted) !important; }
+[data-theme="light"] .text-gray-600 { color: #9ca3af !important; }
+
+/* Inputs inside cells */
+[data-theme="light"] input.bg-\[\#222\] { background: var(--bg-input) !important; color: var(--text-primary) !important; }
+[data-theme="light"] .bg-transparent { background: transparent !important; }
+
+/* Hover states */
+[data-theme="light"] .hover\:bg-white\/\[0\.02\]:hover { background: rgba(0,0,0,0.03) !important; }
+[data-theme="light"] .bg-white\/\[0\.02\] { background: rgba(0,0,0,0.02) !important; }
+
+/* Modal overlays */
+[data-theme="light"] .bg-black\/70 { background: var(--modal-overlay) !important; }
+
+/* Status select remains dark on both themes */
+select.status-select { color: #fff !important; }
+
+/* Keep amber and other accent colors consistent */
+[data-theme="light"] .text-amber-500 { color: var(--accent) !important; }
+[data-theme="light"] .border-amber-500 { border-color: var(--accent) !important; }
+
+/* Sticky bar */
+[data-theme="light"] .bg-\[\#0f0f0f\] { background: var(--bg-primary) !important; }

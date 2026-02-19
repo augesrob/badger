@@ -3,6 +3,7 @@ import './globals.css'
 import Nav from '@/components/Nav'
 import { ToastProvider } from '@/components/Toast'
 import { KeepAlive } from '@/components/KeepAlive'
+import { ThemeProvider } from '@/components/ThemeProvider'
 
 export const metadata: Metadata = {
   title: 'Badger Truck Management',
@@ -11,15 +12,17 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="dark">
       <body>
-        <ToastProvider>
-          <KeepAlive />
-          <Nav />
-          <main className="max-w-[1400px] mx-auto p-4">
-            {children}
-          </main>
-        </ToastProvider>
+        <ThemeProvider>
+          <ToastProvider>
+            <KeepAlive />
+            <Nav />
+            <main className="max-w-[1400px] mx-auto p-4">
+              {children}
+            </main>
+          </ToastProvider>
+        </ThemeProvider>
       </body>
     </html>
   )
