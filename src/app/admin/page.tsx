@@ -44,6 +44,10 @@ export default function Admin() {
   const [newRoute, setNewRoute] = useState({ name: '', number: '' })
   const [resetLog, setResetLog] = useState<{ id: number; reset_type: string; reset_at: string; reset_by: string }[]>([])
 
+  // Status editing
+  const [editStatusId, setEditStatusId] = useState<number | null>(null)
+  const [editStatusForm, setEditStatusForm] = useState({ name: '', color: '' })
+
   // Automation state
   const [autoRules, setAutoRules] = useState<AutomationRule[]>([])
   const [showRuleModal, setShowRuleModal] = useState(false)
@@ -651,6 +655,18 @@ export default function Admin() {
     )
   }
 
+  const startEditStatus = (s: StatusValue) => {
+    setEditStatusId(s.id)
+    setEditStatusForm({ name: s.status_name, color: s.status_color })
+  }
+  const saveEditStatus = async () => {
+    if (!editStatusId || !editStatusForm.name) return
+    await supabase.from('status_values').update({ status_name: editStatusForm.name, status_color: editStatusForm.color }).eq('id', editStatusId)
+    setEditStatusId(null)
+    toast('Status updated')
+    loadAll()
+  }
+
   function StatusSection() {
     return (
       <div>
@@ -658,16 +674,40 @@ export default function Admin() {
         <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
           <div className="flex gap-2 mb-4 flex-wrap items-end">
             <div><label className="text-xs text-gray-500 uppercase font-bold block mb-1">Status Name</label>
-              <input value={newStatus.name} onChange={e => setNewStatus({ ...newStatus, name: e.target.value })} placeholder="New status..." className="input-field" /></div>
+              <input value={newStatus.name} onChange={e => setNewStatus({ ...newStatus, name: e.target.value })}
+                onKeyDown={e => e.key === 'Enter' && addStatus()} placeholder="New status..." className="input-field" /></div>
             <div><label className="text-xs text-gray-500 uppercase font-bold block mb-1">Color</label>
               <input type="color" value={newStatus.color} onChange={e => setNewStatus({ ...newStatus, color: e.target.value })} className="w-10 h-[38px] rounded cursor-pointer border-0" /></div>
             <button onClick={addStatus} className="bg-amber-500 text-black px-4 py-2 rounded text-sm font-bold hover:bg-amber-400">+ Add</button>
           </div>
-          <div className="flex gap-2 flex-wrap">
+          <div className="space-y-2">
             {statuses.map(s => (
-              <span key={s.id} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: s.status_color }}>
-                {s.status_name}<button onClick={() => deleteStatus(s.id)} className="text-white/50 hover:text-white ml-1">&times;</button>
-              </span>
+              <div key={s.id} className="flex items-center gap-2">
+                {editStatusId === s.id ? (
+                  <>
+                    <input type="color" value={editStatusForm.color}
+                      onChange={e => setEditStatusForm({ ...editStatusForm, color: e.target.value })}
+                      className="w-8 h-8 rounded cursor-pointer border-0 flex-shrink-0" />
+                    <input value={editStatusForm.name}
+                      onChange={e => setEditStatusForm({ ...editStatusForm, name: e.target.value })}
+                      onKeyDown={e => { if (e.key === 'Enter') saveEditStatus(); if (e.key === 'Escape') setEditStatusId(null) }}
+                      autoFocus
+                      className="input-field text-sm py-1 flex-1" />
+                    <button onClick={saveEditStatus} className="text-green-500 hover:text-green-400 text-sm font-bold px-2">✓</button>
+                    <button onClick={() => setEditStatusId(null)} className="text-gray-500 hover:text-white text-sm px-1">✕</button>
+                  </>
+                ) : (
+                  <>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white cursor-pointer hover:opacity-80 transition-opacity"
+                      style={{ background: s.status_color }}
+                      onClick={() => startEditStatus(s)} title="Click to edit">
+                      {s.status_name}
+                    </span>
+                    <button onClick={() => startEditStatus(s)} className="text-gray-500 hover:text-white text-xs">✏️</button>
+                    <button onClick={() => deleteStatus(s.id)} className="text-red-500/30 hover:text-red-500 text-xs">&times;</button>
+                  </>
+                )}
+              </div>
             ))}
           </div>
         </div>
