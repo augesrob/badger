@@ -11,6 +11,16 @@ export default function PrintRoom() {
   const [entries, setEntries] = useState<Record<number, PrintroomEntry[]>>({})
   const [stagingDoors, setStagingDoors] = useState<StagingDoor[]>([])
   const [loading, setLoading] = useState(true)
+  // Duplicate detection
+  const [dupeWarning, setDupeWarning] = useState<{
+    entryId: number
+    truckNumber: string
+    existingDoor: string
+    existingBatch: number
+    existingEntryId: number
+    inputEl: HTMLInputElement | null
+  } | null>(null)
+  const [highlightIds, setHighlightIds] = useState<Set<number>>(new Set())
 
   const loadData = useCallback(async () => {
     const [doorsRes, entriesRes, stagingRes] = await Promise.all([
@@ -42,12 +52,40 @@ export default function PrintRoom() {
     return () => { supabase.removeChannel(channel) }
   }, [loadData])
 
-  const saveField = useCallback(async (id: number, field: string, value: string | number) => {
+  const saveField = useCallback(async (id: number, field: string, value: string | number, forceSave = false) => {
     // If truck_number is changing, get old value first for cleanup
     let oldTruckNumber: string | null = null
     if (field === 'truck_number') {
       const { data: oldEntry } = await supabase.from('printroom_entries').select('truck_number').eq('id', id).maybeSingle()
       oldTruckNumber = oldEntry?.truck_number || null
+
+      // Check for duplicates (skip special values and empty)
+      const truckStr = String(value).trim()
+      if (truckStr && truckStr !== 'end' && !forceSave) {
+        // Look through all entries for a matching truck number (excluding this entry)
+        const { data: dupes } = await supabase
+          .from('printroom_entries')
+          .select('*, loading_doors(door_name)')
+          .eq('truck_number', truckStr)
+          .neq('id', id)
+          .limit(1)
+
+        if (dupes && dupes.length > 0) {
+          const dupe = dupes[0]
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const doorName = (dupe as any).loading_doors?.door_name || '?'
+          setDupeWarning({
+            entryId: id,
+            truckNumber: truckStr,
+            existingDoor: doorName,
+            existingBatch: dupe.batch_number,
+            existingEntryId: dupe.id,
+            inputEl: document.activeElement as HTMLInputElement || null,
+          })
+          setHighlightIds(new Set([id, dupe.id]))
+          return // Don't save yet
+        }
+      }
     }
 
     const { error } = await supabase.from('printroom_entries').update({ [field]: value || null }).eq('id', id)
@@ -142,6 +180,24 @@ export default function PrintRoom() {
     }
   }
 
+  const dismissDupe = (revert = true) => {
+    if (revert && dupeWarning?.inputEl) {
+      // Revert the input value
+      dupeWarning.inputEl.value = ''
+    }
+    setDupeWarning(null)
+    setHighlightIds(new Set())
+  }
+
+  const confirmDupe = async () => {
+    if (!dupeWarning) return
+    // Force save — skip duplicate check
+    await saveField(dupeWarning.entryId, 'truck_number', dupeWarning.truckNumber, true)
+    setDupeWarning(null)
+    // Keep highlights for a moment then clear
+    setTimeout(() => setHighlightIds(new Set()), 2000)
+  }
+
   if (loading) return <div className="text-center py-20 text-gray-500">Loading...</div>
 
   return (
@@ -188,7 +244,7 @@ export default function PrintRoom() {
                             <button onClick={() => deleteEntry(entry.id, entry.truck_number)} className="text-red-500 hover:text-red-300">✕</button>
                           </div>
                         ) : (
-                          <div key={entry.id} className="grid grid-cols-[40px_70px_40px_40px_1fr_24px] gap-1 items-center px-1 py-[3px] border-b border-white/5 hover:bg-white/[0.02]">
+                          <div key={entry.id} className={`grid grid-cols-[40px_70px_40px_40px_1fr_24px] gap-1 items-center px-1 py-[3px] border-b border-white/5 hover:bg-white/[0.02] transition-colors ${highlightIds.has(entry.id) ? 'bg-red-500/20 ring-1 ring-red-500/50 rounded' : ''}`}>
                             <input defaultValue={entry.route_info || ''} placeholder="Rt"
                               onBlur={e => saveField(entry.id, 'route_info', e.target.value)}
                               className="bg-[#222] border border-[#333] rounded px-1 py-1.5 text-xs w-full focus:border-amber-500 outline-none text-center" />
@@ -270,6 +326,37 @@ export default function PrintRoom() {
           ))}
         </div>
       </div>
+
+      {/* Duplicate Warning Modal */}
+      {dupeWarning && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => dismissDupe()}>
+          <div className="bg-[#1a1a1a] border border-red-500 rounded-2xl p-6 max-w-sm w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="text-center mb-4">
+              <div className="text-4xl mb-2">⚠️</div>
+              <h3 className="text-lg font-bold text-red-400">Duplicate Truck</h3>
+            </div>
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-4">
+              <p className="text-sm text-gray-300 text-center">
+                Truck <span className="font-extrabold text-amber-500 text-lg">{dupeWarning.truckNumber}</span> already exists on
+              </p>
+              <p className="text-center mt-1">
+                <span className="font-bold text-white text-lg">{dupeWarning.existingDoor}</span>
+                <span className="text-gray-500 text-sm ml-1">Batch {dupeWarning.existingBatch}</span>
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => dismissDupe()}
+                className="flex-1 bg-[#333] text-white px-4 py-3 rounded-xl text-sm font-bold hover:bg-[#444] transition-colors">
+                Cancel
+              </button>
+              <button onClick={confirmDupe}
+                className="flex-1 bg-red-600 text-white px-4 py-3 rounded-xl text-sm font-bold hover:bg-red-500 transition-colors">
+                Add Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
