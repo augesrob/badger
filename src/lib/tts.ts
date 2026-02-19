@@ -39,15 +39,25 @@ export function speak(text: string, settings: TTSSettings) {
   if (!settings.enabled) return
   if (typeof window === 'undefined' || !window.speechSynthesis) return
 
-  // Cancel any current speech
+  // Cancel any current/stuck speech
   window.speechSynthesis.cancel()
 
-  const utterance = new SpeechSynthesisUtterance(text)
-  utterance.volume = settings.volume
-  utterance.rate = settings.rate
-  utterance.pitch = 1
+  // Small delay to let cancel complete (iOS fix)
+  setTimeout(() => {
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.volume = settings.volume
+    utterance.rate = settings.rate
+    utterance.pitch = 1
+    
+    // iOS fix: force voice selection
+    const voices = window.speechSynthesis.getVoices()
+    if (voices.length > 0) {
+      const englishVoice = voices.find(v => v.lang.startsWith('en')) || voices[0]
+      utterance.voice = englishVoice
+    }
 
-  window.speechSynthesis.speak(utterance)
+    window.speechSynthesis.speak(utterance)
+  }, 50)
 }
 
 // Hook for movement page TTS

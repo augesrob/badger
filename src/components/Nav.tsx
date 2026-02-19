@@ -6,6 +6,7 @@ const links = [
   { href: '/printroom', label: '🖨️ Print Room' },
   { href: '/preshift', label: '📋 PreShift' },
   { href: '/movement', label: '🚚 Live Movement' },
+  { href: '/fleet', label: '🚛 Fleet' },
   { href: '/admin', label: '⚙️ Admin' },
 ]
 

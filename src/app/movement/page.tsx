@@ -117,7 +117,17 @@ export default function Movement() {
   // Filter & search — ONLY show trucks that exist in printroom
   let filtered = trucks.filter(t => truckToDoor[t.truck_number])
   if (filter !== 'all') filtered = filtered.filter(t => (t.status_name || 'No Status') === filter)
-  if (search) filtered = filtered.filter(t => t.truck_number.toLowerCase().includes(search.toLowerCase()))
+  if (search) {
+    const q = search.toLowerCase()
+    filtered = filtered.filter(t => {
+      // Match truck number
+      if (t.truck_number.toLowerCase().includes(q)) return true
+      // Match door name (e.g. "13", "13A", "14B")
+      const di = truckToDoor[t.truck_number]
+      if (di && di.door_name.toLowerCase().includes(q)) return true
+      return false
+    })
+  }
 
   // Group by door, preserving printroom order
   const doorGroups: Record<string, LiveMovement[]> = {}
@@ -277,7 +287,7 @@ export default function Movement() {
 
       {/* Search */}
       <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-        placeholder="🔍 Search truck #..." className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2.5 mb-4 text-sm focus:border-amber-500 outline-none" />
+        placeholder="🔍 Search truck # or door..." className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2.5 mb-4 text-sm focus:border-amber-500 outline-none" />
 
       {/* Door pairs: A and B side by side */}
       {doorPairs.map(([doorA, doorB], pairIdx) => {

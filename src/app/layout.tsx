@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import Nav from '@/components/Nav'
 import { ToastProvider } from '@/components/Toast'
+import { KeepAlive } from '@/components/KeepAlive'
 
 export const metadata: Metadata = {
   title: 'Badger Truck Management',
@@ -13,6 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <ToastProvider>
+          <KeepAlive />
           <Nav />
           <main className="max-w-[1400px] mx-auto p-4">
             {children}
