@@ -125,6 +125,10 @@ export default function Movement() {
       // Match door name (e.g. "13", "13A", "14B")
       const di = truckToDoor[t.truck_number]
       if (di && di.door_name.toLowerCase().includes(q)) return true
+      // Match location (e.g. "26" matches "26A", "26B")
+      const preshiftLoc = preshiftLookup[t.truck_number] || ''
+      const displayLoc = t.current_location || preshiftLoc
+      if (displayLoc && displayLoc.toLowerCase().includes(q)) return true
       return false
     })
   }
@@ -287,7 +291,7 @@ export default function Movement() {
 
       {/* Search */}
       <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-        placeholder="🔍 Search truck # or door..." className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2.5 mb-4 text-sm focus:border-amber-500 outline-none" />
+        placeholder="🔍 Search truck #, door, or location..." className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2.5 mb-4 text-sm focus:border-amber-500 outline-none" />
 
       {/* Door pairs: A and B side by side */}
       {doorPairs.map(([doorA, doorB], pairIdx) => {

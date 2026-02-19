@@ -208,6 +208,16 @@ export default function RouteSheet() {
     e.target.value = ''
   }
 
+  const clearData = async () => {
+    if (!confirm('Clear all route data and reload from Print Room?')) return
+    setCsvData([])
+    setSyncStatus('idle')
+    setEmailStatus('idle')
+    setTopRight('')
+    await loadData()
+    toast('Data cleared')
+  }
+
   const updateBlock = (doorIdx: number, field: 'loaderName', value: string) => {
     setBlocks(prev => prev.map((b, i) => i === doorIdx ? { ...b, [field]: value } : b))
   }
@@ -418,6 +428,10 @@ export default function RouteSheet() {
               className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
               📨 Request Data
             </button>
+            <button onClick={clearData}
+              className="bg-red-900/50 text-red-400 px-4 py-2 rounded-lg text-xs font-bold hover:bg-red-900 flex items-center gap-1.5">
+              🗑️ Clear
+            </button>
             <label className="cursor-pointer bg-[#333] text-gray-300 px-4 py-2 rounded-lg text-xs font-bold hover:bg-[#444] flex items-center gap-1.5">
               📎 CSV
               <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
@@ -433,7 +447,7 @@ export default function RouteSheet() {
         <div className="rs-header">
           <div className="rs-date">{today}</div>
           <div className="rs-center">
-            <div className="rs-subtitle">FOND DU LAC, WI // BADGER LIQUOR // DMW&H</div>
+            <div className="rs-subtitle">FOND DU LAC, WI // BADGER LIQUOR</div>
             <div className="rs-title">ROUTES AT THE DOOR</div>
           </div>
           <div className="rs-topright">
@@ -456,7 +470,33 @@ export default function RouteSheet() {
         {/* Door blocks */}
         {blocks.map((block, doorIdx) => {
           return (
-            <div key={doorIdx} className="rs-door-block">
+            <div key={doorIdx}>
+              {/* Page break after 3rd door (13A, 13B, 14A on page 1 / 14B, 15A, 15B on page 2) */}
+              {doorIdx === 3 && <div className="rs-page-break" />}
+              {/* Repeat header on page 2 */}
+              {doorIdx === 3 && (
+                <>
+                  <div className="rs-header rs-page2-header">
+                    <div className="rs-date">{today}</div>
+                    <div className="rs-center">
+                      <div className="rs-subtitle">FOND DU LAC, WI // BADGER LIQUOR</div>
+                      <div className="rs-title">ROUTES AT THE DOOR</div>
+                    </div>
+                    <div className="rs-topright">
+                      <div className="rs-input rs-input-right" style={{ minHeight: 26, padding: '4px 6px', fontSize: 12 }}>{topRight}</div>
+                    </div>
+                  </div>
+                  <div className="rs-col-headers">
+                    <div className="rs-col rs-col-door">DOOR</div>
+                    <div className="rs-col rs-col-route">ROUTE</div>
+                    <div className="rs-col rs-col-sig">SIGNATURE</div>
+                    <div className="rs-col rs-col-truck">TRUCK #</div>
+                    <div className="rs-col rs-col-qty">CASE QTY</div>
+                    <div className="rs-col rs-col-notes">NOTES</div>
+                  </div>
+                </>
+              )}
+              <div className="rs-door-block">
               <div className="rs-door-rows">
                 {/* Door label cell */}
                 <div className="rs-door-label" style={{ gridRow: `1 / ${block.rows.length + 1}` }}>
@@ -500,13 +540,10 @@ export default function RouteSheet() {
               <button onClick={() => addRow(doorIdx)}
                 className="no-print rs-add-row">+ Add Row</button>
             </div>
+            </div>
           )
         })}
 
-        {/* Footer */}
-        <div className="rs-footer">
-          <div>SHIRAZ REPORTS DESIGNED BY DMW&H</div>
-        </div>
       </div>
     </div>
   )

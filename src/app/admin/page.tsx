@@ -9,6 +9,7 @@ import { runPreshiftAutomation, runAutomation } from '@/lib/automation'
 const NAV_ITEMS = [
   { id: 'trucks', label: '🚚 Truck Database', ready: true },
   { id: 'tractors', label: '🚛 Tractor Trailers', ready: true },
+  { id: 'fleet', label: '🚛 Fleet Inventory', ready: true },
   { id: 'automation', label: '⚡ Automation', ready: true },
   { id: 'statuses', label: '🏷️ Status Values', ready: true },
   { id: 'routes', label: '🗺️ Routes', ready: true },
@@ -281,32 +282,32 @@ export default function Admin() {
             <input type="color" value={newStatus.color} onChange={e => setNewStatus({ ...newStatus, color: e.target.value })} className="w-10 h-[38px] rounded cursor-pointer border-0" /></div>
           <button onClick={addStatus} className="bg-amber-500 text-black px-4 py-2 rounded text-sm font-bold hover:bg-amber-400">+ Add</button>
         </div>
-        <div className="space-y-2">
+        <div className="flex gap-2 flex-wrap">
           {statuses.map(s => (
-            <div key={s.id} className="flex items-center gap-2">
+            <div key={s.id} className="flex items-center gap-1.5">
               {editStatusId === s.id ? (
-                <>
+                <div className="flex items-center gap-1.5 bg-[#222] rounded-lg px-2 py-1.5 border border-amber-500/50">
                   <input type="color" value={editStatusForm.color}
                     onChange={e => setEditStatusForm({ ...editStatusForm, color: e.target.value })}
-                    className="w-8 h-8 rounded cursor-pointer border-0 flex-shrink-0" />
+                    className="w-6 h-6 rounded cursor-pointer border-0 flex-shrink-0" />
                   <input value={editStatusForm.name}
                     onChange={e => setEditStatusForm({ ...editStatusForm, name: e.target.value })}
                     onKeyDown={e => { if (e.key === 'Enter') saveEditStatus(); if (e.key === 'Escape') setEditStatusId(null) }}
                     autoFocus
-                    className="input-field text-sm py-1 flex-1" />
-                  <button onClick={saveEditStatus} className="text-green-500 hover:text-green-400 text-sm font-bold px-2">✓</button>
-                  <button onClick={() => setEditStatusId(null)} className="text-gray-500 hover:text-white text-sm px-1">✕</button>
-                </>
+                    className="input-field text-xs py-1 w-24" />
+                  <button onClick={saveEditStatus} className="text-green-500 hover:text-green-400 text-xs font-bold">✓</button>
+                  <button onClick={() => setEditStatusId(null)} className="text-gray-500 hover:text-white text-xs">✕</button>
+                </div>
               ) : (
-                <>
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white cursor-pointer hover:opacity-80 transition-opacity"
+                <div className="inline-flex items-center gap-1 rounded-lg pl-0.5 pr-1 py-0.5 hover:bg-white/5 group">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-bold text-white cursor-pointer hover:opacity-80 transition-opacity"
                     style={{ background: s.status_color }}
                     onClick={() => startEditStatus(s)} title="Click to edit">
                     {s.status_name}
                   </span>
-                  <button onClick={() => startEditStatus(s)} className="text-gray-500 hover:text-white text-xs">✏️</button>
-                  <button onClick={() => deleteStatus(s.id)} className="text-red-500/30 hover:text-red-500 text-xs">&times;</button>
-                </>
+                  <button onClick={() => startEditStatus(s)} className="text-gray-600 hover:text-white text-[10px] opacity-0 group-hover:opacity-100">✏️</button>
+                  <button onClick={() => deleteStatus(s.id)} className="text-red-500/20 hover:text-red-500 text-[10px] opacity-0 group-hover:opacity-100">&times;</button>
+                </div>
               )}
             </div>
           ))}
@@ -492,10 +493,20 @@ export default function Admin() {
     </div>
   )
 
+  function FleetSection() {
+    return (
+      <div>
+        <h2 className="text-xl font-bold mb-4">🚛 Fleet Inventory</h2>
+        <iframe src="/fleet" className="w-full border border-[#333] rounded-xl" style={{ height: 'calc(100vh - 160px)' }} />
+      </div>
+    )
+  }
+
   function renderSection() {
     switch (activeSection) {
       case 'trucks': return <TruckSection />
       case 'tractors': return <TractorSection />
+      case 'fleet': return <FleetSection />
       case 'automation': return <AutomationSection />
       case 'statuses': return statusSectionJSX()
       case 'routes': return <RouteSection />
@@ -561,7 +572,8 @@ export default function Admin() {
               <button onClick={openAddTractor} className="bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-400">+ Add Tractor</button>
             </div>
             <div className="bg-[#1a1a1a] border border-[#333] rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
+              {/* Desktop table */}
+              <table className="w-full text-sm hidden md:table">
                 <thead><tr className="text-xs text-amber-500 uppercase border-b border-[#333] bg-[#111]">
                   <th className="py-2.5 px-3 text-left">Driver</th>
                   <th className="px-3 text-left">Cell</th>
@@ -603,6 +615,34 @@ export default function Admin() {
                   {tractors.length === 0 && <tr><td colSpan={8} className="py-10 text-center text-gray-500">No tractors. Add trailers first, then add tractors.</td></tr>}
                 </tbody>
               </table>
+
+              {/* Mobile cards */}
+              <div className="md:hidden divide-y divide-white/5">
+                {tractors.map(t => (
+                  <div key={t.id} className="p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl font-extrabold text-amber-500">{t.truck_number}</span>
+                        <div>
+                          <div className="font-bold text-white text-sm">{t.driver_name || '—'}</div>
+                          <div className="text-xs text-gray-500">{t.driver_cell || ''}</div>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => openEditTractor(t)} className="text-gray-400 hover:text-white">✏️</button>
+                        <button onClick={() => deleteTractor(t.id)} className="text-red-500/50 hover:text-red-500">✕</button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1 text-xs">
+                      <div className="bg-[#222] rounded px-2 py-1"><span className="text-gray-500">{t.truck_number}-1:</span> <span className="font-bold text-green-400">{getTrailerNum(t, 1)}</span></div>
+                      <div className="bg-[#222] rounded px-2 py-1"><span className="text-gray-500">{t.truck_number}-2:</span> <span className="font-bold text-blue-400">{getTrailerNum(t, 2)}</span></div>
+                      <div className="bg-[#222] rounded px-2 py-1"><span className="text-gray-500">{t.truck_number}-3:</span> <span className="font-bold text-purple-400">{getTrailerNum(t, 3)}</span></div>
+                      <div className="bg-[#222] rounded px-2 py-1"><span className="text-gray-500">{t.truck_number}-4:</span> <span className="font-bold text-pink-400">{getTrailerNum(t, 4)}</span></div>
+                    </div>
+                  </div>
+                ))}
+                {tractors.length === 0 && <div className="py-10 text-center text-gray-500 text-sm">No tractors. Add trailers first, then add tractors.</div>}
+              </div>
             </div>
           </div>
         ) : (

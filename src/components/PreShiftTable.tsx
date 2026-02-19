@@ -2,10 +2,11 @@
 import { StagingDoor } from '@/lib/types'
 import { useRef } from 'react'
 
-export function PreShiftTable({ doors, onSave, compact = false }: {
+export function PreShiftTable({ doors, onSave, compact = false, activeTrucks }: {
   doors: StagingDoor[]
   onSave: (id: number, field: 'in_front' | 'in_back', value: string) => void
   compact?: boolean
+  activeTrucks?: Set<string>
 }) {
   const gridCols = compact ? 'grid-cols-[40px_1fr_1fr]' : 'grid-cols-[70px_1fr_1fr]'
 
@@ -31,12 +32,14 @@ export function PreShiftTable({ doors, onSave, compact = false }: {
               defaultValue={door.in_front || ''}
               color="text-green-400"
               compact={compact}
+              active={!!activeTrucks && !!door.in_front && activeTrucks.has(door.in_front)}
               onSave={val => onSave(door.id, 'in_front', val)}
             />
             <CellInput
               defaultValue={door.in_back || ''}
               color="text-blue-400"
               compact={compact}
+              active={!!activeTrucks && !!door.in_back && activeTrucks.has(door.in_back)}
               onSave={val => onSave(door.id, 'in_back', val)}
             />
           </div>
@@ -46,10 +49,11 @@ export function PreShiftTable({ doors, onSave, compact = false }: {
   )
 }
 
-function CellInput({ defaultValue, color, compact, onSave }: {
+function CellInput({ defaultValue, color, compact, active, onSave }: {
   defaultValue: string
   color: string
   compact?: boolean
+  active?: boolean
   onSave: (val: string) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -62,7 +66,7 @@ function CellInput({ defaultValue, color, compact, onSave }: {
 
   return (
     <div
-      className="border-l border-[#333] cursor-text"
+      className={`border-l border-[#333] cursor-text ${active ? 'bg-amber-500/15' : ''}`}
       style={{ touchAction: 'manipulation' }}
       onClick={handleCellTap}
     >

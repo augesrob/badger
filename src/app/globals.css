@@ -299,6 +299,10 @@ select.status-select { color: #fff !important; }
   color: #000;
 }
 
+/* Page break between page 1 and 2 */
+.rs-page-break { display: none; }
+.rs-page2-header { display: none; }
+
 /* Footer */
 .rs-footer {
   display: flex;
@@ -326,11 +330,20 @@ select.status-select { color: #fff !important; }
     margin: 0;
   }
 
-  /* Clean inputs for print - show values without input styling */
+  /* Page break control */
+  .rs-page-break {
+    display: block;
+    break-before: page;
+    page-break-before: always;
+    height: 0;
+  }
+  .rs-page2-header { display: grid; }
+
+  /* Clean inputs for print */
   .rs-input {
     border: none !important;
     background: transparent !important;
-    padding: 3px 4px;
+    padding: 2px 3px;
   }
   .rs-input:focus { background: transparent !important; }
   .rs-input::placeholder { color: transparent !important; }
@@ -338,21 +351,31 @@ select.status-select { color: #fff !important; }
   /* Remove interactive elements */
   .rs-remove-btn, .rs-add-row { display: none !important; }
 
-  /* Page settings */
+  /* Page settings - landscape, tight margins */
   @page {
     size: landscape;
-    margin: 0.4in;
+    margin: 0.3in;
   }
 
-  /* Avoid breaking door blocks across pages */
+  /* Compact everything to fit 3 doors per page */
+  .rs-header { padding: 6px 12px; }
+  .rs-title { font-size: 18px !important; }
+  .rs-date { font-size: 11px !important; }
+  .rs-subtitle { font-size: 9px !important; }
+  .rs-col-headers { font-size: 8px !important; }
+  .rs-col { padding: 3px 4px !important; }
+
+  .rs-door-block { border-bottom-width: 1px !important; }
+  .rs-door-name { font-size: 11px !important; }
+  .rs-loader-input { font-size: 9px !important; margin-top: 2px !important; }
+
+  .rs-row { border-bottom-width: 0.5px !important; }
+  .rs-input { font-size: 9px !important; min-height: 18px !important; padding: 1px 3px !important; }
+  .rs-truck-value { font-size: 9px !important; padding: 1px 3px !important; }
+
+  /* No page breaks within door blocks */
   .rs-door-block {
     break-inside: avoid;
     page-break-inside: avoid;
   }
-
-  /* Font sizes for print */
-  .rs-title { font-size: 20px; }
-  .rs-date { font-size: 12px; }
-  .rs-input { font-size: 11px; }
-  .rs-door-name { font-size: 13px; }
 }
