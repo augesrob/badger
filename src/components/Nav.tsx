@@ -8,6 +8,7 @@ const links = [
   { href: '/preshift', label: '📋 PreShift' },
   { href: '/movement', label: '🚚 Live Movement' },
   { href: '/fleet', label: '🚛 Fleet' },
+  { href: '/routesheet', label: '📄 Route Sheet' },
   { href: '/admin', label: '⚙️ Admin' },
 ]
 
