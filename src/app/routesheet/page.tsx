@@ -266,11 +266,12 @@ export default function RouteSheet() {
       content.style.transform = 'none'
       content.style.width = `${PAGE_WIDTH}px`
       const natural = content.scrollHeight
-      if (natural > 0 && natural < PAGE_HEIGHT * 2) {
-        const scale = Math.min(PAGE_HEIGHT / natural, 1.5) // Don't scale up too much
+      if (natural > 0) {
+        // Scale to 95% of page to leave breathing room for print rendering differences
+        const targetHeight = PAGE_HEIGHT * 0.95
+        const scale = Math.min(targetHeight / natural, 1.3)
         content.style.transform = `scale(${scale})`
         content.style.transformOrigin = 'top left'
-        // Scale width inversely so it still fills the page width
         content.style.width = `${PAGE_WIDTH / scale}px`
       }
     })
