@@ -249,6 +249,38 @@ export default function RouteSheet() {
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'waiting' | 'checking' | 'error'>('idle')
   const [emailError, setEmailError] = useState('')
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const page1Ref = useRef<HTMLDivElement>(null)
+  const page2Ref = useRef<HTMLDivElement>(null)
+
+  // Auto-scale page content to fill the print page height
+  // Landscape 8.5x11 with 0.25in margins = 8in tall usable = 768px at 96dpi
+  const autoScalePages = useCallback(() => {
+    const PAGE_HEIGHT = 768 // 8in * 96dpi
+    const PAGE_WIDTH = 1008 // 10.5in * 96dpi
+    ;[page1Ref, page2Ref].forEach(ref => {
+      const el = ref.current
+      if (!el) return
+      const content = el.querySelector('.rs-page-content') as HTMLElement
+      if (!content) return
+      // Reset scale to measure natural height
+      content.style.transform = 'none'
+      content.style.width = `${PAGE_WIDTH}px`
+      const natural = content.scrollHeight
+      if (natural > 0 && natural < PAGE_HEIGHT * 2) {
+        const scale = Math.min(PAGE_HEIGHT / natural, 1.5) // Don't scale up too much
+        content.style.transform = `scale(${scale})`
+        content.style.transformOrigin = 'top left'
+        // Scale width inversely so it still fills the page width
+        content.style.width = `${PAGE_WIDTH / scale}px`
+      }
+    })
+  }, [])
+
+  // Re-scale whenever blocks change
+  useEffect(() => {
+    const timer = setTimeout(autoScalePages, 100)
+    return () => clearTimeout(timer)
+  }, [blocks, autoScalePages])
 
   // Send ping email
   const sendPing = async () => {
@@ -363,6 +395,50 @@ export default function RouteSheet() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading])
 
+  const renderDoorBlock = (block: DoorBlock, doorIdx: number) => (
+    <div key={doorIdx} className="rs-door-block">
+      <div className="rs-door-rows">
+        <div className="rs-door-label" style={{ gridRow: `1 / ${block.rows.length + 1}` }}>
+          <div className="rs-door-name">{block.doorName}</div>
+          <input value={block.loaderName} onChange={e => updateBlock(doorIdx, 'loaderName', e.target.value)}
+            placeholder="Name" className="rs-input rs-input-center rs-loader-input" />
+        </div>
+        {block.rows.map((row, rowIdx) => (
+          <div key={rowIdx} className="rs-row">
+            <div className="rs-cell rs-col-route">
+              <input value={row.route} onChange={e => updateRow(doorIdx, rowIdx, 'route', e.target.value)}
+                className="rs-input rs-input-center" />
+            </div>
+            <div className="rs-cell rs-col-sig">
+              <input value={row.signature} onChange={e => updateRow(doorIdx, rowIdx, 'signature', e.target.value)}
+                className="rs-input" />
+            </div>
+            <div className="rs-cell rs-col-truck">
+              {row.truckNumber ? (
+                <div className="rs-truck-value">TR{row.truckNumber}</div>
+              ) : (
+                <input value="" onChange={e => updateRow(doorIdx, rowIdx, 'truckNumber', e.target.value)}
+                  className="rs-input rs-input-center rs-input-bold" />
+              )}
+            </div>
+            <div className="rs-cell rs-col-qty">
+              <input value={row.caseQty} onChange={e => updateRow(doorIdx, rowIdx, 'caseQty', e.target.value)}
+                className="rs-input rs-input-center" />
+            </div>
+            <div className="rs-cell rs-col-notes">
+              <input value={row.notes} onChange={e => updateRow(doorIdx, rowIdx, 'notes', e.target.value)}
+                className="rs-input" />
+              <button onClick={() => removeRow(doorIdx, rowIdx)}
+                className="no-print rs-remove-btn">✕</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <button onClick={() => addRow(doorIdx)}
+        className="no-print rs-add-row">+ Add Row</button>
+    </div>
+  )
+
   if (loading) return <div className="text-center py-20 text-gray-500">Loading...</div>
 
   return (
@@ -443,106 +519,57 @@ export default function RouteSheet() {
       {/* ===== PRINTABLE SHEET ===== */}
       <div className="route-sheet">
 
-        {/* Header row */}
-        <div className="rs-header">
-          <div className="rs-date">{today}</div>
-          <div className="rs-center">
-            <div className="rs-subtitle">FOND DU LAC, WI // BADGER LIQUOR</div>
-            <div className="rs-title">ROUTES AT THE DOOR</div>
-          </div>
-          <div className="rs-topright">
-            <input value={topRight} onChange={e => setTopRight(e.target.value)}
-              placeholder="Names..."
-              className="rs-input rs-input-right" />
-          </div>
-        </div>
-
-        {/* Column headers */}
-        <div className="rs-col-headers">
-          <div className="rs-col rs-col-door">DOOR</div>
-          <div className="rs-col rs-col-route">ROUTE</div>
-          <div className="rs-col rs-col-sig">SIGNATURE</div>
-          <div className="rs-col rs-col-truck">TRUCK #</div>
-          <div className="rs-col rs-col-qty">CASE QTY</div>
-          <div className="rs-col rs-col-notes">NOTES</div>
-        </div>
-
-        {/* Door blocks */}
-        {blocks.map((block, doorIdx) => {
-          return (
-            <div key={doorIdx}>
-              {/* Page break after 3rd door (13A, 13B, 14A on page 1 / 14B, 15A, 15B on page 2) */}
-              {doorIdx === 3 && <div className="rs-page-break" />}
-              {/* Repeat header on page 2 */}
-              {doorIdx === 3 && (
-                <>
-                  <div className="rs-header rs-page2-header">
-                    <div className="rs-date">{today}</div>
-                    <div className="rs-center">
-                      <div className="rs-subtitle">FOND DU LAC, WI // BADGER LIQUOR</div>
-                      <div className="rs-title">ROUTES AT THE DOOR</div>
-                    </div>
-                    <div className="rs-topright">
-                      <div className="rs-input rs-input-right" style={{ minHeight: 26, padding: '4px 6px', fontSize: 12 }}>{topRight}</div>
-                    </div>
-                  </div>
-                  <div className="rs-col-headers">
-                    <div className="rs-col rs-col-door">DOOR</div>
-                    <div className="rs-col rs-col-route">ROUTE</div>
-                    <div className="rs-col rs-col-sig">SIGNATURE</div>
-                    <div className="rs-col rs-col-truck">TRUCK #</div>
-                    <div className="rs-col rs-col-qty">CASE QTY</div>
-                    <div className="rs-col rs-col-notes">NOTES</div>
-                  </div>
-                </>
-              )}
-              <div className="rs-door-block">
-              <div className="rs-door-rows">
-                {/* Door label cell */}
-                <div className="rs-door-label" style={{ gridRow: `1 / ${block.rows.length + 1}` }}>
-                  <div className="rs-door-name">{block.doorName}</div>
-                  <input value={block.loaderName} onChange={e => updateBlock(doorIdx, 'loaderName', e.target.value)}
-                    placeholder="Name" className="rs-input rs-input-center rs-loader-input" />
-                </div>
-
-                {/* Data rows */}
-                {block.rows.map((row, rowIdx) => (
-                  <div key={rowIdx} className="rs-row">
-                    <div className="rs-cell rs-col-route">
-                      <input value={row.route} onChange={e => updateRow(doorIdx, rowIdx, 'route', e.target.value)}
-                        className="rs-input rs-input-center" />
-                    </div>
-                    <div className="rs-cell rs-col-sig">
-                      <input value={row.signature} onChange={e => updateRow(doorIdx, rowIdx, 'signature', e.target.value)}
-                        className="rs-input" />
-                    </div>
-                    <div className="rs-cell rs-col-truck">
-                      {row.truckNumber ? (
-                        <div className="rs-truck-value">TR{row.truckNumber}</div>
-                      ) : (
-                        <input value="" onChange={e => updateRow(doorIdx, rowIdx, 'truckNumber', e.target.value)}
-                          className="rs-input rs-input-center rs-input-bold" />
-                      )}
-                    </div>
-                    <div className="rs-cell rs-col-qty">
-                      <input value={row.caseQty} onChange={e => updateRow(doorIdx, rowIdx, 'caseQty', e.target.value)}
-                        className="rs-input rs-input-center" />
-                    </div>
-                    <div className="rs-cell rs-col-notes">
-                      <input value={row.notes} onChange={e => updateRow(doorIdx, rowIdx, 'notes', e.target.value)}
-                        className="rs-input" />
-                      <button onClick={() => removeRow(doorIdx, rowIdx)}
-                        className="no-print rs-remove-btn">✕</button>
-                    </div>
-                  </div>
-                ))}
+        {/* PAGE 1: first 3 doors */}
+        <div className="rs-page" ref={page1Ref}>
+          <div className="rs-page-content">
+            <div className="rs-header">
+              <div className="rs-date">{today}</div>
+              <div className="rs-center">
+                <div className="rs-subtitle">FOND DU LAC, WI // BADGER LIQUOR</div>
+                <div className="rs-title">ROUTES AT THE DOOR</div>
               </div>
-              <button onClick={() => addRow(doorIdx)}
-                className="no-print rs-add-row">+ Add Row</button>
+              <div className="rs-topright">
+                <input value={topRight} onChange={e => setTopRight(e.target.value)}
+                  placeholder="Names..."
+                  className="rs-input rs-input-right" />
+              </div>
             </div>
+            <div className="rs-col-headers">
+              <div className="rs-col rs-col-door">DOOR</div>
+              <div className="rs-col rs-col-route">ROUTE</div>
+              <div className="rs-col rs-col-sig">SIGNATURE</div>
+              <div className="rs-col rs-col-truck">TRUCK #</div>
+              <div className="rs-col rs-col-qty">CASE QTY</div>
+              <div className="rs-col rs-col-notes">NOTES</div>
             </div>
-          )
-        })}
+            {blocks.slice(0, 3).map((block, doorIdx) => renderDoorBlock(block, doorIdx))}
+          </div>
+        </div>
+
+        {/* PAGE 2: last 3 doors */}
+        <div className="rs-page rs-page-2" ref={page2Ref}>
+          <div className="rs-page-content">
+            <div className="rs-header">
+              <div className="rs-date">{today}</div>
+              <div className="rs-center">
+                <div className="rs-subtitle">FOND DU LAC, WI // BADGER LIQUOR</div>
+                <div className="rs-title">ROUTES AT THE DOOR</div>
+              </div>
+              <div className="rs-topright">
+                <div className="rs-static-text">{topRight}</div>
+              </div>
+            </div>
+            <div className="rs-col-headers">
+              <div className="rs-col rs-col-door">DOOR</div>
+              <div className="rs-col rs-col-route">ROUTE</div>
+              <div className="rs-col rs-col-sig">SIGNATURE</div>
+              <div className="rs-col rs-col-truck">TRUCK #</div>
+              <div className="rs-col rs-col-qty">CASE QTY</div>
+              <div className="rs-col rs-col-notes">NOTES</div>
+            </div>
+            {blocks.slice(3).map((block, doorIdx) => renderDoorBlock(block, doorIdx + 3))}
+          </div>
+        </div>
 
       </div>
     </div>

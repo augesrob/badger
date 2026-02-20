@@ -299,9 +299,10 @@ select.status-select { color: #fff !important; }
   color: #000;
 }
 
-/* Page break between page 1 and 2 */
-.rs-page-break { display: none; }
-.rs-page2-header { display: none; }
+/* Page container (for 2-page print layout) */
+.rs-page { margin-bottom: 16px; }
+.rs-page-2 { /* hidden on screen, shown in print */ }
+.rs-static-text { padding: 4px 6px; font-size: 12px; text-align: right; color: #000; }
 
 /* Footer */
 .rs-footer {
@@ -319,8 +320,7 @@ select.status-select { color: #fff !important; }
 /* ========================================= */
 
 @media print {
-  /* Hide everything except the sheet */
-  body { background: #fff !important; margin: 0; padding: 0; font-size: 8px !important; }
+  body { background: #fff !important; margin: 0; padding: 0; }
   nav, .no-print { display: none !important; }
   main { max-width: none !important; padding: 0 !important; margin: 0 !important; }
 
@@ -330,65 +330,66 @@ select.status-select { color: #fff !important; }
     margin: 0;
   }
 
-  /* Page break control */
-  .rs-page-break {
-    display: block;
-    break-before: page;
-    page-break-before: always;
-    height: 0;
+  /* Each rs-page = exactly one printed landscape page */
+  .rs-page {
+    page-break-after: always;
+    break-after: page;
+    width: 10.5in;
+    height: 8in;
+    overflow: hidden;
+    position: relative;
+    margin: 0;
+    padding: 0;
   }
-  .rs-page2-header { display: grid; }
+  .rs-page:last-child {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
 
-  /* Clean inputs for print */
+  /* Content is auto-scaled by JS to fill the page */
+  .rs-page-content {
+    transform-origin: top left;
+  }
+
+  /* Clean inputs */
   .rs-input {
     border: none !important;
     background: transparent !important;
-    padding: 0 2px !important;
+    padding: 1px 3px !important;
     min-height: 0 !important;
     height: auto !important;
-    line-height: 1.2 !important;
+    line-height: 1.3 !important;
   }
   .rs-input:focus { background: transparent !important; }
   .rs-input::placeholder { color: transparent !important; }
 
-  /* Remove interactive elements */
   .rs-remove-btn, .rs-add-row { display: none !important; }
 
-  /* Page settings - landscape, minimal margins */
   @page {
     size: landscape;
-    margin: 0.25in 0.3in;
+    margin: 0.25in;
   }
 
-  /* Ultra-compact header */
-  .rs-header { padding: 2px 8px !important; }
-  .rs-title { font-size: 14px !important; letter-spacing: 1px !important; }
-  .rs-date { font-size: 9px !important; }
-  .rs-subtitle { font-size: 7px !important; }
-  .rs-topright { font-size: 9px !important; }
+  /* Compact print sizing */
+  .rs-header { padding: 4px 10px !important; }
+  .rs-title { font-size: 16px !important; letter-spacing: 1px !important; }
+  .rs-date { font-size: 10px !important; }
+  .rs-subtitle { font-size: 8px !important; letter-spacing: 0 !important; }
+  .rs-static-text { font-size: 10px !important; padding: 2px 4px !important; }
 
-  /* Ultra-compact column headers */
-  .rs-col-headers { font-size: 7px !important; }
-  .rs-col { padding: 1px 2px !important; }
+  .rs-col-headers { font-size: 7px !important; border-bottom-width: 1px !important; }
+  .rs-col { padding: 2px 3px !important; }
 
-  /* Door blocks */
-  .rs-door-block { border-bottom-width: 1.5px !important; }
+  .rs-door-block { border-bottom-width: 1px !important; }
   .rs-door-name { font-size: 10px !important; }
-  .rs-loader-input { font-size: 8px !important; margin-top: 1px !important; padding: 0 !important; }
-  .rs-door-label { padding: 1px 2px !important; }
+  .rs-door-label { padding: 2px !important; }
+  .rs-loader-input { font-size: 8px !important; margin-top: 1px !important; padding: 0 2px !important; }
 
-  /* Ultra-compact rows - this is the key */
-  .rs-row { border-bottom-width: 0.5px !important; }
+  .rs-row { border-bottom: 0.5px solid #ddd !important; }
   .rs-cell { padding: 0 !important; }
-  .rs-input { font-size: 8px !important; padding: 0 2px !important; }
-  .rs-truck-value { font-size: 8px !important; padding: 0 2px !important; line-height: 1.2 !important; }
+  .rs-input { font-size: 9px !important; padding: 1px 3px !important; }
+  .rs-truck-value { font-size: 9px !important; padding: 1px 3px !important; line-height: 1.3 !important; }
 
-  /* No page breaks within door blocks */
-  .rs-door-block {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  /* Footer hidden in print */
+  .rs-door-block { break-inside: avoid; page-break-inside: avoid; }
   .rs-footer { display: none !important; }
 }
