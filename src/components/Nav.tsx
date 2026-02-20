@@ -6,6 +6,7 @@ import { useState, useRef, useEffect } from 'react'
 
 const links = [
   { href: '/printroom', label: '🖨️ Print Room', children: [
+    { href: '/printroom', label: '🖨️ Print Room' },
     { href: '/routesheet', label: '📄 Route Sheet' },
   ]},
   { href: '/preshift', label: '📋 PreShift' },
@@ -48,29 +49,21 @@ export default function Nav() {
             if (l.children) {
               return (
                 <div key={l.href} className="relative">
-                  <div className="flex items-center">
-                    <Link href={l.href}
-                      className={`pl-4 pr-1 py-3 text-sm font-medium whitespace-nowrap border-b-[3px] transition-colors ${
-                        active
-                          ? 'text-amber-500 border-amber-500 bg-amber-500/5'
-                          : 'text-muted border-transparent hover:text-amber-500'
-                      }`}>
-                      {l.label}
-                    </Link>
-                    <button
-                      onClick={() => setOpenDropdown(openDropdown === l.href ? null : l.href)}
-                      className={`pr-3 py-3 text-[10px] border-b-[3px] transition-colors ${
-                        active ? 'text-amber-500 border-amber-500 bg-amber-500/5' : 'text-muted border-transparent hover:text-amber-500'
-                      }`}>
-                      ▼
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => setOpenDropdown(openDropdown === l.href ? null : l.href)}
+                    className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-[3px] transition-colors flex items-center gap-1 ${
+                      active
+                        ? 'text-amber-500 border-amber-500 bg-amber-500/5'
+                        : 'text-muted border-transparent hover:text-amber-500'
+                    }`}>
+                    {l.label} <span className="text-[9px] ml-0.5">▾</span>
+                  </button>
                   {openDropdown === l.href && (
-                    <div className="absolute top-full left-0 mt-0 bg-nav border border-amber-500/30 rounded-b-lg shadow-xl min-w-[160px] z-50">
+                    <div className="absolute top-full left-0 bg-nav border border-amber-500/30 rounded-b-lg shadow-xl min-w-[180px] z-50 overflow-hidden">
                       {l.children.map(c => (
                         <Link key={c.href} href={c.href}
                           onClick={() => setOpenDropdown(null)}
-                          className={`block px-4 py-2.5 text-sm font-medium transition-colors ${
+                          className={`block px-4 py-3 text-sm font-medium transition-colors border-b border-white/5 last:border-0 ${
                             pathname === c.href
                               ? 'text-amber-500 bg-amber-500/10'
                               : 'text-muted hover:text-amber-500 hover:bg-amber-500/5'
