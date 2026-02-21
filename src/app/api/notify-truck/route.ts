@@ -21,13 +21,8 @@ const supabase = createClient(
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY ?? '')
 
-  // Warn early if env vars missing
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    console.error('notify-truck: SUPABASE_SERVICE_ROLE_KEY not set')
-  }
-  if (!process.env.RESEND_API_KEY) {
-    console.error('notify-truck: RESEND_API_KEY not set')
-  }
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) console.error('notify-truck: SUPABASE_SERVICE_ROLE_KEY not set')
+  if (!process.env.RESEND_API_KEY) console.error('notify-truck: RESEND_API_KEY not set')
 
   try {
     const { truck_number, new_status, location, changed_by } = await req.json()
@@ -35,43 +30,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'truck_number and new_status required' }, { status: 400 })
     }
 
-    // Normalize: strip TR prefix, e.g. "TR170-1" -> "170-1"
     const normalized = truck_number.replace(/^TR/i, '')
-    // Base number: "170-1" -> "170", "170" -> "170"
     const base = normalized.split('-')[0]
     const isSemi = normalized.includes('-')
 
-    // Fetch ALL subscriptions — we'll filter in JS to support both match modes:
-    //   subscriber "170"    → matches TR170, TR170-1, TR170-2 (all trailers)
-    //   subscriber "170-1"  → matches only TR170-1 (specific trailer)
-    const { data: allSubs } = await supabase
+    console.log(`notify-truck: truck=${normalized}, base=${base}, isSemi=${isSemi}, status=${new_status}`)
+
+    const { data: allSubs, error: subError } = await supabase
       .from('truck_subscriptions')
       .select('user_id, truck_number, notify_sms, profiles(phone, carrier, sms_enabled, display_name)')
       .eq('notify_app', true)
 
-    console.log(`notify-truck: truck=${normalized}, base=${base}, isSemi=${isSemi}`)
+    if (subError) console.error('notify-truck: subscription query error', subError)
     console.log(`notify-truck: total subscriptions fetched: ${allSubs?.length ?? 0}`)
 
-    if (!allSubs) return NextResponse.json({ sent: 0, message: 'No subscribers' })
+    if (!allSubs || allSubs.length === 0) {
+      return NextResponse.json({ sent: 0, message: 'No subscribers' })
+    }
 
-    const subs = allSubs.filter(s => {
-
-    // Match logic
+    // Match: base-only sub (e.g. "223") matches all trailers; specific sub (e.g. "223-2") matches exact
     const subs = allSubs.filter(s => {
       const sub = s.truck_number.replace(/^TR/i, '')
       const subBase = sub.split('-')[0]
-      const subIsSemi = sub.includes('-')
-
-      if (subIsSemi) {
-        // Specific trailer sub (e.g. "170-1") — only matches exact truck
+      const subSpecific = sub.includes('-')
+      if (subSpecific) {
         return sub === normalized
       } else {
-        // Base number sub (e.g. "170") — matches the base truck and ALL its trailers
         return subBase === base
       }
     })
 
-    // Deduplicate by user_id (in case someone somehow subscribed to both "170" and "170-1")
+    // Deduplicate by user_id
     const seen = new Set<string>()
     const uniqueSubs = subs.filter(s => {
       if (seen.has(s.user_id)) return false
@@ -79,7 +68,7 @@ export async function POST(req: NextRequest) {
       return true
     })
 
-    console.log(`notify-truck: matched ${subs.length} subscribers, ${uniqueSubs.length} unique`)
+    console.log(`notify-truck: matched ${subs.length} subs, ${uniqueSubs.length} unique`)
 
     if (uniqueSubs.length === 0) {
       return NextResponse.json({ sent: 0, message: 'No matching subscribers' })
@@ -90,7 +79,7 @@ export async function POST(req: NextRequest) {
     const msg = `🚚 ${truckLabel}${trailerLabel}: ${new_status}${location ? ` @ ${location}` : ''}${changed_by ? ` · ${changed_by}` : ''}`
 
     // Insert in-app notifications
-    await supabase.from('notifications').insert(
+    const { error: notifError } = await supabase.from('notifications').insert(
       uniqueSubs.map(s => ({
         user_id: s.user_id,
         truck_number: normalized,
@@ -98,6 +87,7 @@ export async function POST(req: NextRequest) {
         type: 'status_change',
       }))
     )
+    if (notifError) console.error('notify-truck: notification insert error', notifError)
 
     // Send SMS
     const smsResults: string[] = []
@@ -107,17 +97,18 @@ export async function POST(req: NextRequest) {
       const gateway = GATEWAYS[p.carrier]
       if (!gateway) continue
       const to = `${p.phone}@${gateway}`
+      console.log(`notify-truck: SMS attempt to ${to}`)
       try {
-        console.log(`notify-truck: SMS attempt to ${to}`)
-        await resend.emails.send({
+        const result = await resend.emails.send({
           from: 'Badger <notifications@badger.augesrob.net>',
           to,
           subject: msg,
           text: msg,
         })
+        console.log(`notify-truck: SMS result`, result)
         smsResults.push(to)
       } catch (e) {
-        console.error('SMS send failed:', to, e)
+        console.error('notify-truck: SMS send failed:', to, e)
       }
     }
 
