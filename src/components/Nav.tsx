@@ -23,8 +23,7 @@ export default function Nav() {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node) &&
-          btnRef.current && !btnRef.current.contains(e.target as Node)) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setOpen(false)
       }
     }
@@ -43,7 +42,7 @@ export default function Nav() {
         </Link>
         <div className="flex flex-1">
           {/* Print Room with dropdown */}
-          <div className="relative">
+          <div className="relative" ref={menuRef}>
             <button ref={btnRef}
               onClick={() => setOpen(!open)}
               className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-[3px] transition-colors flex items-center gap-1 ${
@@ -53,6 +52,24 @@ export default function Nav() {
               }`}>
               🖨️ Print Room <span className="text-[9px] opacity-60">▾</span>
             </button>
+
+            {/* Dropdown inside relative parent so it positions correctly */}
+            {open && (
+              <div className="absolute left-0 top-full bg-nav border border-amber-500/30 rounded-b-lg shadow-2xl min-w-[180px] z-[100]"
+                style={{ marginTop: '-2px' }}>
+                {printRoomChildren.map(c => (
+                  <Link key={c.href} href={c.href}
+                    onClick={() => setOpen(false)}
+                    className={`block px-4 py-3 text-sm font-medium transition-colors border-b border-white/5 last:border-0 ${
+                      pathname === c.href
+                        ? 'text-amber-500 bg-amber-500/10'
+                        : 'text-muted hover:text-amber-500 hover:bg-amber-500/5'
+                    }`}>
+                    {c.label}
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Other links */}
@@ -72,24 +89,6 @@ export default function Nav() {
         </button>
       </div>
 
-      {/* Dropdown rendered OUTSIDE the flex container so overflow cant clip it */}
-      {open && (
-        <div ref={menuRef}
-          className="absolute left-0 top-full bg-nav border border-amber-500/30 rounded-b-lg shadow-2xl min-w-[200px] z-[100] ml-[90px]"
-          style={{ marginTop: '-2px' }}>
-          {printRoomChildren.map(c => (
-            <Link key={c.href} href={c.href}
-              onClick={() => setOpen(false)}
-              className={`block px-4 py-3 text-sm font-medium transition-colors border-b border-white/5 last:border-0 ${
-                pathname === c.href
-                  ? 'text-amber-500 bg-amber-500/10'
-                  : 'text-muted hover:text-amber-500 hover:bg-amber-500/5'
-              }`}>
-              {c.label}
-            </Link>
-          ))}
-        </div>
-      )}
     </nav>
   )
 }
