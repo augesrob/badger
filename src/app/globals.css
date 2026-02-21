@@ -419,9 +419,9 @@ select.status-select { color: #fff !important; }
 .cs2-door-entries { flex:1; display:flex; flex-direction:column; }
 .cs2-entry { border-bottom:1px solid #ddd; padding:2px 2px 1px; position:relative; }
 .cs2-entry:last-child { border-bottom:none; }
-.cs2-entry-row { display:flex; align-items:center; gap:1px; }
+.cs2-entry-row { display:flex; align-items:center; gap:1px; overflow:visible; }
 .cs2-label { font-size:7px; color:#666; flex-shrink:0; width:12px; line-height:1; }
-.cs2-input { background:transparent !important; border:none !important; outline:none !important; color:#000 !important; font-family:Arial,Helvetica,sans-serif !important; width:100% !important; padding:0 1px !important; box-shadow:none !important; border-radius:0 !important; }
+.cs2-input { background:transparent !important; border:none !important; outline:none !important; color:#000 !important; font-family:Arial,Helvetica,sans-serif !important; width:100% !important; min-width:0 !important; padding:0 1px !important; box-shadow:none !important; border-radius:0 !important; }
 .cs2-route-input { font-size:11px !important; font-weight:700 !important; line-height:1.2 !important; }
 .cs2-truck-input { font-size:10px !important; line-height:1.2 !important; }
 .cs2-notes-input { font-size:9px !important; font-style:italic !important; color:#444 !important; width:100% !important; line-height:1.1 !important; display:block; padding:0 1px !important; }

@@ -51,6 +51,7 @@ export default function RouteSheet() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
   const [csvData, setCsvData] = useState<CSVRoute[]>([])
   const restoredFromStorage = useRef(false)
+  const tractorNumsRef = useRef<Set<string>>(new Set())
 
   const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
 
@@ -67,6 +68,7 @@ export default function RouteSheet() {
     // Build set of tractor numbers for semi detection
     const tNums = new Set<string>()
     ;(tractorsRes.data || []).forEach((t: { truck_number: number }) => tNums.add(String(t.truck_number)))
+    tractorNumsRef.current = tNums
 
     // Group entries by door
     const grouped: Record<string, (PrintroomEntry & { loading_doors: { door_name: string } | null })[]> = {}
@@ -241,20 +243,15 @@ export default function RouteSheet() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-
     setSyncStatus('waiting')
     const text = await file.text()
-
-    // Load fresh printroom data then merge
-    const result = await loadData()
-    if (result) {
-      const merged = parseAndMergeCSV(text, result.blocks, result.tNums)
-      setBlocks(merged)
-      setSyncStatus('synced')
-      toast('Route data synced!')
-    }
-
-    // Reset file input
+    // Use current blocks state + cached tractor nums — do NOT reload from DB (would wipe typed data)
+    setBlocks(prev => {
+      const merged = parseAndMergeCSV(text, prev, tractorNumsRef.current)
+      return merged
+    })
+    setSyncStatus('synced')
+    toast('Route data synced!')
     e.target.value = ''
   }
 
@@ -413,14 +410,11 @@ export default function RouteSheet() {
         })
         const statusData = await statusRes.json()
         if (statusData.data?.csv_data) {
-          const result = await loadData()
-          if (result) {
-            const merged = parseAndMergeCSV(statusData.data.csv_data, result.blocks, result.tNums)
-            setBlocks(merged)
-            setSyncStatus('synced')
-            setEmailStatus('idle')
-            toast('Route data received and synced!')
-          }
+          // Use current blocks + cached tractors — do NOT reload (would wipe typed data)
+          setBlocks(prev => parseAndMergeCSV(statusData.data.csv_data, prev, tractorNumsRef.current))
+          setSyncStatus('synced')
+          setEmailStatus('idle')
+          toast('Route data received and synced!')
         }
       } else {
         // Not found yet, keep waiting
@@ -456,13 +450,9 @@ export default function RouteSheet() {
           setEmailStatus('waiting')
           startPolling()
         } else if (data.data?.csv_data && syncStatus === 'idle') {
-          // Auto-load existing data
-          const result = await loadData()
-          if (result) {
-            const merged = parseAndMergeCSV(data.data.csv_data, result.blocks, result.tNums)
-            setBlocks(merged)
-            setSyncStatus('synced')
-          }
+          // Auto-load existing data — use current blocks, don't reload from DB
+          setBlocks(prev => parseAndMergeCSV(data.data.csv_data, prev, tractorNumsRef.current))
+          setSyncStatus('synced')
         }
       } catch {
         // API not configured yet, that's fine
