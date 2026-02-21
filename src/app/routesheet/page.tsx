@@ -50,7 +50,9 @@ export default function RouteSheet() {
   const topRightRef = useRef('')
   const setTopRight = (val: string) => { topRightRef.current = val; _setTopRight(val) }
   const [loading, setLoading] = useState(true)
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
+  const [syncStatus, _setSyncStatus] = useState<SyncStatus>('idle')
+  const syncStatusRef = useRef<SyncStatus>('idle')
+  const setSyncStatus = (val: SyncStatus) => { syncStatusRef.current = val; _setSyncStatus(val) }
   const [csvData, setCsvData] = useState<CSVRoute[]>([])
   const restoredFromStorage = useRef(false)
   const tractorNumsRef = useRef<Set<string>>(new Set())
@@ -123,6 +125,8 @@ export default function RouteSheet() {
         setTopRight(saved.topRight || '')
         setSyncStatus((saved.syncStatus as SyncStatus) || 'idle')
         setLoading(false)
+        // Re-save immediately to keep storage fresh (do NOT let useEffect handle it — timing is unreliable)
+        saveToStorage(mergedBlocks, saved.topRight || '', saved.syncStatus || 'idle')
         return { blocks: mergedBlocks, tNums }
       }
     }
@@ -134,10 +138,8 @@ export default function RouteSheet() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  // Auto-save to localStorage whenever data changes
-  useEffect(() => {
-    if (!loading) saveToStorage(blocks, topRight, syncStatus)
-  }, [blocks, topRight, syncStatus, loading])
+  // NOTE: Do NOT use useEffect to auto-save — React batching makes it fire with stale state.
+  // Instead, every mutation calls saveToStorage() explicitly with the new value.
 
   // Parse CSV data and merge with blocks
   const parseAndMergeCSV = useCallback((csvText: string, currentBlocks: DoorBlock[], tractorNumbers: Set<string>) => {
@@ -195,15 +197,17 @@ export default function RouteSheet() {
         }
 
         const truckKey = row.truckNumber
+        // Normalize: strip TR prefix for comparison
+        const truckKeyNorm = truckKey.replace(/^TR/i, '').toLowerCase()
 
         // Gap marker — display as route label only, no truck number
-        if (truckKey.toLowerCase() === 'gap' || truckKey.toLowerCase() === 'trgap') {
+        if (truckKeyNorm === 'gap') {
           newRows.push({ ...row, truckNumber: '', route: 'gap', caseQty: '', signature: '' })
           return
         }
 
         // CPU/TR999 special handling — deduplicate to one row
-        if (truckKey === '999' || truckKey.toLowerCase() === 'cpu') {
+        if (truckKeyNorm === '999' || truckKeyNorm === 'cpu') {
           // Only add CPU once per block
           if (newRows.some(r => r.route === 'CPU')) return
           const cpuRoutes = routesByTruck['999'] || routesByTruck['cpu'] || []
@@ -211,8 +215,10 @@ export default function RouteSheet() {
           return
         }
 
-        const semi = isSemi(truckKey)
-        const truckRoutes = getSemiRoutes(truckKey)
+        // Strip TR prefix for semi detection and CSV lookup
+        const lookupKey = truckKey.replace(/^TR/i, '')
+        const semi = isSemi(lookupKey)
+        const truckRoutes = getSemiRoutes(lookupKey)
 
         if (!truckRoutes || truckRoutes.length === 0) {
           // No CSV data for this truck
@@ -278,12 +284,21 @@ export default function RouteSheet() {
     toast('Data cleared')
   }
 
+  // Wrapper: mutate blocks AND immediately persist to localStorage
+  const mutateBlocks = (fn: (prev: DoorBlock[]) => DoorBlock[]) => {
+    setBlocks(prev => {
+      const next = fn(prev)
+      saveToStorage(next, topRightRef.current, syncStatusRef.current)
+      return next
+    })
+  }
+
   const updateBlock = (doorIdx: number, field: 'loaderName', value: string) => {
-    setBlocks(prev => prev.map((b, i) => i === doorIdx ? { ...b, [field]: value } : b))
+    mutateBlocks(prev => prev.map((b, i) => i === doorIdx ? { ...b, [field]: value } : b))
   }
 
   const updateRow = (doorIdx: number, rowIdx: number, field: keyof RowData, value: string) => {
-    setBlocks(prev => prev.map((b, i) => {
+    mutateBlocks(prev => prev.map((b, i) => {
       if (i !== doorIdx) return b
       const newRows = b.rows.map((r, j) => j === rowIdx ? { ...r, [field]: value } : r)
       return { ...b, rows: newRows }
@@ -291,14 +306,14 @@ export default function RouteSheet() {
   }
 
   const addRow = (doorIdx: number) => {
-    setBlocks(prev => prev.map((b, i) => {
+    mutateBlocks(prev => prev.map((b, i) => {
       if (i !== doorIdx) return b
       return { ...b, rows: [...b.rows, { route: '', signature: '', truckNumber: '', caseQty: '', notes: '' }] }
     }))
   }
 
   const removeRow = (doorIdx: number, rowIdx: number) => {
-    setBlocks(prev => prev.map((b, i) => {
+    mutateBlocks(prev => prev.map((b, i) => {
       if (i !== doorIdx) return b
       if (b.rows.length <= 1) return b
       return { ...b, rows: b.rows.filter((_, j) => j !== rowIdx) }
