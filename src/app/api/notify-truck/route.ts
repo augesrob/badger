@@ -20,6 +20,15 @@ const supabase = createClient(
 
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY ?? '')
+
+  // Warn early if env vars missing
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('notify-truck: SUPABASE_SERVICE_ROLE_KEY not set')
+  }
+  if (!process.env.RESEND_API_KEY) {
+    console.error('notify-truck: RESEND_API_KEY not set')
+  }
+
   try {
     const { truck_number, new_status, location, changed_by } = await req.json()
     if (!truck_number || !new_status) {
@@ -40,7 +49,12 @@ export async function POST(req: NextRequest) {
       .select('user_id, truck_number, notify_sms, profiles(phone, carrier, sms_enabled, display_name)')
       .eq('notify_app', true)
 
+    console.log(`notify-truck: truck=${normalized}, base=${base}, isSemi=${isSemi}`)
+    console.log(`notify-truck: total subscriptions fetched: ${allSubs?.length ?? 0}`)
+
     if (!allSubs) return NextResponse.json({ sent: 0, message: 'No subscribers' })
+
+    const subs = allSubs.filter(s => {
 
     // Match logic
     const subs = allSubs.filter(s => {
@@ -64,6 +78,8 @@ export async function POST(req: NextRequest) {
       seen.add(s.user_id)
       return true
     })
+
+    console.log(`notify-truck: matched ${subs.length} subscribers, ${uniqueSubs.length} unique`)
 
     if (uniqueSubs.length === 0) {
       return NextResponse.json({ sent: 0, message: 'No matching subscribers' })
@@ -92,6 +108,7 @@ export async function POST(req: NextRequest) {
       if (!gateway) continue
       const to = `${p.phone}@${gateway}`
       try {
+        console.log(`notify-truck: SMS attempt to ${to}`)
         await resend.emails.send({
           from: 'Badger <notifications@badger.augesrob.net>',
           to,
