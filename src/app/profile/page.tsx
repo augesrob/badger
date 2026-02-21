@@ -191,7 +191,7 @@ export default function ProfilePage() {
       {/* Truck subscriptions */}
       <div className="bg-card border border-[#333] rounded-2xl p-6 space-y-4">
         <h2 className="font-bold text-sm text-muted uppercase tracking-wider">🚚 Truck Subscriptions</h2>
-        <p className="text-xs text-muted">Get notified when a truck's status changes in Live Movement. You can subscribe to multiple trucks.</p>
+        <p className="text-xs text-muted">Get notified when a truck&apos;s status changes in Live Movement. You can subscribe to multiple trucks.</p>
         <div className="bg-[#1a1a1a] border border-[#333] rounded-lg p-3 space-y-1 text-xs text-muted">
           <div><span className="text-amber-400 font-mono">170</span> — all trailers on truck 170 <span className="text-muted/60">(TR170, TR170-1, TR170-2…)</span></div>
           <div><span className="text-amber-400 font-mono">170-1</span> — only trailer 1 on truck 170 <span className="text-muted/60">(specific)</span></div>

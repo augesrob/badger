@@ -144,7 +144,7 @@ export default function PrintRoom() {
         await runPreshiftAutomation()
       }
     }
-  }, [toast])
+  }, [toast, stagingDoors])
 
   const addRow = async (doorId: number, batch: number) => {
     const doorEntries = entries[doorId]?.filter(e => e.batch_number === batch) || []
