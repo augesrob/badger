@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
       console.log(`notify-truck: SMS attempt to ${to}`)
       try {
         const result = await resend.emails.send({
-          from: 'Badger <notifications@badger.augesrob.net>',
+          from: 'Badger <onboarding@resend.dev>',
           to,
           subject: msg,
           text: msg,
