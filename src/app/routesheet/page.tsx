@@ -4,6 +4,22 @@ import { supabase } from '@/lib/supabase'
 import { PrintroomEntry } from '@/lib/types'
 import { useToast } from '@/components/Toast'
 
+const STORAGE_KEY = 'badger-routesheet-v1'
+
+function saveToStorage(blocks: DoorBlock[], topRight: string, syncStatus: string) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ blocks, topRight, syncStatus }))
+  } catch { /* ignore */ }
+}
+
+function loadFromStorage(): { blocks: DoorBlock[]; topRight: string; syncStatus: string } | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return null
+}
+
 interface DoorBlock {
   doorName: string
   loaderName: string
@@ -34,6 +50,7 @@ export default function RouteSheet() {
   const [loading, setLoading] = useState(true)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
   const [csvData, setCsvData] = useState<CSVRoute[]>([])
+  const restoredFromStorage = useRef(false)
 
   const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
 
@@ -78,12 +95,45 @@ export default function RouteSheet() {
       return { doorName: door.door_name, loaderName: '', rows }
     })
 
+    // On first load, restore saved data and merge with fresh printroom truck structure
+    if (!restoredFromStorage.current) {
+      restoredFromStorage.current = true
+      const saved = loadFromStorage()
+      if (saved && saved.blocks && saved.blocks.length > 0) {
+        // Merge: use saved data but add any new trucks from printroom not yet in saved
+        const mergedBlocks = newBlocks.map(freshBlock => {
+          const savedBlock = saved.blocks.find(b => b.doorName === freshBlock.doorName)
+          if (!savedBlock) return freshBlock
+          // For each fresh truck row, check if saved has data for it
+          const mergedRows = freshBlock.rows.map(freshRow => {
+            if (!freshRow.truckNumber) return freshRow
+            const savedRow = savedBlock.rows.find(r => r.truckNumber === freshRow.truckNumber)
+            return savedRow ? savedRow : freshRow
+          })
+          // Append any manually-added rows in saved that aren't in fresh (manual additions)
+          const freshTrucks = new Set(freshBlock.rows.map(r => r.truckNumber))
+          const extraRows = savedBlock.rows.filter(r => !r.truckNumber || !freshTrucks.has(r.truckNumber))
+          return { ...savedBlock, rows: [...mergedRows, ...extraRows] }
+        })
+        setBlocks(mergedBlocks)
+        setTopRight(saved.topRight || '')
+        setSyncStatus((saved.syncStatus as SyncStatus) || 'idle')
+        setLoading(false)
+        return { blocks: mergedBlocks, tNums }
+      }
+    }
+
     setBlocks(newBlocks)
     setLoading(false)
     return { blocks: newBlocks, tNums }
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // Auto-save to localStorage whenever data changes
+  useEffect(() => {
+    if (!loading) saveToStorage(blocks, topRight, syncStatus)
+  }, [blocks, topRight, syncStatus, loading])
 
   // Parse CSV data and merge with blocks
   const parseAndMergeCSV = useCallback((csvText: string, currentBlocks: DoorBlock[], tractorNumbers: Set<string>) => {
@@ -210,6 +260,8 @@ export default function RouteSheet() {
 
   const clearData = async () => {
     if (!confirm('Clear all route data and reload from Print Room?')) return
+    localStorage.removeItem(STORAGE_KEY)
+    restoredFromStorage.current = false
     setCsvData([])
     setSyncStatus('idle')
     setEmailStatus('idle')

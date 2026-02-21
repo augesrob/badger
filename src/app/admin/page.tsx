@@ -248,6 +248,7 @@ export default function Admin() {
     if (type === 'printroom' || type === 'all') { await supabase.from('printroom_entries').delete().neq('id', 0); await supabase.from('loading_doors').update({ is_done_for_night: false, door_status: 'Loading' }).neq('id', 0) }
     if (type === 'preshift' || type === 'all') { await supabase.from('staging_doors').update({ in_front: null, in_back: null }).neq('id', 0) }
     if (type === 'movement' || type === 'all') { await supabase.from('live_movement').delete().neq('id', 0) }
+    if (type === 'documents' || type === 'all') { localStorage.removeItem('badger-routesheet-v1') }
     await supabase.from('reset_log').insert({ reset_type: type, reset_by: 'manual' })
     toast(`Reset ${type} complete`); loadAll()
   }
@@ -788,6 +789,7 @@ export default function Admin() {
             { type: 'printroom', icon: '🖨️', label: 'Reset Print Room', desc: 'Clears entries and resets door statuses.' },
             { type: 'preshift', icon: '📋', label: 'Reset PreShift', desc: 'Clears staging door assignments.' },
             { type: 'movement', icon: '🚚', label: 'Reset Movement', desc: 'Clears live movement data.' },
+            { type: 'documents', icon: '📄', label: 'Reset Documents', desc: 'Clears Route Sheet typed data (signatures, routes, loader names).' },
           ].map(r => (
             <button key={r.type} onClick={() => resetData(r.type)} className="bg-[#1a1a1a] border border-red-900 rounded-xl p-4 text-left hover:bg-red-900/10 transition-colors">
               <div className="text-red-400 font-bold mb-1">{r.icon} {r.label}</div><div className="text-xs text-gray-500">{r.desc}</div>
