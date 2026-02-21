@@ -196,10 +196,18 @@ export default function RouteSheet() {
 
         const truckKey = row.truckNumber
 
-        // CPU/TR999 special handling
+        // Gap marker — display as route label only, no truck number
+        if (truckKey.toLowerCase() === 'gap' || truckKey.toLowerCase() === 'trgap') {
+          newRows.push({ ...row, truckNumber: '', route: 'gap', caseQty: '', signature: '' })
+          return
+        }
+
+        // CPU/TR999 special handling — deduplicate to one row
         if (truckKey === '999' || truckKey.toLowerCase() === 'cpu') {
+          // Only add CPU once per block
+          if (newRows.some(r => r.route === 'CPU')) return
           const cpuRoutes = routesByTruck['999'] || routesByTruck['cpu'] || []
-          newRows.push({ ...row, truckNumber: '999', route: 'CPU', caseQty: cpuRoutes.length > 0 ? String(cpuRoutes[0].casesExpected) : '' })
+          newRows.push({ ...row, truckNumber: 'TR999', route: 'CPU', caseQty: cpuRoutes.length > 0 ? String(cpuRoutes[0].casesExpected) : '' })
           return
         }
 
