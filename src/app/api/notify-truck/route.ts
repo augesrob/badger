@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Resend } from 'resend'
+import nodemailer from 'nodemailer'
 import { createClient } from '@supabase/supabase-js'
 
 const GATEWAYS: Record<string, string> = {
@@ -19,11 +19,6 @@ const supabase = createClient(
 )
 
 export async function POST(req: NextRequest) {
-  const resend = new Resend(process.env.RESEND_API_KEY ?? '')
-
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) console.error('notify-truck: SUPABASE_SERVICE_ROLE_KEY not set')
-  if (!process.env.RESEND_API_KEY) console.error('notify-truck: RESEND_API_KEY not set')
-
   try {
     const { truck_number, new_status, location, changed_by } = await req.json()
     if (!truck_number || !new_status) {
@@ -34,30 +29,22 @@ export async function POST(req: NextRequest) {
     const base = normalized.split('-')[0]
     const isSemi = normalized.includes('-')
 
-    console.log(`notify-truck: truck=${normalized}, base=${base}, isSemi=${isSemi}, status=${new_status}`)
-
     const { data: allSubs, error: subError } = await supabase
       .from('truck_subscriptions')
-      .select('user_id, truck_number, notify_sms, profiles(phone, carrier, sms_enabled, display_name)')
+      .select('user_id, truck_number, notify_sms, profiles(phone, carrier, sms_enabled)')
       .eq('notify_app', true)
 
-    if (subError) console.error('notify-truck: subscription query error', subError)
-    console.log(`notify-truck: total subscriptions fetched: ${allSubs?.length ?? 0}`)
+    if (subError) console.error('notify-truck: sub query error', subError)
 
     if (!allSubs || allSubs.length === 0) {
       return NextResponse.json({ sent: 0, message: 'No subscribers' })
     }
 
-    // Match: base-only sub (e.g. "223") matches all trailers; specific sub (e.g. "223-2") matches exact
+    // Match: base sub matches all trailers, specific sub matches exact
     const subs = allSubs.filter(s => {
       const sub = s.truck_number.replace(/^TR/i, '')
       const subBase = sub.split('-')[0]
-      const subSpecific = sub.includes('-')
-      if (subSpecific) {
-        return sub === normalized
-      } else {
-        return subBase === base
-      }
+      return sub.includes('-') ? sub === normalized : subBase === base
     })
 
     // Deduplicate by user_id
@@ -68,28 +55,35 @@ export async function POST(req: NextRequest) {
       return true
     })
 
-    console.log(`notify-truck: matched ${subs.length} subs, ${uniqueSubs.length} unique`)
-
     if (uniqueSubs.length === 0) {
       return NextResponse.json({ sent: 0, message: 'No matching subscribers' })
     }
 
     const truckLabel = `TR${normalized}`
     const trailerLabel = isSemi ? ` (trailer ${normalized.split('-')[1]})` : ''
-    const msg = `🚚 ${truckLabel}${trailerLabel}: ${new_status}${location ? ` @ ${location}` : ''}${changed_by ? ` · ${changed_by}` : ''}`
+    const msg = `Badger: ${truckLabel}${trailerLabel}: ${new_status}${location ? ` @ ${location}` : ''}${changed_by ? ` · ${changed_by}` : ''}`
 
     // Insert in-app notifications
-    const { error: notifError } = await supabase.from('notifications').insert(
+    await supabase.from('notifications').insert(
       uniqueSubs.map(s => ({
         user_id: s.user_id,
         truck_number: normalized,
-        message: msg,
+        message: `🚚 ${msg}`,
         type: 'status_change',
       }))
     )
-    if (notifError) console.error('notify-truck: notification insert error', notifError)
 
-    // Send SMS
+    // Send SMS via Gmail SMTP
+    const transporter = nodemailer.createTransport({
+      host: process.env.BADGER_SMTP_HOST || 'smtp.gmail.com',
+      port: 587,
+      secure: false,
+      auth: {
+        user: process.env.BADGER_EMAIL_USER,
+        pass: process.env.BADGER_EMAIL_PASS,
+      },
+    })
+
     const smsResults: string[] = []
     for (const sub of uniqueSubs) {
       const p = (sub as { profiles?: { phone?: string; carrier?: string; sms_enabled?: boolean } }).profiles
@@ -97,18 +91,17 @@ export async function POST(req: NextRequest) {
       const gateway = GATEWAYS[p.carrier]
       if (!gateway) continue
       const to = `${p.phone}@${gateway}`
-      console.log(`notify-truck: SMS attempt to ${to}`)
       try {
-        const result = await resend.emails.send({
-          from: 'Badger <notifications@badger.augesrob.net>',
+        await transporter.sendMail({
+          from: process.env.BADGER_EMAIL_USER,
           to,
           subject: msg,
           text: msg,
         })
-        console.log(`notify-truck: SMS result`, result)
+        console.log(`notify-truck: SMS sent to ${to}`)
         smsResults.push(to)
       } catch (e) {
-        console.error('notify-truck: SMS send failed:', to, e)
+        console.error(`notify-truck: SMS failed to ${to}`, e)
       }
     }
 
