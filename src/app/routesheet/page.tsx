@@ -46,7 +46,9 @@ type SyncStatus = 'idle' | 'waiting' | 'synced'
 export default function RouteSheet() {
   const toast = useToast()
   const [blocks, setBlocks] = useState<DoorBlock[]>([])
-  const [topRight, setTopRight] = useState('')
+  const [topRight, _setTopRight] = useState('')
+  const topRightRef = useRef('')
+  const setTopRight = (val: string) => { topRightRef.current = val; _setTopRight(val) }
   const [loading, setLoading] = useState(true)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
   const [csvData, setCsvData] = useState<CSVRoute[]>([])
@@ -245,9 +247,10 @@ export default function RouteSheet() {
     if (!file) return
     setSyncStatus('waiting')
     const text = await file.text()
-    // Use current blocks state + cached tractor nums — do NOT reload from DB (would wipe typed data)
     setBlocks(prev => {
       const merged = parseAndMergeCSV(text, prev, tractorNumsRef.current)
+      // Save immediately — don't rely on useEffect which may fire before state commits
+      saveToStorage(merged, topRightRef.current, 'synced')
       return merged
     })
     setSyncStatus('synced')
@@ -410,8 +413,11 @@ export default function RouteSheet() {
         })
         const statusData = await statusRes.json()
         if (statusData.data?.csv_data) {
-          // Use current blocks + cached tractors — do NOT reload (would wipe typed data)
-          setBlocks(prev => parseAndMergeCSV(statusData.data.csv_data, prev, tractorNumsRef.current))
+          setBlocks(prev => {
+            const merged = parseAndMergeCSV(statusData.data.csv_data, prev, tractorNumsRef.current)
+            saveToStorage(merged, topRightRef.current, 'synced')
+            return merged
+          })
           setSyncStatus('synced')
           setEmailStatus('idle')
           toast('Route data received and synced!')
@@ -450,8 +456,11 @@ export default function RouteSheet() {
           setEmailStatus('waiting')
           startPolling()
         } else if (data.data?.csv_data && syncStatus === 'idle') {
-          // Auto-load existing data — use current blocks, don't reload from DB
-          setBlocks(prev => parseAndMergeCSV(data.data.csv_data, prev, tractorNumsRef.current))
+          setBlocks(prev => {
+            const merged = parseAndMergeCSV(data.data.csv_data, prev, tractorNumsRef.current)
+            saveToStorage(merged, topRightRef.current, 'synced')
+            return merged
+          })
           setSyncStatus('synced')
         }
       } catch {
