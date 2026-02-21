@@ -4,6 +4,7 @@ import Nav from '@/components/Nav'
 import { ToastProvider } from '@/components/Toast'
 import { KeepAlive } from '@/components/KeepAlive'
 import { ThemeProvider } from '@/components/ThemeProvider'
+import { AuthProvider } from '@/components/AuthProvider'
 
 export const metadata: Metadata = {
   title: 'Badger Truck Management',
@@ -15,13 +16,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" data-theme="dark">
       <body>
         <ThemeProvider>
-          <ToastProvider>
-            <KeepAlive />
-            <Nav />
-            <main className="max-w-[1400px] mx-auto p-4">
-              {children}
-            </main>
-          </ToastProvider>
+          <AuthProvider>
+            <ToastProvider>
+              <KeepAlive />
+              <Nav />
+              <main className="max-w-[1400px] mx-auto p-4">
+                {children}
+              </main>
+            </ToastProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

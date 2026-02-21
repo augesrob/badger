@@ -5,6 +5,7 @@ import { useToast } from '@/components/Toast'
 import { Truck, Trailer, StatusValue, Route, TrailerItem, Tractor, AutomationRule } from '@/lib/types'
 import { TTSPanel } from '@/components/TTSPanel'
 import { runPreshiftAutomation, runAutomation } from '@/lib/automation'
+import Link from 'next/link'
 
 const NAV_ITEMS = [
   { id: 'trucks', label: '🚚 Truck Database', ready: true },
@@ -16,7 +17,7 @@ const NAV_ITEMS = [
   { id: 'reset', label: '⚠️ Data Reset', ready: true },
   { id: 'notifications', label: '🔔 Notifications', ready: true },
   { id: 'api', label: '🔌 API', ready: false },
-  { id: 'accounts', label: '👤 Accounts', ready: false },
+  { id: 'accounts', label: '👤 Accounts', ready: true, href: '/admin/users' },
 ]
 
 export default function Admin() {
@@ -326,13 +327,21 @@ export default function Admin() {
       <div className="w-[220px] flex-shrink-0 bg-[#111] border-r border-[#333] py-4 hidden md:block">
         <h2 className="px-4 text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Admin Settings</h2>
         {NAV_ITEMS.map(item => (
-          <button key={item.id} onClick={() => item.ready && setActiveSection(item.id)}
-            className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors flex items-center gap-2
-              ${activeSection === item.id ? 'bg-amber-500/10 text-amber-500 border-r-2 border-amber-500' : ''}
-              ${item.ready ? 'hover:bg-white/5 text-gray-300 cursor-pointer' : 'text-gray-600 cursor-not-allowed'}`}>
-            {item.label}
-            {!item.ready && <span className="ml-auto text-[9px] bg-[#222] text-gray-500 px-1.5 py-0.5 rounded">Soon</span>}
-          </button>
+          item.href ? (
+            <Link key={item.id} href={item.href}
+              className="w-full text-left px-4 py-2.5 text-sm font-medium transition-colors flex items-center gap-2 hover:bg-white/5 text-gray-300 cursor-pointer">
+              {item.label}
+              <span className="ml-auto text-[9px] bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded">New</span>
+            </Link>
+          ) : (
+            <button key={item.id} onClick={() => item.ready && setActiveSection(item.id)}
+              className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors flex items-center gap-2
+                ${activeSection === item.id ? 'bg-amber-500/10 text-amber-500 border-r-2 border-amber-500' : ''}
+                ${item.ready ? 'hover:bg-white/5 text-gray-300 cursor-pointer' : 'text-gray-600 cursor-not-allowed'}`}>
+              {item.label}
+              {!item.ready && <span className="ml-auto text-[9px] bg-[#222] text-gray-500 px-1.5 py-0.5 rounded">Soon</span>}
+            </button>
+          )
         ))}
       </div>
 

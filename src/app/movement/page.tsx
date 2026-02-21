@@ -157,7 +157,16 @@ export default function Movement() {
 
   const updateStatus = async (truckNumber: string, statusId: number) => {
     const { error } = await supabase.from('live_movement').update({ status_id: statusId, last_updated: new Date().toISOString() }).eq('truck_number', truckNumber)
-    if (error) toast('Update failed', 'error')
+    if (error) { toast('Update failed', 'error'); return }
+    // Fire truck notifications (non-blocking)
+    const statusName = statuses.find(s => s.id === statusId)?.status_name
+    if (statusName) {
+      fetch('/api/notify-truck', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ truck_number: truckNumber, new_status: statusName }),
+      }).catch(() => {}) // silent fail — don't block UI
+    }
   }
 
   const setDoorStatus = async (doorId: number, status: string) => {

@@ -1,191 +1,178 @@
--- ============================================
--- BADGER TRUCK MANAGEMENT - Supabase Schema
--- Run this in Supabase Dashboard → SQL Editor
--- ============================================
+-- ============================================================
+-- BADGER AUTH + PROFILES + CHAT + SUBSCRIPTIONS SCHEMA
+-- Run this in Supabase SQL Editor
+-- ============================================================
 
--- Trucks (master vehicle list)
-CREATE TABLE trucks (
-  id BIGSERIAL PRIMARY KEY,
-  truck_number INTEGER NOT NULL UNIQUE,
-  truck_type TEXT NOT NULL DEFAULT 'box_truck' CHECK (truck_type IN ('box_truck','van','tandem','semi')),
-  transmission TEXT NOT NULL DEFAULT 'automatic' CHECK (transmission IN ('manual','automatic')),
-  is_active BOOLEAN NOT NULL DEFAULT true,
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+-- 1. PROFILES TABLE (extends auth.users)
+create table if not exists public.profiles (
+  id            uuid primary key references auth.users(id) on delete cascade,
+  username      text unique not null,
+  display_name  text,
+  role          text not null default 'driver'
+                  check (role in ('admin','print_room','truck_mover','trainee','driver')),
+  phone         text,
+  carrier       text,  -- 'verizon','att','tmobile','sprint','cricket','boost','metro','uscellular'
+  sms_enabled   boolean not null default false,
+  avatar_color  text default '#f59e0b',
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
 );
 
--- Trailers (for semis)
-CREATE TABLE trailers (
-  id BIGSERIAL PRIMARY KEY,
-  truck_id BIGINT NOT NULL REFERENCES trucks(id) ON DELETE CASCADE,
-  trailer_number INTEGER NOT NULL,
-  is_active BOOLEAN NOT NULL DEFAULT true,
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(truck_id, trailer_number)
+-- Auto-update updated_at
+create or replace function public.handle_updated_at()
+returns trigger language plpgsql as $$
+begin new.updated_at = now(); return new; end; $$;
+
+create trigger profiles_updated_at before update on public.profiles
+  for each row execute function public.handle_updated_at();
+
+-- Auto-create profile on signup (username defaults to email prefix)
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer as $$
+begin
+  insert into public.profiles (id, username, display_name, role)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data->>'username', split_part(new.email, '@', 1)),
+    coalesce(new.raw_user_meta_data->>'display_name', split_part(new.email, '@', 1)),
+    coalesce(new.raw_user_meta_data->>'role', 'driver')
+  );
+  return new;
+end; $$;
+
+create trigger on_auth_user_created after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- 2. TRUCK SUBSCRIPTIONS TABLE
+create table if not exists public.truck_subscriptions (
+  id           bigserial primary key,
+  user_id      uuid not null references public.profiles(id) on delete cascade,
+  truck_number text not null,
+  notify_sms   boolean not null default true,
+  notify_app   boolean not null default true,
+  created_at   timestamptz not null default now(),
+  unique(user_id, truck_number)
 );
 
--- Status values (customizable)
-CREATE TABLE status_values (
-  id BIGSERIAL PRIMARY KEY,
-  status_name TEXT NOT NULL UNIQUE,
-  status_color TEXT DEFAULT '#6b7280',
-  sort_order INTEGER DEFAULT 0,
-  is_active BOOLEAN NOT NULL DEFAULT true
+-- 3. NOTIFICATIONS TABLE (in-app + SMS queue)
+create table if not exists public.notifications (
+  id           bigserial primary key,
+  user_id      uuid not null references public.profiles(id) on delete cascade,
+  truck_number text,
+  message      text not null,
+  type         text not null default 'status_change', -- 'status_change','chat','system'
+  is_read      boolean not null default false,
+  sent_sms     boolean not null default false,
+  created_at   timestamptz not null default now()
 );
 
--- Loading doors (13A-15B)
-CREATE TABLE loading_doors (
-  id BIGSERIAL PRIMARY KEY,
-  door_name TEXT NOT NULL UNIQUE,
-  door_status TEXT DEFAULT 'Loading',
-  is_done_for_night BOOLEAN NOT NULL DEFAULT false,
-  sort_order INTEGER DEFAULT 0
+-- 4. CHAT ROOMS TABLE
+create table if not exists public.chat_rooms (
+  id             bigserial primary key,
+  name           text,
+  type           text not null default 'global'
+                   check (type in ('global','role','direct')),
+  role_target    text,  -- for role rooms: 'print_room','truck_mover', etc.
+  participant_ids uuid[],  -- for direct rooms
+  created_at     timestamptz not null default now()
 );
 
--- Routes
-CREATE TABLE routes (
-  id BIGSERIAL PRIMARY KEY,
-  route_name TEXT NOT NULL,
-  route_number TEXT,
-  is_active BOOLEAN NOT NULL DEFAULT true,
-  sort_order INTEGER DEFAULT 0
+-- Seed default rooms
+insert into public.chat_rooms (name, type) values ('🌐 Global', 'global') on conflict do nothing;
+insert into public.chat_rooms (name, type, role_target) values ('🖨️ Print Room', 'role', 'print_room') on conflict do nothing;
+insert into public.chat_rooms (name, type, role_target) values ('🚚 Truck Movers', 'role', 'truck_mover') on conflict do nothing;
+insert into public.chat_rooms (name, type, role_target) values ('🚛 Drivers', 'role', 'driver') on conflict do nothing;
+
+-- 5. MESSAGES TABLE
+create table if not exists public.messages (
+  id           bigserial primary key,
+  room_id      bigint not null references public.chat_rooms(id) on delete cascade,
+  sender_id    uuid not null references public.profiles(id) on delete cascade,
+  content      text not null,
+  created_at   timestamptz not null default now()
 );
 
--- Print Room entries
-CREATE TABLE printroom_entries (
-  id BIGSERIAL PRIMARY KEY,
-  loading_door_id BIGINT NOT NULL REFERENCES loading_doors(id) ON DELETE CASCADE,
-  batch_number INTEGER NOT NULL DEFAULT 1,
-  row_order INTEGER NOT NULL DEFAULT 1,
-  route_info TEXT,
-  truck_number TEXT,
-  pods INTEGER DEFAULT 0,
-  pallets_trays INTEGER DEFAULT 0,
-  notes TEXT,
-  is_end_marker BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- Enable Realtime on messages and notifications
+alter publication supabase_realtime add table public.messages;
+alter publication supabase_realtime add table public.notifications;
+alter publication supabase_realtime add table public.truck_subscriptions;
 
--- Staging doors (18-28) for PreShift
-CREATE TABLE staging_doors (
-  id BIGSERIAL PRIMARY KEY,
-  door_number INTEGER NOT NULL UNIQUE,
-  position1_truck TEXT,
-  position2_truck TEXT,
-  position3_truck TEXT,
-  position4_truck TEXT,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- 6. ROW LEVEL SECURITY
+alter table public.profiles          enable row level security;
+alter table public.truck_subscriptions enable row level security;
+alter table public.notifications     enable row level security;
+alter table public.chat_rooms        enable row level security;
+alter table public.messages          enable row level security;
 
--- Live Movement tracking
-CREATE TABLE live_movement (
-  id BIGSERIAL PRIMARY KEY,
-  truck_number TEXT NOT NULL UNIQUE,
-  current_location TEXT,
-  status_id BIGINT REFERENCES status_values(id) ON DELETE SET NULL,
-  in_front_of TEXT,
-  notes TEXT,
-  loading_door_id BIGINT REFERENCES loading_doors(id) ON DELETE SET NULL,
-  last_updated TIMESTAMPTZ DEFAULT NOW()
-);
+-- PROFILES policies
+create policy "Users can read all profiles" on public.profiles for select using (true);
+create policy "Users can update own profile" on public.profiles for update using (auth.uid() = id);
+create policy "Admin can update any profile" on public.profiles for update
+  using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
 
--- Admin settings
-CREATE TABLE admin_settings (
-  id BIGSERIAL PRIMARY KEY,
-  setting_key TEXT NOT NULL UNIQUE,
-  setting_value TEXT,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- TRUCK SUBSCRIPTIONS policies  
+create policy "Users manage own subscriptions" on public.truck_subscriptions
+  for all using (auth.uid() = user_id);
+create policy "Admin reads all subscriptions" on public.truck_subscriptions for select
+  using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
 
--- Reset log
-CREATE TABLE reset_log (
-  id BIGSERIAL PRIMARY KEY,
-  reset_type TEXT NOT NULL,
-  reset_by TEXT DEFAULT 'manual',
-  reset_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- NOTIFICATIONS policies
+create policy "Users read own notifications" on public.notifications for select
+  using (auth.uid() = user_id);
+create policy "System can insert notifications" on public.notifications for insert
+  with check (true);
+create policy "Users mark own read" on public.notifications for update
+  using (auth.uid() = user_id);
 
--- ============================================
--- DEFAULT DATA
--- ============================================
+-- CHAT ROOMS policies
+create policy "Authenticated users can read rooms" on public.chat_rooms for select
+  using (auth.role() = 'authenticated');
 
--- Default statuses
-INSERT INTO status_values (status_name, status_color, sort_order) VALUES
-  ('In Door', '#3b82f6', 1),
-  ('Put Away', '#22c55e', 2),
-  ('On Route', '#f59e0b', 3),
-  ('In Front', '#8b5cf6', 4),
-  ('Ready', '#06b6d4', 5),
-  ('In Back', '#ec4899', 6),
-  ('The Rock', '#6b7280', 7),
-  ('Trailer Area', '#d97706', 8),
-  ('Yard', '#84cc16', 9),
-  ('Missing', '#ef4444', 10),
-  ('8', '#475569', 11),
-  ('9', '#475569', 12),
-  ('10', '#475569', 13),
-  ('11', '#475569', 14),
-  ('12A', '#475569', 15),
-  ('12B', '#475569', 16),
-  ('13A', '#475569', 17),
-  ('13B', '#475569', 18),
-  ('14A', '#475569', 19),
-  ('14B', '#475569', 20),
-  ('15A', '#475569', 21),
-  ('15B', '#475569', 22),
-  ('Ignore', '#9ca3af', 23),
-  ('Gap', '#9ca3af', 24),
-  ('Transfer', '#7c3aed', 25),
-  ('END', '#dc2626', 26);
+-- MESSAGES policies
+create policy "Authenticated users can read messages" on public.messages for select
+  using (auth.role() = 'authenticated');
+create policy "Authenticated users can send messages" on public.messages for insert
+  with check (auth.uid() = sender_id);
 
--- Loading doors
-INSERT INTO loading_doors (door_name, sort_order) VALUES
-  ('13A', 1), ('13B', 2), ('14A', 3), ('14B', 4), ('15A', 5), ('15B', 6);
+-- 7. FUNCTION: notify subscribers when movement status changes
+-- (Call this from a DB trigger on live_movements or from your edge function)
+create or replace function public.notify_truck_status_change(
+  p_truck_number text,
+  p_new_status   text,
+  p_location     text default null
+) returns void language plpgsql security definer as $$
+declare
+  sub record;
+  msg text;
+begin
+  msg := format('🚚 Truck %s: %s%s',
+    p_truck_number,
+    p_new_status,
+    case when p_location is not null then ' @ ' || p_location else '' end
+  );
 
--- Staging doors 18-28
-INSERT INTO staging_doors (door_number) VALUES
-  (18),(19),(20),(21),(22),(23),(24),(25),(26),(27),(28);
+  for sub in
+    select ts.user_id, p.sms_enabled, p.phone, p.carrier
+    from public.truck_subscriptions ts
+    join public.profiles p on p.id = ts.user_id
+    where ts.truck_number = p_truck_number and ts.notify_app = true
+  loop
+    insert into public.notifications (user_id, truck_number, message, type)
+    values (sub.user_id, p_truck_number, msg, 'status_change');
+  end loop;
+end; $$;
 
--- Routes
-INSERT INTO routes (route_name, route_number) VALUES
-  ('Fond Du Lac', 'FDL'),
-  ('Green Bay', 'GB'),
-  ('Wausau', 'WAU'),
-  ('Caledonia', 'CAL'),
-  ('Chippewa Falls', 'CHF');
+-- 8. HELPER VIEW: profiles with email (admin only use)
+create or replace view public.profiles_with_email as
+  select p.*, u.email
+  from public.profiles p
+  join auth.users u on u.id = p.id;
 
--- ============================================
--- ENABLE REAL-TIME
--- ============================================
-ALTER PUBLICATION supabase_realtime ADD TABLE live_movement;
-ALTER PUBLICATION supabase_realtime ADD TABLE loading_doors;
-ALTER PUBLICATION supabase_realtime ADD TABLE printroom_entries;
-ALTER PUBLICATION supabase_realtime ADD TABLE staging_doors;
-
--- ============================================
--- ROW LEVEL SECURITY (allow public access for now)
--- ============================================
-ALTER TABLE trucks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE trailers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE status_values ENABLE ROW LEVEL SECURITY;
-ALTER TABLE loading_doors ENABLE ROW LEVEL SECURITY;
-ALTER TABLE routes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE printroom_entries ENABLE ROW LEVEL SECURITY;
-ALTER TABLE staging_doors ENABLE ROW LEVEL SECURITY;
-ALTER TABLE live_movement ENABLE ROW LEVEL SECURITY;
-ALTER TABLE admin_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE reset_log ENABLE ROW LEVEL SECURITY;
-
--- Public access policies (no auth for now - simple warehouse tool)
-CREATE POLICY "Public access" ON trucks FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public access" ON trailers FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public access" ON status_values FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public access" ON loading_doors FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public access" ON routes FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public access" ON printroom_entries FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public access" ON staging_doors FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public access" ON live_movement FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public access" ON admin_settings FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public access" ON reset_log FOR ALL USING (true) WITH CHECK (true);
+-- Grant access
+grant select on public.profiles_with_email to service_role;
+grant all on public.profiles to authenticated;
+grant all on public.truck_subscriptions to authenticated;
+grant all on public.notifications to authenticated;
+grant select on public.chat_rooms to authenticated;
+grant all on public.messages to authenticated;
+grant usage, select on all sequences in schema public to authenticated;
