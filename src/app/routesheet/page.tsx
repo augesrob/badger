@@ -101,22 +101,32 @@ export default function RouteSheet() {
       return { doorName: door.door_name, loaderName: '', rows }
     })
 
-    // On first load, restore saved data and merge with fresh printroom truck structure
+    // On first load, restore saved data
     if (!restoredFromStorage.current) {
       restoredFromStorage.current = true
       const saved = loadFromStorage()
       if (saved && saved.blocks && saved.blocks.length > 0) {
-        // Merge: use saved data but add any new trucks from printroom not yet in saved
+
+        // If already synced with CSV, use saved blocks exactly as-is — no re-merge
+        // Re-merging with fresh printroom rows would overwrite normalized route/caseQty data
+        if (saved.syncStatus === 'synced') {
+          setBlocks(saved.blocks)
+          setTopRight(saved.topRight || '')
+          setSyncStatus('synced')
+          setLoading(false)
+          saveToStorage(saved.blocks, saved.topRight || '', 'synced')
+          return { blocks: saved.blocks, tNums }
+        }
+
+        // Not yet synced — merge saved typed data (signatures, loader names) with fresh printroom truck list
         const mergedBlocks = newBlocks.map(freshBlock => {
           const savedBlock = saved.blocks.find(b => b.doorName === freshBlock.doorName)
           if (!savedBlock) return freshBlock
-          // For each fresh truck row, check if saved has data for it
           const mergedRows = freshBlock.rows.map(freshRow => {
             if (!freshRow.truckNumber) return freshRow
             const savedRow = savedBlock.rows.find(r => r.truckNumber === freshRow.truckNumber)
             return savedRow ? savedRow : freshRow
           })
-          // Append any manually-added rows in saved that aren't in fresh (manual additions)
           const freshTrucks = new Set(freshBlock.rows.map(r => r.truckNumber))
           const extraRows = savedBlock.rows.filter(r => !r.truckNumber || !freshTrucks.has(r.truckNumber))
           return { ...savedBlock, rows: [...mergedRows, ...extraRows] }
