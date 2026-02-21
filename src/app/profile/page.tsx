@@ -70,8 +70,14 @@ export default function ProfilePage() {
       sms_enabled: smsEnabled,
       avatar_color: avatarColor,
     }).eq('id', profile.id)
+    if (error) { setSaving(false); toast('Failed to save: ' + error.message); return }
+
+    // Sync notify_sms flag on all subscriptions to match current smsEnabled
+    await supabase.from('truck_subscriptions')
+      .update({ notify_sms: smsEnabled })
+      .eq('user_id', profile.id)
+
     setSaving(false)
-    if (error) { toast('Failed to save: ' + error.message); return }
     await refreshProfile()
     toast('Profile saved ✓')
   }
