@@ -14,15 +14,15 @@ const GATEWAYS: Record<string, string> = {
   uscellular:'email.uscc.net',
 }
 
-const resend = new Resend(process.env.RESEND_API_KEY)
-
 // Use service role key for server-side queries (bypasses RLS)
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co',
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'placeholder'
 )
 
 export async function POST(req: NextRequest) {
+  // Lazy-init Resend so missing key only fails at runtime, not build time
+  const resend = new Resend(process.env.RESEND_API_KEY ?? '')
   try {
     const { truck_number, new_status, location, changed_by } = await req.json()
     if (!truck_number || !new_status) {
