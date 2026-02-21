@@ -5,40 +5,27 @@ import { PrintroomEntry } from '@/lib/types'
 import { useToast } from '@/components/Toast'
 
 const STORAGE_KEY = 'badger-cheatsheet-v2'
+const RS_STORAGE_KEY = 'badger-routesheet-v1'
 const DOOR_ORDER = ['15B', '15A', '14B', '14A', '13B', '13A']
 
-interface CheatEntry {
-  route: string    // route number
-  truck: string    // truck number
-  notes: string    // *Keg, *POS, etc
-}
+interface CheatEntry { route: string; truck: string; notes: string }
+interface BatchData { batchNum: number; doors: Record<string, CheatEntry[]> }
+interface SavedState { batches: BatchData[]; namesDate: string; leftNote: string; bottomNote: string }
 
-interface BatchData {
-  batchNum: number
-  doors: Record<string, CheatEntry[]>  // doorName -> list of entries
-}
-
-interface SavedState {
-  batches: BatchData[]
-  namesDate: string
-  leftNote: string
-  bottomNote: string
-}
+// Mirror of routesheet storage types
+interface RSRow { route: string; truckNumber: string; notes: string; signature: string; caseQty: string }
+interface RSBlock { doorName: string; loaderName: string; rows: RSRow[] }
+interface RSStorage { blocks: RSBlock[]; topRight: string; syncStatus: string }
 
 function emptyEntry(): CheatEntry { return { route: '', truck: '', notes: '' } }
-
 function buildEmptyBatch(n: number): BatchData {
   const doors: Record<string, CheatEntry[]> = {}
-  DOOR_ORDER.forEach(d => { doors[d] = [emptyEntry(), emptyEntry(), emptyEntry()] })
+  DOOR_ORDER.forEach(d => { doors[d] = [emptyEntry()] })
   return { batchNum: n, doors }
 }
-
-function save(state: SavedState) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)) } catch { }
-}
-function load(): SavedState | null {
-  try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : null } catch { return null }
-}
+function saveCS(s: SavedState) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)) } catch { } }
+function loadCS(): SavedState | null { try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : null } catch { return null } }
+function loadRS(): RSStorage | null { try { const r = localStorage.getItem(RS_STORAGE_KEY); return r ? JSON.parse(r) : null } catch { return null } }
 
 export default function CheatSheet() {
   const toast = useToast()
@@ -50,8 +37,22 @@ export default function CheatSheet() {
   const page1Ref = useRef<HTMLDivElement>(null)
   const page2Ref = useRef<HTMLDivElement>(null)
 
-  // ── Load from Supabase + merge saved ──────────────────────────────────────
   const loadData = useCallback(async () => {
+    // ── Step 1: Get routesheet saved data (has synced route#, truck#, notes) ──
+    const rsData = loadRS()
+    const rsSynced = rsData?.syncStatus === 'synced'
+
+    // Build per-door lookup: doorName → rows indexed by truckNumber (both raw and stripped)
+    const rsRowsByDoor: Record<string, RSRow[]> = {}
+    if (rsData?.blocks) {
+      rsData.blocks.forEach(block => {
+        if (DOOR_ORDER.includes(block.doorName)) {
+          rsRowsByDoor[block.doorName] = block.rows.filter(r => r.truckNumber)
+        }
+      })
+    }
+
+    // ── Step 2: Get printroom entries for batch numbers and truck order ──
     const { data: entries } = await supabase
       .from('printroom_entries')
       .select('*, loading_doors(door_name)')
@@ -59,29 +60,66 @@ export default function CheatSheet() {
 
     const allEntries = (entries || []) as (PrintroomEntry & { loading_doors: { door_name: string } | null })[]
 
-    // Build fresh from printroom: batch → door → entries
+    // ── Step 3: Build batch→door→entries using printroom order, routesheet data for content ──
     const grouped: Record<number, Record<string, CheatEntry[]>> = {}
+    const seenKey: Set<string> = new Set()
+
     allEntries.forEach(e => {
       if (e.is_end_marker || !e.truck_number || e.truck_number === 'end') return
       const door = e.loading_doors?.door_name
       if (!door || !DOOR_ORDER.includes(door)) return
-      const b = e.batch_number || 1
-      if (!grouped[b]) grouped[b] = {}
-      if (!grouped[b][door]) grouped[b][door] = []
-      grouped[b][door].push({ route: e.route_info || '', truck: e.truck_number || '', notes: e.notes || '' })
+      const bNum = e.batch_number || 1
+      const truckRaw = e.truck_number
+      const truckNorm = truckRaw.replace(/^TR/i, '').toLowerCase()
+
+      // Skip gap/cpu in cheat sheet
+      if (truckNorm === 'gap' || truckNorm === 'cpu') return
+
+      // Deduplicate: same truck in same batch+door only once from printroom pass
+      const dk = `${bNum}-${door}-${truckRaw}`
+      if (seenKey.has(dk)) return
+      seenKey.add(dk)
+
+      if (!grouped[bNum]) grouped[bNum] = {}
+      if (!grouped[bNum][door]) grouped[bNum][door] = []
+
+      if (rsSynced && rsRowsByDoor[door]) {
+        // Find all routesheet rows for this truck in this door (semis expand to multiple rows)
+        const matchingRows = rsRowsByDoor[door].filter(r => {
+          const rNorm = r.truckNumber.replace(/^TR/i, '').toLowerCase()
+          return r.truckNumber === truckRaw || rNorm === truckNorm
+        })
+        if (matchingRows.length > 0) {
+          matchingRows.forEach(r => {
+            grouped[bNum][door].push({
+              route: r.route || '',
+              truck: r.truckNumber || truckRaw,
+              notes: r.notes || '',
+            })
+          })
+          return
+        }
+      }
+
+      // Fallback: use raw printroom data (not yet synced)
+      grouped[bNum][door].push({
+        route: '',
+        truck: truckRaw,
+        notes: e.notes || '',
+      })
     })
 
+    // ── Step 4: Build fresh batches ──
     const freshBatches: BatchData[] = [1,2,3,4].map(bNum => {
       const doors: Record<string, CheatEntry[]> = {}
       DOOR_ORDER.forEach(door => {
-        doors[door] = grouped[bNum]?.[door] || []
-        if (doors[door].length === 0) doors[door] = [emptyEntry(), emptyEntry(), emptyEntry()]
+        doors[door] = grouped[bNum]?.[door] || [emptyEntry()]
       })
       return { batchNum: bNum, doors }
     })
 
-    // Merge: saved data wins for any non-empty field, printroom fills blanks
-    const saved = load()
+    // ── Step 5: Merge with saved cheat sheet user edits ──
+    const saved = loadCS()
     if (saved?.batches) {
       const merged = freshBatches.map((fb, i) => {
         const sb = saved.batches[i]
@@ -90,14 +128,14 @@ export default function CheatSheet() {
         DOOR_ORDER.forEach(door => {
           const fr = fb.doors[door] || []
           const sr = sb.doors?.[door] || []
-          // Use the longer of the two lists, saved takes priority per field
           const len = Math.max(fr.length, sr.length, 1)
           doors[door] = Array.from({ length: len }, (_, ri) => {
             const f = fr[ri] || emptyEntry()
             const s = sr[ri] || emptyEntry()
+            // Fresh (routesheet) wins for route/truck; saved wins for notes (user may have added *Keg etc)
             return {
-              route: s.route !== '' ? s.route : f.route,
-              truck: s.truck !== '' ? s.truck : f.truck,
+              route: f.route !== '' ? f.route : s.route,
+              truck: f.truck !== '' ? f.truck : s.truck,
               notes: s.notes !== '' ? s.notes : f.notes,
             }
           })
@@ -108,20 +146,22 @@ export default function CheatSheet() {
       setNamesDate(saved.namesDate || '')
       setLeftNote(saved.leftNote || '')
       setBottomNote(saved.bottomNote || '')
+      saveCS({ batches: merged, namesDate: saved.namesDate || '', leftNote: saved.leftNote || '', bottomNote: saved.bottomNote || '' })
     } else {
       setBatches(freshBatches)
+      saveCS({ batches: freshBatches, namesDate: '', leftNote: '', bottomNote: '' })
     }
     setLoading(false)
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
 
-  // Auto-save on every change
+  // Save on every change
   useEffect(() => {
-    if (!loading) save({ batches, namesDate, leftNote, bottomNote })
+    if (!loading) saveCS({ batches, namesDate, leftNote, bottomNote })
   }, [batches, namesDate, leftNote, bottomNote, loading])
 
-  // ── Print scaling ─────────────────────────────────────────────────────────
+  // Print scaling
   const scalePage = (ref: React.RefObject<HTMLDivElement | null>) => {
     const el = ref.current
     if (!el) return
@@ -152,7 +192,7 @@ export default function CheatSheet() {
     return () => { window.removeEventListener('beforeprint', before); window.removeEventListener('afterprint', after) }
   }, [])
 
-  // ── Mutations ─────────────────────────────────────────────────────────────
+  // Mutations
   const updateEntry = (bi: number, door: string, ri: number, field: keyof CheatEntry, val: string) => {
     setBatches(prev => prev.map((b, i) => {
       if (i !== bi) return b
@@ -164,8 +204,7 @@ export default function CheatSheet() {
       return { ...b, doors: d }
     }))
   }
-
-  const addEntryToDoor = (bi: number, door: string) => {
+  const addEntry = (bi: number, door: string) => {
     setBatches(prev => prev.map((b, i) => {
       if (i !== bi) return b
       const d = { ...b.doors }
@@ -173,19 +212,17 @@ export default function CheatSheet() {
       return { ...b, doors: d }
     }))
   }
-
   const removeEntry = (bi: number, door: string, ri: number) => {
     setBatches(prev => prev.map((b, i) => {
       if (i !== bi) return b
       const d = { ...b.doors }
       const rows = [...(d[door] || [])]
-      if (rows.length <= 1) { rows[0] = emptyEntry(); d[door] = rows; return { ...b, doors: d } }
+      if (rows.length <= 1) { d[door] = [emptyEntry()]; return { ...b, doors: d } }
       rows.splice(ri, 1)
       d[door] = rows
       return { ...b, doors: d }
     }))
   }
-
   const clearAll = () => {
     if (!confirm('Clear all cheat sheet data?')) return
     localStorage.removeItem(STORAGE_KEY)
@@ -194,7 +231,7 @@ export default function CheatSheet() {
     toast('Cheat sheet cleared')
   }
 
-  // ── Render one door column ────────────────────────────────────────────────
+  // Render door column
   const renderDoorCol = (bi: number, door: string) => {
     const entries = batches[bi].doors[door] || [emptyEntry()]
     return (
@@ -214,19 +251,17 @@ export default function CheatSheet() {
                 <input value={ent.truck} onChange={e => updateEntry(bi, door, ri, 'truck', e.target.value)}
                   className="cs2-input cs2-truck-input" placeholder="—" />
               </div>
-              {(ent.notes || true) && (
-                <input value={ent.notes} onChange={e => updateEntry(bi, door, ri, 'notes', e.target.value)}
-                  className="cs2-input cs2-notes-input" placeholder="notes..." />
-              )}
+              <input value={ent.notes} onChange={e => updateEntry(bi, door, ri, 'notes', e.target.value)}
+                className="cs2-input cs2-notes-input" placeholder="notes..." />
             </div>
           ))}
         </div>
-        <button onClick={() => addEntryToDoor(bi, door)} className="no-print cs2-add-entry">+</button>
+        <button onClick={() => addEntry(bi, door)} className="no-print cs2-add-entry">+</button>
       </div>
     )
   }
 
-  // ── Render one batch ──────────────────────────────────────────────────────
+  // Render batch
   const renderBatch = (bi: number) => (
     <div className="cs2-batch">
       <div className="cs2-batch-title">Batch {bi + 1}</div>
@@ -247,7 +282,7 @@ export default function CheatSheet() {
       </div>
       <div className="cs2-header-center">
         {editable
-          ? <input value={namesDate} onChange={e => setNamesDate(e.target.value)} className="cs2-input cs2-names-input" placeholder="Names &amp; Date..." />
+          ? <input value={namesDate} onChange={e => setNamesDate(e.target.value)} className="cs2-input cs2-names-input" placeholder="Names & Date..." />
           : <span className="cs2-names-static">{namesDate}</span>}
       </div>
       <div className="cs2-header-right" />
@@ -265,24 +300,21 @@ export default function CheatSheet() {
 
   return (
     <div>
-      {/* Toolbar */}
       <div className="no-print mb-4">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
           <div>
             <h1 className="text-xl font-bold">📋 Cheat Sheet</h1>
-            <p className="text-xs text-muted">Route/Truck per door per batch • auto-saves • syncs from Print Room</p>
+            <p className="text-xs text-muted">Pulls route/truck/notes from Route Sheet • editable • auto-saves</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={loadData} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-500">🔄 Sync</button>
+            <button onClick={loadData} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-500">🔄 Sync from Route Sheet</button>
             <button onClick={clearAll} className="bg-red-900/50 text-red-400 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-900">🗑️ Clear</button>
             <button onClick={() => window.print()} className="bg-amber-500 text-black px-6 py-2 rounded-lg text-sm font-bold hover:bg-amber-400">🖨️ Print</button>
           </div>
         </div>
       </div>
 
-      {/* Printable */}
       <div className="cs2-sheet">
-        {/* Page 1: Batch 1 + 2 */}
         <div className="cs2-page" ref={page1Ref}>
           <div className="cs2-inner">
             <PageHeader editable={true} />
@@ -294,7 +326,6 @@ export default function CheatSheet() {
             <BottomNote editable={true} />
           </div>
         </div>
-        {/* Page 2: Batch 3 + 4 */}
         <div className="cs2-page cs2-page-2" ref={page2Ref}>
           <div className="cs2-inner">
             <PageHeader editable={false} />
