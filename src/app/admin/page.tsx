@@ -248,7 +248,10 @@ export default function Admin() {
     if (type === 'printroom' || type === 'all') { await supabase.from('printroom_entries').delete().neq('id', 0); await supabase.from('loading_doors').update({ is_done_for_night: false, door_status: 'Loading' }).neq('id', 0) }
     if (type === 'preshift' || type === 'all') { await supabase.from('staging_doors').update({ in_front: null, in_back: null }).neq('id', 0) }
     if (type === 'movement' || type === 'all') { await supabase.from('live_movement').delete().neq('id', 0) }
-    if (type === 'documents' || type === 'all') { localStorage.removeItem('badger-routesheet-v1') }
+    if (type === 'documents' || type === 'all') {
+      localStorage.removeItem('badger-routesheet-v1')
+      localStorage.removeItem('badger-cheatsheet-v1')
+    }
     await supabase.from('reset_log').insert({ reset_type: type, reset_by: 'manual' })
     toast(`Reset ${type} complete`); loadAll()
   }

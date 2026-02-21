@@ -8,6 +8,7 @@ const links = [
   { href: '/printroom', label: '🖨️ Print Room', children: [
     { href: '/printroom', label: '🖨️ Print Room' },
     { href: '/routesheet', label: '📄 Route Sheet' },
+    { href: '/cheatsheet', label: '📋 Cheat Sheet' },
   ]},
   { href: '/preshift', label: '📋 PreShift' },
   { href: '/movement', label: '🚚 Live Movement' },
@@ -31,7 +32,7 @@ export default function Nav() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const printRoomActive = pathname === '/printroom' || pathname === '/routesheet'
+  const printRoomActive = pathname === '/printroom' || pathname === '/routesheet' || pathname === '/cheatsheet'
   const printRoomChildren = links[0].children!
 
   return (
