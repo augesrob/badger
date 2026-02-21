@@ -2,26 +2,23 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createClient } from '@supabase/supabase-js'
 
-// Carrier email-to-SMS gateways (completely free)
 const GATEWAYS: Record<string, string> = {
-  verizon:   'vtext.com',
-  att:       'txt.att.net',
-  tmobile:   'tmomail.net',
-  sprint:    'messaging.sprintpcs.com',
-  cricket:   'sms.cricketwireless.net',
-  boost:     'sms.myboostmobile.com',
-  metro:     'mymetropcs.com',
-  uscellular:'email.uscc.net',
+  verizon:    'vtext.com',
+  att:        'txt.att.net',
+  tmobile:    'tmomail.net',
+  sprint:     'messaging.sprintpcs.com',
+  cricket:    'sms.cricketwireless.net',
+  boost:      'sms.myboostmobile.com',
+  metro:      'mymetropcs.com',
+  uscellular: 'email.uscc.net',
 }
 
-// Use service role key for server-side queries (bypasses RLS)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co',
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'placeholder'
 )
 
 export async function POST(req: NextRequest) {
-  // Lazy-init Resend so missing key only fails at runtime, not build time
   const resend = new Resend(process.env.RESEND_API_KEY ?? '')
   try {
     const { truck_number, new_status, location, changed_by } = await req.json()
@@ -29,43 +26,77 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'truck_number and new_status required' }, { status: 400 })
     }
 
-    // Find all subscribers for this truck with SMS enabled
-    const { data: subs } = await supabase
+    // Normalize: strip TR prefix, e.g. "TR170-1" -> "170-1"
+    const normalized = truck_number.replace(/^TR/i, '')
+    // Base number: "170-1" -> "170", "170" -> "170"
+    const base = normalized.split('-')[0]
+    const isSemi = normalized.includes('-')
+
+    // Fetch ALL subscriptions — we'll filter in JS to support both match modes:
+    //   subscriber "170"    → matches TR170, TR170-1, TR170-2 (all trailers)
+    //   subscriber "170-1"  → matches only TR170-1 (specific trailer)
+    const { data: allSubs } = await supabase
       .from('truck_subscriptions')
-      .select('user_id, notify_sms, profiles(phone, carrier, sms_enabled, display_name)')
-      .eq('truck_number', truck_number.replace(/^TR/i, ''))
+      .select('user_id, truck_number, notify_sms, profiles(phone, carrier, sms_enabled, display_name)')
       .eq('notify_app', true)
 
-    if (!subs || subs.length === 0) {
-      return NextResponse.json({ sent: 0, message: 'No subscribers' })
+    if (!allSubs) return NextResponse.json({ sent: 0, message: 'No subscribers' })
+
+    // Match logic
+    const subs = allSubs.filter(s => {
+      const sub = s.truck_number.replace(/^TR/i, '')
+      const subBase = sub.split('-')[0]
+      const subIsSemi = sub.includes('-')
+
+      if (subIsSemi) {
+        // Specific trailer sub (e.g. "170-1") — only matches exact truck
+        return sub === normalized
+      } else {
+        // Base number sub (e.g. "170") — matches the base truck and ALL its trailers
+        return subBase === base
+      }
+    })
+
+    // Deduplicate by user_id (in case someone somehow subscribed to both "170" and "170-1")
+    const seen = new Set<string>()
+    const uniqueSubs = subs.filter(s => {
+      if (seen.has(s.user_id)) return false
+      seen.add(s.user_id)
+      return true
+    })
+
+    if (uniqueSubs.length === 0) {
+      return NextResponse.json({ sent: 0, message: 'No matching subscribers' })
     }
 
-    // Insert in-app notifications for all subscribers
-    const notifRows = subs.map((s: { user_id: string }) => ({
-      user_id: s.user_id,
-      truck_number,
-      message: `🚚 TR${truck_number.replace(/^TR/i,'')}: ${new_status}${location ? ` @ ${location}` : ''}${changed_by ? ` (by ${changed_by})` : ''}`,
-      type: 'status_change',
-    }))
-    await supabase.from('notifications').insert(notifRows)
+    const truckLabel = `TR${normalized}`
+    const trailerLabel = isSemi ? ` (trailer ${normalized.split('-')[1]})` : ''
+    const msg = `🚚 ${truckLabel}${trailerLabel}: ${new_status}${location ? ` @ ${location}` : ''}${changed_by ? ` · ${changed_by}` : ''}`
 
-    // Send SMS to subscribers who have phone + carrier + sms_enabled
+    // Insert in-app notifications
+    await supabase.from('notifications').insert(
+      uniqueSubs.map(s => ({
+        user_id: s.user_id,
+        truck_number: normalized,
+        message: msg,
+        type: 'status_change',
+      }))
+    )
+
+    // Send SMS
     const smsResults: string[] = []
-    for (const sub of subs) {
-      const p = (sub as { profiles?: { phone?: string; carrier?: string; sms_enabled?: boolean; display_name?: string } }).profiles
+    for (const sub of uniqueSubs) {
+      const p = (sub as { profiles?: { phone?: string; carrier?: string; sms_enabled?: boolean } }).profiles
       if (!sub.notify_sms || !p?.phone || !p?.carrier || !p?.sms_enabled) continue
       const gateway = GATEWAYS[p.carrier]
       if (!gateway) continue
-
       const to = `${p.phone}@${gateway}`
-      const body = `Badger: TR${truck_number.replace(/^TR/i,'')} → ${new_status}${location ? ` @ ${location}` : ''}`
-
       try {
         await resend.emails.send({
           from: 'Badger <notifications@badger.augesrob.net>',
           to,
-          subject: body,  // SMS shows subject as message body on most carriers
-          text: body,
+          subject: msg,
+          text: msg,
         })
         smsResults.push(to)
       } catch (e) {
@@ -74,7 +105,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({
-      sent_notifications: notifRows.length,
+      sent_notifications: uniqueSubs.length,
       sent_sms: smsResults.length,
       sms_recipients: smsResults,
     })
