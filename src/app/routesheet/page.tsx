@@ -306,20 +306,32 @@ export default function RouteSheet() {
 
   // Auto-scale page content to fill the print page height
   // Landscape 8.5x11 with 0.25in margins = 8in tall usable = 768px at 96dpi
+  // Only scales at print time — screen view is never transformed
   const autoScalePages = useCallback(() => {
-    const PAGE_HEIGHT = 768 // 8in * 96dpi
-    const PAGE_WIDTH = 1008 // 10.5in * 96dpi
+    if (typeof window === 'undefined') return
+    const isPrinting = window.matchMedia('print').matches
+    if (!isPrinting) {
+      // Reset any lingering transforms on screen
+      ;[page1Ref, page2Ref].forEach(ref => {
+        const content = ref.current?.querySelector('.rs-page-content') as HTMLElement | null
+        if (content) {
+          content.style.transform = ''
+          content.style.width = ''
+        }
+      })
+      return
+    }
+    const PAGE_HEIGHT = 768
+    const PAGE_WIDTH = 1008
     ;[page1Ref, page2Ref].forEach(ref => {
       const el = ref.current
       if (!el) return
       const content = el.querySelector('.rs-page-content') as HTMLElement
       if (!content) return
-      // Reset scale to measure natural height
       content.style.transform = 'none'
       content.style.width = `${PAGE_WIDTH}px`
       const natural = content.scrollHeight
       if (natural > 0) {
-        // Scale to 95% of page to leave breathing room for print rendering differences
         const targetHeight = PAGE_HEIGHT * 0.95
         const scale = Math.min(targetHeight / natural, 1.3)
         content.style.transform = `scale(${scale})`
@@ -329,11 +341,23 @@ export default function RouteSheet() {
     })
   }, [])
 
-  // Re-scale whenever blocks change
+  // Scale pages only at print time via beforeprint/afterprint events
   useEffect(() => {
-    const timer = setTimeout(autoScalePages, 100)
-    return () => clearTimeout(timer)
-  }, [blocks, autoScalePages])
+    const beforePrint = () => autoScalePages()
+    const afterPrint = () => {
+      // Reset transforms after printing so screen layout is unaffected
+      ;[page1Ref, page2Ref].forEach(ref => {
+        const content = ref.current?.querySelector('.rs-page-content') as HTMLElement | null
+        if (content) { content.style.transform = ''; content.style.width = '' }
+      })
+    }
+    window.addEventListener('beforeprint', beforePrint)
+    window.addEventListener('afterprint', afterPrint)
+    return () => {
+      window.removeEventListener('beforeprint', beforePrint)
+      window.removeEventListener('afterprint', afterPrint)
+    }
+  }, [autoScalePages])
 
   // Send ping email
   const sendPing = async () => {
