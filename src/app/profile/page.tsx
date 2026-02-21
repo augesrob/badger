@@ -158,7 +158,11 @@ export default function ProfilePage() {
 
         <div>
           <label className="text-xs text-muted mb-1 block">Phone Number (10 digits)</label>
-          <input value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+          <input value={phone} onChange={e => {
+              let val = e.target.value.replace(/\D/g, '')
+              if (val.length === 11 && val.startsWith('1')) val = val.slice(1)
+              setPhone(val.slice(0, 10))
+            }}
             placeholder="4145551234"
             className="w-full bg-input border border-[#333] rounded-lg px-4 py-2.5 text-sm focus:border-amber-500 outline-none font-mono" />
         </div>
