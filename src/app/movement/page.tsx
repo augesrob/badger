@@ -165,7 +165,14 @@ export default function Movement() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ truck_number: truckNumber, new_status: statusName }),
-      }).catch(() => {}) // silent fail — don't block UI
+      }).then(async r => {
+        const data = await r.json()
+        console.log('notify-truck response:', data)
+        toast(`📣 Notified: ${data.sent_notifications ?? 0} users, ${data.sent_sms ?? 0} SMS`)
+      }).catch(e => {
+        console.error('notify-truck fetch error:', e)
+        toast('Notify failed: ' + e.message)
+      })
     }
   }
 
