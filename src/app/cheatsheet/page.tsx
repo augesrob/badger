@@ -314,30 +314,43 @@ export default function CheatSheet() {
         </div>
       </div>
 
-      <div className="cs2-sheet">
-        <div className="cs2-page" ref={page1Ref}>
-          <div className="cs2-inner">
-            <PageHeader editable={true} />
-            <div className="cs2-two-batches">
-              {renderBatch(0)}
-              <div className="cs2-page-divider" />
-              {renderBatch(1)}
+      {/* Helper: is a batch empty (all doors have only placeholder/blank entries)? */}
+      {(() => {
+        const isBatchEmpty = (bi: number) => {
+          const b = batches[bi]
+          return DOOR_ORDER.every(door =>
+            (b.doors[door] || []).every(e => e.route === '' && e.truck === '' && e.notes === '')
+          )
+        }
+        const page2Empty = isBatchEmpty(2) && isBatchEmpty(3)
+
+        return (
+          <div className="cs2-sheet">
+            <div className="cs2-page" ref={page1Ref}>
+              <div className="cs2-inner">
+                <PageHeader editable={true} />
+                <div className="cs2-two-batches">
+                  {renderBatch(0)}
+                  <div className="cs2-page-divider" />
+                  {renderBatch(1)}
+                </div>
+                <BottomNote editable={true} />
+              </div>
             </div>
-            <BottomNote editable={true} />
-          </div>
-        </div>
-        <div className="cs2-page cs2-page-2" ref={page2Ref}>
-          <div className="cs2-inner">
-            <PageHeader editable={false} />
-            <div className="cs2-two-batches">
-              {renderBatch(2)}
-              <div className="cs2-page-divider" />
-              {renderBatch(3)}
+            <div className={`cs2-page cs2-page-2${page2Empty ? ' cs2-page-hidden' : ''}`} ref={page2Ref}>
+              <div className="cs2-inner">
+                <PageHeader editable={false} />
+                <div className="cs2-two-batches">
+                  {renderBatch(2)}
+                  <div className="cs2-page-divider" />
+                  {renderBatch(3)}
+                </div>
+                <BottomNote editable={false} />
+              </div>
             </div>
-            <BottomNote editable={false} />
           </div>
-        </div>
-      </div>
+        )
+      })()}
     </div>
   )
 }

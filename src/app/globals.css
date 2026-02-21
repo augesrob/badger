@@ -330,13 +330,12 @@ select.status-select { color: #fff !important; }
     margin: 0;
   }
 
-  /* Each rs-page = exactly one printed landscape page */
+  /* Each rs-page = one printed landscape page; allow overflow to next page if too tall */
   .rs-page {
     page-break-after: always;
     break-after: page;
     width: 10.5in;
-    height: 8in;
-    overflow: hidden;
+    overflow: visible;
     position: relative;
     margin: 0;
     padding: 0;
@@ -397,6 +396,7 @@ select.status-select { color: #fff !important; }
 /* ===== CHEAT SHEET v2 ===== */
 .cs2-sheet { background:#fff; color:#000; font-family:Arial,Helvetica,sans-serif; max-width:1100px; margin:0 auto; }
 .cs2-page { background:#fff; border:1px solid #999; margin-bottom:20px; overflow:hidden; }
+.cs2-page-hidden { display:none; }
 
 .cs2-header { display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; padding:5px 10px; border-bottom:2px solid #000; gap:6px; }
 .cs2-header-center { text-align:center; }
@@ -417,13 +417,13 @@ select.status-select { color: #fff !important; }
 .cs2-door-header { font-size:9px; font-weight:800; text-align:center; padding:2px 1px; border-bottom:1px solid #000; background:#e8e8e8; color:#000; }
 
 .cs2-door-entries { flex:1; display:flex; flex-direction:column; }
-.cs2-entry { border-bottom:1px solid #ddd; padding:2px 2px 1px; position:relative; }
+.cs2-entry { border-bottom:1px solid #ddd; padding:1px 2px; position:relative; }
 .cs2-entry:last-child { border-bottom:none; }
 .cs2-entry-row { display:flex; align-items:center; gap:1px; overflow:visible; }
 .cs2-label { font-size:7px; color:#666; flex-shrink:0; width:12px; line-height:1; }
 .cs2-input { background:transparent !important; border:none !important; outline:none !important; color:#000 !important; font-family:Arial,Helvetica,sans-serif !important; width:100% !important; min-width:0 !important; padding:0 1px !important; box-shadow:none !important; border-radius:0 !important; }
-.cs2-route-input { font-size:11px !important; font-weight:700 !important; line-height:1.2 !important; }
-.cs2-truck-input { font-size:10px !important; line-height:1.2 !important; }
+.cs2-route-input { font-size:10px !important; font-weight:700 !important; line-height:1.1 !important; }
+.cs2-truck-input { font-size:9px !important; line-height:1.2 !important; }
 .cs2-notes-input { font-size:9px !important; font-style:italic !important; color:#444 !important; width:100% !important; line-height:1.1 !important; display:block; padding:0 1px !important; }
 .cs2-del { position:absolute; top:1px; right:1px; font-size:8px; color:#ccc; background:none; border:none; cursor:pointer; padding:0 1px; line-height:1; opacity:0; transition:opacity 0.1s; }
 .cs2-entry:hover .cs2-del { opacity:1; }
@@ -439,6 +439,7 @@ select.status-select { color: #fff !important; }
   .cs2-sheet { border:none; max-width:none; margin:0; }
   .cs2-page { page-break-after:always; page-break-inside:avoid; border:none; margin:0; overflow:hidden; width:100%; }
   .cs2-page:last-child { page-break-after:avoid; }
+  .cs2-page-hidden { display:none !important; }
   .cs2-inner { transform-origin:top left; }
   .cs2-batch-title { font-size:8px !important; padding:1px 0 !important; }
   .cs2-door-header { font-size:7px !important; padding:1px !important; }

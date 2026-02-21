@@ -210,9 +210,11 @@ export default function RouteSheet() {
         // Normalize: strip TR prefix for comparison
         const truckKeyNorm = truckKey.replace(/^TR/i, '').toLowerCase()
 
-        // Gap marker — display as route label only, no truck number
+        // Gap marker — display as route label only, no truck number; deduplicate (keep only first)
         if (truckKeyNorm === 'gap') {
-          newRows.push({ ...row, truckNumber: '', route: 'gap', caseQty: '', signature: '' })
+          if (!newRows.some(r => r.route === 'gap')) {
+            newRows.push({ ...row, truckNumber: '', route: 'gap', caseQty: '', signature: '' })
+          }
           return
         }
 
@@ -524,7 +526,7 @@ export default function RouteSheet() {
             </div>
             <div className="rs-cell rs-col-truck">
               {row.truckNumber ? (
-                <div className="rs-truck-value">TR{row.truckNumber}</div>
+                <div className="rs-truck-value">{row.truckNumber.toUpperCase().startsWith('TR') ? row.truckNumber : `TR${row.truckNumber}`}</div>
               ) : (
                 <input value="" onChange={e => updateRow(doorIdx, rowIdx, 'truckNumber', e.target.value)}
                   className="rs-input rs-input-center rs-input-bold" />
