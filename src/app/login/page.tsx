@@ -1,11 +1,14 @@
 'use client'
 import { useState } from 'react'
 import { useAuth } from '@/components/AuthProvider'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 export default function LoginPage() {
   const { signIn, signUp } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirect = searchParams.get('redirect') || '/'
+
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   const [email, setEmail]             = useState('')
   const [password, setPassword]       = useState('')
@@ -24,7 +27,7 @@ export default function LoginPage() {
       : await signUp(email, password, username.trim().toLowerCase(), displayName.trim() || username.trim())
     setLoading(false)
     if (err) { setError(err); return }
-    router.push('/')
+    router.push(redirect)
   }
 
   return (
