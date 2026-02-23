@@ -317,36 +317,27 @@ export default function ChatPage() {
   )
 }
 
-// ── Role toggle button (inline styles to avoid Tailwind purge) ───────────────
+// ── Role toggle button ────────────────────────────────────────────────────────
 function RoleToggleBtn({ label, active, disabled, onClick }: {
   label: string; active: boolean; disabled: boolean; onClick: () => void
 }) {
-  const [hovered, setHovered] = useState(false)
-
-  const style = active
-    ? {
-        background: hovered ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)',
-        border: `1px solid ${hovered ? 'rgba(239,68,68,0.6)' : 'rgba(34,197,94,0.6)'}`,
-        color: hovered ? '#f87171' : '#4ade80',
-      }
-    : {
-        background: hovered ? 'rgba(34,197,94,0.1)' : '#1e1e1e',
-        border: `1px solid ${hovered ? 'rgba(34,197,94,0.5)' : '#444'}`,
-        color: hovered ? '#4ade80' : '#888',
-      }
-
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={style}
-      className="text-[11px] px-3 py-1.5 rounded-lg font-medium transition-all disabled:opacity-40 cursor-pointer">
-      {active
-        ? (hovered ? '✗ Remove' : `✓ ${label}`)
-        : (hovered ? `+ ${label}` : `✗ ${label}`)
-      }
+      style={{
+        background: active ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.1)',
+        border: `1px solid ${active ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.4)'}`,
+        color: active ? '#4ade80' : '#f87171',
+        padding: '6px 12px',
+        borderRadius: '8px',
+        fontSize: '11px',
+        fontWeight: 500,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.4 : 1,
+        whiteSpace: 'nowrap',
+      }}>
+      {active ? '✓' : '✗'} {label}
     </button>
   )
 }
