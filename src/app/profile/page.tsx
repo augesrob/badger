@@ -92,7 +92,8 @@ export default function ProfilePage() {
     setUploading(true)
     try {
       const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-      const path = `avatars/${profile.id}.${ext}`
+      // Path: {userId}/avatar.{ext} so RLS can match on folder = uid
+      const path = `${profile.id}/avatar.${ext}`
 
       const { error: uploadError } = await supabase.storage
         .from('profiles')
