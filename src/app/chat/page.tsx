@@ -357,28 +357,49 @@ function ManageRoomsModal({ rooms, onClose }: { rooms: Room[]; onClose: () => vo
   // Toggle a role on/off for a room
   const toggleRole = async (room: Room, role: string) => {
     setSaving(room.id)
+
+    // Work from current allRooms state, not the passed-in room (which may be stale)
+    const current = allRooms.find(r => r.id === room.id)!
     let next: string[] | null
-    if (!room.allowed_roles) {
-      // Currently unrestricted → restrict to all roles except this one (remove it)
-      next = ALL_ROLES.filter(r => r !== role)
-    } else if (room.allowed_roles.includes(role)) {
-      next = room.allowed_roles.filter(r => r !== role)
-      if (next.length === 0) next = null // empty = no one can see it (except admin)
+
+    if (!current.allowed_roles) {
+      // null = everyone can see → restrict to all EXCEPT this role
+      next = ALL_ROLES.filter(r => r !== role && r !== 'admin')
+    } else if (current.allowed_roles.includes(role)) {
+      // role is in list → remove it
+      next = current.allowed_roles.filter(r => r !== role)
+      if (next.length === 0) next = [] // keep as empty array, not null
     } else {
-      next = [...room.allowed_roles, role]
-      if (next.sort().join() === ALL_ROLES.sort().join()) next = null // all roles = unrestricted
+      // role not in list → add it
+      next = [...current.allowed_roles, role]
     }
-    await supabase.from('chat_rooms').update({ allowed_roles: next }).eq('id', room.id)
+
+    // Optimistic update so UI reflects immediately
+    setAllRooms(prev => prev.map(r =>
+      r.id === room.id ? { ...r, allowed_roles: next } : r
+    ))
+
+    const { error } = await supabase
+      .from('chat_rooms')
+      .update({ allowed_roles: next })
+      .eq('id', room.id)
+
+    if (error) {
+      // Revert on error
+      setAllRooms(prev => prev.map(r =>
+        r.id === room.id ? { ...r, allowed_roles: current.allowed_roles } : r
+      ))
+    }
     setSaving(null)
-    reload()
   }
 
-  // Make unrestricted (all roles see it)
   const makeGlobal = async (room: Room) => {
     setSaving(room.id)
+    setAllRooms(prev => prev.map(r =>
+      r.id === room.id ? { ...r, allowed_roles: null } : r
+    ))
     await supabase.from('chat_rooms').update({ allowed_roles: null }).eq('id', room.id)
     setSaving(null)
-    reload()
   }
 
   const createRoom = async () => {
@@ -440,12 +461,12 @@ function ManageRoomsModal({ rooms, onClose }: { rooms: Room[]; onClose: () => vo
               </div>
 
               <div className="text-xs text-muted mb-2 font-bold uppercase tracking-wider">
-                {room.allowed_roles ? `Visible to: ${room.allowed_roles.length} role(s)` : '🌐 Visible to everyone'}
+                {room.allowed_roles === null ? '🌐 Visible to everyone' : room.allowed_roles.length === 0 ? '🔒 Hidden from all non-admins' : `✅ Visible to: ${room.allowed_roles.map(r => ROLE_LABELS[r]).join(', ')}`}
               </div>
 
               <div className="flex flex-wrap gap-2">
                 {ALL_ROLES.map(role => {
-                  const active = !room.allowed_roles || room.allowed_roles.includes(role)
+                  const active = room.allowed_roles === null || room.allowed_roles.includes(role)
                   // admin always sees everything — show as locked
                   if (role === 'admin') {
                     return (
