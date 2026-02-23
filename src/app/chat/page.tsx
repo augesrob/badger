@@ -4,8 +4,6 @@ import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
-/* eslint-disable @typescript-eslint/no-unused-vars */
-
 interface Message {
   id: number
   room_id: number
@@ -40,18 +38,28 @@ const ROLE_ICONS: Record<string, string> = {
   admin: '👑', print_room: '🖨️', truck_mover: '🚛', trainee: '📚', driver: '🚚',
 }
 
+function canSeeRoom(room: Room, role: string): boolean {
+  if (role === 'admin') return true
+  // allowed_roles = null means global (everyone)
+  if (room.allowed_roles === null) return true
+  // allowed_roles = [] means hidden from everyone except admin
+  if (room.allowed_roles.length === 0) return false
+  return room.allowed_roles.includes(role)
+}
+
 function Avatar({ name, color, avatarUrl, size = 8 }: {
   name: string; color: string; avatarUrl?: string | null; size?: number
 }) {
   if (avatarUrl) {
-    return (
-      <img src={avatarUrl} alt={name}
-        className={`w-${size} h-${size} rounded-full object-cover flex-shrink-0`} />
-    )
+    return <img src={avatarUrl} alt={name} width={size * 4} height={size * 4}
+      style={{ width: size * 4, height: size * 4, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
   }
   return (
-    <div className={`w-${size} h-${size} rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0`}
-      style={{ background: color }}>
+    <div style={{
+      width: size * 4, height: size * 4, borderRadius: '50%', background: color,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0,
+    }}>
       {name.slice(0, 2).toUpperCase()}
     </div>
   )
@@ -63,7 +71,7 @@ export default function ChatPage() {
   const isAdmin = profile?.role === 'admin'
 
   const [rooms, setRooms]               = useState<Room[]>([])
-  const [activeRoom, setActiveRoom]     = useState<Room | null>(null)
+  const [activeRoomId, setActiveRoomId] = useState<number | null>(null)
   const [messages, setMessages]         = useState<Message[]>([])
   const [input, setInput]               = useState('')
   const [sending, setSending]           = useState(false)
@@ -71,25 +79,36 @@ export default function ChatPage() {
   const [hoveredMsg, setHoveredMsg]     = useState<number | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [showManage, setShowManage]     = useState(false)
-  const bottomRef  = useRef<HTMLDivElement>(null)
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
-  // ── Load rooms ────────────────────────────────────────────────────────────
-  const loadRooms = useCallback(async () => {
+  const bottomRef      = useRef<HTMLDivElement>(null)
+  const channelRef     = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const activeRoomRef  = useRef<number | null>(null)
+  const roomsRef       = useRef<Room[]>([])
+
+  // Keep refs in sync so realtime handlers always see current values
+  useEffect(() => { activeRoomRef.current = activeRoomId }, [activeRoomId])
+  useEffect(() => { roomsRef.current = rooms }, [rooms])
+
+  const activeRoom = rooms.find(r => r.id === activeRoomId) ?? null
+
+  // ── Load rooms ──────────────────────────────────────────────────────────
+  const loadRooms = useCallback(async (keepActive = false) => {
     if (!profile) return
     const { data } = await supabase.from('chat_rooms').select('*').order('id')
-    const visible = (data || []).filter((r: Room) => {
-      if (profile.role === 'admin') return true          // admin sees everything
-      if (r.allowed_roles) return r.allowed_roles.includes(profile.role)
-      if (r.type === 'global') return true
-      if (r.type === 'role') return r.role_target === profile.role
-      return false
+    const visible = (data || []).filter((r: Room) => canSeeRoom(r, profile.role))
+    setRooms(prev => {
+      const merged = visible.map((r: Room) => {
+        const existing = prev.find(p => p.id === r.id)
+        return { ...r, unread: existing?.unread ?? 0 }
+      })
+      return merged
     })
-    setRooms(visible.map((r: Room) => ({ ...r, unread: 0 })))
-    if (visible.length > 0 && !activeRoom) setActiveRoom(visible[0])
-  }, [profile, activeRoom])
+    if (!keepActive && visible.length > 0) {
+      setActiveRoomId(prev => prev ?? visible[0].id)
+    }
+  }, [profile])
 
-  // ── Load messages ─────────────────────────────────────────────────────────
+  // ── Load messages ───────────────────────────────────────────────────────
   const loadMessages = useCallback(async (roomId: number) => {
     setLoadingMsgs(true)
     const { data } = await supabase
@@ -103,44 +122,86 @@ export default function ChatPage() {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
   }, [])
 
-  // ── Subscribe to room ─────────────────────────────────────────────────────
-  const subscribeRoom = useCallback((roomId: number) => {
+  // ── Subscribe to ALL visible rooms for unread + active room messages ────
+  const subscribeAll = useCallback((visibleRoomIds: number[]) => {
     if (channelRef.current) supabase.removeChannel(channelRef.current)
-    const ch = supabase.channel(`room-${roomId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
+    if (visibleRoomIds.length === 0) return
+
+    const ch = supabase.channel('chat-all')
+
+    visibleRoomIds.forEach(roomId => {
+      ch.on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
         async (payload) => {
-          const { data } = await supabase
-            .from('messages')
-            .select('*, profiles(username,display_name,avatar_color,avatar_url,role)')
-            .eq('id', payload.new.id).single()
-          if (data) {
-            setMessages(prev => [...prev, data as Message])
-            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+          const currentActive = activeRoomRef.current
+
+          if (roomId === currentActive) {
+            // Fetch full message with profile data
+            const { data } = await supabase
+              .from('messages')
+              .select('*, profiles(username,display_name,avatar_color,avatar_url,role)')
+              .eq('id', payload.new.id)
+              .single()
+            if (data) {
+              setMessages(prev => {
+                // Deduplicate
+                if (prev.find(m => m.id === data.id)) return prev
+                return [...prev, data as Message]
+              })
+              setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+            }
+          } else {
+            // Increment unread badge for other rooms
+            setRooms(prev => prev.map(r =>
+              r.id === roomId ? { ...r, unread: r.unread + 1 } : r
+            ))
           }
         })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
-        (payload) => setMessages(prev => prev.filter(m => m.id !== payload.old.id)))
-      .subscribe()
+
+      ch.on('postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
+        (payload) => {
+          if (roomId === activeRoomRef.current) {
+            setMessages(prev => prev.filter(m => m.id !== payload.old.id))
+          }
+        })
+    })
+
+    ch.subscribe((status) => {
+      console.log('[chat] realtime status:', status)
+    })
     channelRef.current = ch
   }, [])
 
+  // Init: load rooms, then subscribe
   useEffect(() => {
-    if (!authLoading && !profile) router.push('/login')
-    if (profile) loadRooms()
+    if (!authLoading && !profile) { router.push('/login'); return }
+    if (!profile) return
+    supabase.from('chat_rooms').select('*').order('id').then(({ data }) => {
+      const visible = (data || []).filter((r: Room) => canSeeRoom(r, profile.role))
+      const withUnread = visible.map((r: Room) => ({ ...r, unread: 0 }))
+      setRooms(withUnread)
+      if (visible.length > 0) setActiveRoomId(visible[0].id)
+      subscribeAll(visible.map((r: Room) => r.id))
+    })
     return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
-  }, [authLoading, profile, router, loadRooms])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, profile?.id])
 
+  // Load messages + clear unread when active room changes
   useEffect(() => {
-    if (activeRoom) { loadMessages(activeRoom.id); subscribeRoom(activeRoom.id) }
-  }, [activeRoom, loadMessages, subscribeRoom])
+    if (!activeRoomId) return
+    loadMessages(activeRoomId)
+    setRooms(prev => prev.map(r => r.id === activeRoomId ? { ...r, unread: 0 } : r))
+  }, [activeRoomId, loadMessages])
 
-  // ── Send message ──────────────────────────────────────────────────────────
+  // ── Send / delete / clear ───────────────────────────────────────────────
   const sendMessage = async () => {
-    if (!input.trim() || !profile || !activeRoom || sending) return
+    if (!input.trim() || !profile || !activeRoomId || sending) return
     setSending(true)
     const content = input.trim()
     setInput('')
-    await supabase.from('messages').insert({ room_id: activeRoom.id, sender_id: profile.id, content })
+    await supabase.from('messages').insert({ room_id: activeRoomId, sender_id: profile.id, content })
     setSending(false)
   }
 
@@ -151,8 +212,8 @@ export default function ChatPage() {
   }
 
   const clearRoom = async () => {
-    if (!activeRoom || !isAdmin) return
-    await supabase.from('messages').delete().eq('room_id', activeRoom.id)
+    if (!activeRoomId || !isAdmin) return
+    await supabase.from('messages').delete().eq('room_id', activeRoomId)
     setMessages([])
     setConfirmClear(false)
   }
@@ -160,8 +221,7 @@ export default function ChatPage() {
   const formatTime = (ts: string) => {
     const d = new Date(ts)
     const now = new Date()
-    const sameDay = d.toDateString() === now.toDateString()
-    return sameDay
+    return d.toDateString() === now.toDateString()
       ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
@@ -171,17 +231,18 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-[calc(100vh-80px)] gap-0 bg-[#0f0f0f] rounded-2xl overflow-hidden border border-[#333]">
-      {/* Sidebar */}
+
+      {/* ── Sidebar ── */}
       <div className="w-60 flex-shrink-0 border-r border-[#333] flex flex-col bg-[#111]">
         <div className="px-4 py-3 border-b border-[#333] flex items-center justify-between">
           <div className="text-sm font-bold text-amber-500">💬 Chat</div>
           {isAdmin && (
-            <button onClick={() => setShowManage(true)}
-              className="text-xs text-muted hover:text-amber-500 transition-colors" title="Manage rooms">
-              ⚙️
-            </button>
+            <button onClick={() => setShowManage(true)} title="Manage rooms"
+              className="text-xs text-muted hover:text-amber-500 transition-colors">⚙️</button>
           )}
         </div>
+
+        {/* Self avatar */}
         <div className="px-3 py-2 border-b border-[#222] flex items-center gap-2">
           <Avatar name={profile.display_name || profile.username} color={profile.avatar_color}
             avatarUrl={(profile as unknown as { avatar_url?: string | null }).avatar_url} size={7} />
@@ -190,28 +251,45 @@ export default function ChatPage() {
             <div className="text-[10px] text-muted">{ROLE_ICONS[profile.role]} {profile.role.replace('_', ' ')}</div>
           </div>
         </div>
+
+        {/* Room list */}
         <div className="flex-1 overflow-y-auto">
           <div className="px-3 pt-3 pb-1 text-[10px] font-bold text-muted uppercase tracking-wider">Rooms</div>
           {rooms.map(room => (
-            <button key={room.id} onClick={() => setActiveRoom(room)}
-              className={`w-full text-left px-3 py-2.5 text-sm transition-colors flex items-center gap-2 rounded-lg mx-1 ${
-                activeRoom?.id === room.id ? 'bg-amber-500/10 text-amber-400 font-medium' : 'text-muted hover:text-white hover:bg-[#1a1a1a]'
+            <button key={room.id}
+              onClick={() => setActiveRoomId(room.id)}
+              className={`w-full text-left px-3 py-2.5 text-sm transition-colors flex items-center justify-between gap-2 rounded-lg mx-1 mb-0.5 ${
+                room.id === activeRoomId
+                  ? 'bg-amber-500/10 text-amber-400 font-medium'
+                  : 'text-muted hover:text-white hover:bg-[#1a1a1a]'
               }`}>
               <span className="truncate">{room.name}</span>
+              {room.unread > 0 && room.id !== activeRoomId && (
+                <span style={{
+                  background: '#f59e0b', color: '#000', borderRadius: 9999,
+                  fontSize: 10, fontWeight: 700, minWidth: 18, height: 18,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  padding: '0 5px', flexShrink: 0,
+                }}>
+                  {room.unread > 99 ? '99+' : room.unread}
+                </span>
+              )}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Main chat area */}
+      {/* ── Main chat ── */}
       <div className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
         <div className="px-6 py-3 border-b border-[#333] flex items-center gap-3">
           <div className="font-bold">{activeRoom?.name}</div>
           <div className="text-xs text-muted flex-1">
-            {activeRoom?.allowed_roles
-              ? activeRoom.allowed_roles.map(r => ROLE_ICONS[r]).join(' ')
-              : activeRoom?.type === 'global' ? 'Everyone'
-              : activeRoom?.type === 'role' ? `${activeRoom.role_target?.replace('_', ' ')} only` : 'Direct'}
+            {activeRoom?.allowed_roles === null
+              ? 'Everyone'
+              : activeRoom?.allowed_roles?.length === 0
+              ? 'Admins only'
+              : activeRoom?.allowed_roles?.map(r => ROLE_ICONS[r]).join(' ')}
           </div>
           {isAdmin && activeRoom && messages.length > 0 && (
             <button onClick={() => setConfirmClear(true)}
@@ -221,6 +299,7 @@ export default function ChatPage() {
           )}
         </div>
 
+        {/* Messages */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-1">
           {loadingMsgs && <div className="text-center text-muted text-sm py-8">Loading...</div>}
           {!loadingMsgs && messages.length === 0 && (
@@ -240,16 +319,10 @@ export default function ChatPage() {
                 onMouseEnter={() => setHoveredMsg(msg.id)}
                 onMouseLeave={() => setHoveredMsg(null)}>
 
-                {!grouped ? (
-                  <Avatar
-                    name={sender?.display_name || sender?.username || '?'}
-                    color={sender?.avatar_color || '#666'}
-                    avatarUrl={sender?.avatar_url}
-                    size={8}
-                  />
-                ) : (
-                  <div className="w-8 flex-shrink-0" />
-                )}
+                {!grouped
+                  ? <Avatar name={sender?.display_name || sender?.username || '?'}
+                      color={sender?.avatar_color || '#666'} avatarUrl={sender?.avatar_url} size={8} />
+                  : <div style={{ width: 32, flexShrink: 0 }} />}
 
                 <div className={`flex flex-col max-w-[70%] ${isMe ? 'items-end' : 'items-start'}`}>
                   {!grouped && (
@@ -262,9 +335,7 @@ export default function ChatPage() {
                   <div className={`flex items-center gap-1.5 ${isMe ? 'flex-row-reverse' : ''}`}>
                     <div className={`px-3 py-2 rounded-2xl text-sm break-words ${
                       isMe ? 'bg-amber-500 text-black rounded-tr-sm' : 'bg-[#222] text-white rounded-tl-sm'
-                    }`}>
-                      {msg.content}
-                    </div>
+                    }`}>{msg.content}</div>
                     {canDelete && hoveredMsg === msg.id && (
                       <button onClick={() => deleteMessage(msg)}
                         className="text-red-400/50 hover:text-red-400 transition-colors text-xs p-1 rounded">✕</button>
@@ -277,6 +348,7 @@ export default function ChatPage() {
           <div ref={bottomRef} />
         </div>
 
+        {/* Input */}
         <div className="px-4 py-3 border-t border-[#333]">
           <div className="flex gap-2 items-center">
             <input value={input} onChange={e => setInput(e.target.value)}
@@ -292,7 +364,7 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Clear room modal */}
+      {/* Clear room confirm */}
       {confirmClear && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setConfirmClear(false)}>
           <div className="bg-[#1a1a1a] border border-red-500 rounded-2xl p-6 max-w-sm w-full shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -309,96 +381,92 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Admin: Manage Rooms modal */}
+      {/* Admin manage rooms */}
       {showManage && isAdmin && (
-        <ManageRoomsModal rooms={rooms} onClose={() => { setShowManage(false); loadRooms() }} />
+        <ManageRoomsModal
+          onClose={async () => {
+            setShowManage(false)
+            await loadRooms(true)
+            // Re-subscribe with potentially updated room list
+            const { data } = await supabase.from('chat_rooms').select('*').order('id')
+            const visible = (data || []).filter((r: Room) => canSeeRoom(r, profile.role))
+            subscribeAll(visible.map((r: Room) => r.id))
+          }}
+        />
       )}
     </div>
   )
 }
 
-// ── Role toggle button ────────────────────────────────────────────────────────
+// ── Role toggle button ──────────────────────────────────────────────────────
 function RoleToggleBtn({ label, active, disabled, onClick }: {
   label: string; active: boolean; disabled: boolean; onClick: () => void
 }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        background: active ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.1)',
-        border: `1px solid ${active ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.4)'}`,
-        color: active ? '#4ade80' : '#f87171',
-        padding: '6px 12px',
-        borderRadius: '8px',
-        fontSize: '11px',
-        fontWeight: 500,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.4 : 1,
-        whiteSpace: 'nowrap',
-      }}>
+    <button onClick={onClick} disabled={disabled} style={{
+      background: active ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.1)',
+      border: `1px solid ${active ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.4)'}`,
+      color: active ? '#4ade80' : '#f87171',
+      padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 500,
+      cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.4 : 1,
+      whiteSpace: 'nowrap',
+    }}>
       {active ? '✓' : '✗'} {label}
     </button>
   )
 }
 
-// ── Admin: Manage Rooms modal ────────────────────────────────────────────────
-function ManageRoomsModal({ rooms, onClose }: { rooms: Room[]; onClose: () => void }) {
-  const [allRooms, setAllRooms]   = useState<Room[]>(rooms)
-  const [saving, setSaving]       = useState<number | null>(null)
-  const [newRoom, setNewRoom]     = useState({ name: '', description: '' })
-  const [creating, setCreating]   = useState(false)
+// ── Admin: Manage Rooms modal ───────────────────────────────────────────────
+function ManageRoomsModal({ onClose }: { onClose: () => void }) {
+  const [allRooms, setAllRooms] = useState<Room[]>([])
+  const [saving, setSaving]     = useState<number | null>(null)
+  const [newRoom, setNewRoom]   = useState({ name: '', description: '' })
+  const [creating, setCreating] = useState(false)
+  const [loaded, setLoaded]     = useState(false)
 
-  const reload = async () => {
+  const reload = useCallback(async () => {
     const { data } = await supabase.from('chat_rooms').select('*').order('id')
     setAllRooms((data || []).map((r: Room) => ({ ...r, unread: 0 })))
-  }
+    setLoaded(true)
+  }, [])
 
-  // Toggle a role on/off for a room
-  const toggleRole = async (room: Room, role: string) => {
-    setSaving(room.id)
+  useEffect(() => { reload() }, [reload])
 
-    // Work from current allRooms state, not the passed-in room (which may be stale)
-    const current = allRooms.find(r => r.id === room.id)!
+  const toggleRole = async (roomId: number, role: string) => {
+    setSaving(roomId)
+    // Always read from current allRooms state
+    const current = allRooms.find(r => r.id === roomId)!
     let next: string[] | null
 
-    if (!current.allowed_roles) {
-      // null = everyone can see → restrict to all EXCEPT this role
+    if (current.allowed_roles === null) {
+      // Global → remove this role
       next = ALL_ROLES.filter(r => r !== role && r !== 'admin')
     } else if (current.allowed_roles.includes(role)) {
-      // role is in list → remove it
+      // Has role → remove it
       next = current.allowed_roles.filter(r => r !== role)
-      if (next.length === 0) next = [] // keep as empty array, not null
     } else {
-      // role not in list → add it
+      // Missing role → add it
       next = [...current.allowed_roles, role]
+      // If now contains all non-admin roles, reset to null (global)
+      const nonAdmin = ALL_ROLES.filter(r => r !== 'admin')
+      if (nonAdmin.every(r => next!.includes(r))) next = null
     }
 
-    // Optimistic update so UI reflects immediately
-    setAllRooms(prev => prev.map(r =>
-      r.id === room.id ? { ...r, allowed_roles: next } : r
-    ))
+    // Optimistic update
+    setAllRooms(prev => prev.map(r => r.id === roomId ? { ...r, allowed_roles: next } : r))
 
-    const { error } = await supabase
-      .from('chat_rooms')
-      .update({ allowed_roles: next })
-      .eq('id', room.id)
-
+    const { error } = await supabase.from('chat_rooms').update({ allowed_roles: next }).eq('id', roomId)
     if (error) {
-      // Revert on error
-      setAllRooms(prev => prev.map(r =>
-        r.id === room.id ? { ...r, allowed_roles: current.allowed_roles } : r
-      ))
+      // Revert
+      setAllRooms(prev => prev.map(r => r.id === roomId ? { ...r, allowed_roles: current.allowed_roles } : r))
     }
     setSaving(null)
   }
 
-  const makeGlobal = async (room: Room) => {
-    setSaving(room.id)
-    setAllRooms(prev => prev.map(r =>
-      r.id === room.id ? { ...r, allowed_roles: null } : r
-    ))
-    await supabase.from('chat_rooms').update({ allowed_roles: null }).eq('id', room.id)
+  const makeGlobal = async (roomId: number) => {
+    setSaving(roomId)
+    setAllRooms(prev => prev.map(r => r.id === roomId ? { ...r, allowed_roles: null } : r))
+    await supabase.from('chat_rooms').update({ allowed_roles: null }).eq('id', roomId)
     setSaving(null)
   }
 
@@ -408,8 +476,7 @@ function ManageRoomsModal({ rooms, onClose }: { rooms: Room[]; onClose: () => vo
     await supabase.from('chat_rooms').insert({
       name: newRoom.name.trim(),
       description: newRoom.description.trim() || null,
-      type: 'global',
-      allowed_roles: null,
+      type: 'global', allowed_roles: null,
     })
     setNewRoom({ name: '', description: '' })
     setCreating(false)
@@ -425,7 +492,7 @@ function ManageRoomsModal({ rooms, onClose }: { rooms: Room[]; onClose: () => vo
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-card border border-[#333] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+      <div className="bg-[#111] border border-[#333] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
         onClick={e => e.stopPropagation()}>
 
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#333]">
@@ -434,73 +501,67 @@ function ManageRoomsModal({ rooms, onClose }: { rooms: Room[]; onClose: () => vo
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {/* Role legend */}
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {ALL_ROLES.map(r => (
-              <span key={r} className="text-[10px] px-2 py-0.5 bg-[#222] rounded text-muted">{ROLE_LABELS[r]}</span>
-            ))}
-          </div>
+          {!loaded && <div className="text-center text-muted py-8">Loading...</div>}
 
           {allRooms.map(room => (
             <div key={room.id} className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
-              <div className="flex items-start justify-between gap-3 mb-3">
+              <div className="flex items-start justify-between gap-3 mb-2">
                 <div>
                   <div className="font-semibold text-white">{room.name}</div>
                   {room.description && <div className="text-xs text-muted mt-0.5">{room.description}</div>}
                 </div>
                 <div className="flex gap-2 items-center flex-shrink-0">
-                  {room.allowed_roles && (
-                    <button onClick={() => makeGlobal(room)} disabled={saving === room.id}
-                      className="text-[10px] text-amber-500 border border-amber-500/30 rounded px-2 py-0.5 hover:bg-amber-500/10 transition-colors">
+                  {room.allowed_roles !== null && (
+                    <button onClick={() => makeGlobal(room.id)} disabled={saving === room.id}
+                      className="text-[10px] text-amber-500 border border-amber-500/30 rounded px-2 py-0.5 hover:bg-amber-500/10">
                       Make Global
                     </button>
                   )}
-                  <button onClick={() => deleteRoom(room)}
-                    className="text-red-500/40 hover:text-red-400 transition-colors text-sm">🗑️</button>
+                  <button onClick={() => deleteRoom(room)} className="text-red-500/50 hover:text-red-400 text-sm">🗑️</button>
                 </div>
               </div>
 
-              <div className="text-xs text-muted mb-2 font-bold uppercase tracking-wider">
-                {room.allowed_roles === null ? '🌐 Visible to everyone' : room.allowed_roles.length === 0 ? '🔒 Hidden from all non-admins' : `✅ Visible to: ${room.allowed_roles.map(r => ROLE_LABELS[r]).join(', ')}`}
+              <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{
+                color: room.allowed_roles === null ? '#6ee7b7' : room.allowed_roles.length === 0 ? '#f87171' : '#fbbf24'
+              }}>
+                {room.allowed_roles === null
+                  ? '🌐 Everyone can see this'
+                  : room.allowed_roles.length === 0
+                  ? '🔒 Hidden (admins only)'
+                  : `👁 Visible to: ${room.allowed_roles.map(r => ROLE_LABELS[r]).join(', ')}`}
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {ALL_ROLES.map(role => {
+                <span style={{
+                  background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)',
+                  color: '#fbbf24', padding: '6px 12px', borderRadius: 8, fontSize: 11,
+                  fontWeight: 500, whiteSpace: 'nowrap',
+                }}>👑 Admin 🔒</span>
+
+                {ALL_ROLES.filter(r => r !== 'admin').map(role => {
                   const active = room.allowed_roles === null || room.allowed_roles.includes(role)
-                  // admin always sees everything — show as locked
-                  if (role === 'admin') {
-                    return (
-                      <span key={role} className="text-[11px] px-3 py-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-400 font-medium cursor-default" title="Admin always has access">
-                        {ROLE_LABELS[role]} 🔒
-                      </span>
-                    )
-                  }
                   return (
-                    <RoleToggleBtn
-                      key={role}
-                      label={ROLE_LABELS[role]}
-                      active={active}
+                    <RoleToggleBtn key={role} label={ROLE_LABELS[role]} active={active}
                       disabled={saving === room.id}
-                      onClick={() => toggleRole(room, role)}
-                    />
+                      onClick={() => toggleRole(room.id, role)} />
                   )
                 })}
               </div>
             </div>
           ))}
 
-          {/* Create new room */}
+          {/* Create room */}
           <div className="bg-[#1a1a1a] border border-dashed border-[#444] rounded-xl p-4">
             <div className="text-xs font-bold text-muted uppercase tracking-wider mb-3">+ Create New Room</div>
             <div className="flex gap-2">
               <input value={newRoom.name} onChange={e => setNewRoom({ ...newRoom, name: e.target.value })}
                 placeholder="Room name" onKeyDown={e => e.key === 'Enter' && createRoom()}
-                className="flex-1 bg-input border border-[#333] rounded-lg px-3 py-2 text-sm focus:border-amber-500 outline-none" />
+                className="flex-1 bg-[#111] border border-[#333] rounded-lg px-3 py-2 text-sm focus:border-amber-500 outline-none" />
               <input value={newRoom.description} onChange={e => setNewRoom({ ...newRoom, description: e.target.value })}
                 placeholder="Description (optional)"
-                className="flex-1 bg-input border border-[#333] rounded-lg px-3 py-2 text-sm focus:border-amber-500 outline-none" />
+                className="flex-1 bg-[#111] border border-[#333] rounded-lg px-3 py-2 text-sm focus:border-amber-500 outline-none" />
               <button onClick={createRoom} disabled={creating || !newRoom.name.trim()}
-                className="bg-amber-500 hover:bg-amber-400 text-black font-bold px-4 py-2 rounded-lg text-sm transition-colors disabled:opacity-50">
+                className="bg-amber-500 hover:bg-amber-400 text-black font-bold px-4 py-2 rounded-lg text-sm disabled:opacity-50">
                 {creating ? '...' : 'Create'}
               </button>
             </div>
@@ -509,7 +570,7 @@ function ManageRoomsModal({ rooms, onClose }: { rooms: Room[]; onClose: () => vo
 
         <div className="px-6 py-4 border-t border-[#333]">
           <button onClick={onClose}
-            className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-2.5 rounded-xl text-sm transition-colors">
+            className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-2.5 rounded-xl text-sm">
             Done
           </button>
         </div>
