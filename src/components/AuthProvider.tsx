@@ -14,6 +14,7 @@ export interface Profile {
   carrier: string | null
   sms_enabled: boolean
   avatar_color: string
+  avatar_url: string | null
 }
 
 interface AuthCtx {

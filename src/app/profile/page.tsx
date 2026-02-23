@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
@@ -16,7 +16,11 @@ const CARRIERS = [
   { label: 'US Cellular', value: 'uscellular', gateway: 'email.uscc.net' },
 ]
 
-const COLORS = ['#f59e0b','#3b82f6','#22c55e','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316']
+const PRESET_COLORS = [
+  '#f59e0b','#f97316','#ef4444','#ec4899','#8b5cf6',
+  '#3b82f6','#06b6d4','#14b8a6','#22c55e','#84cc16',
+  '#ffffff','#94a3b8','#64748b','#1e293b','#000000',
+]
 
 const ROLE_LABELS: Record<string, string> = {
   admin: '👑 Admin', print_room: '🖨️ Print Room', truck_mover: '🚛 Truck Mover',
@@ -27,13 +31,17 @@ export default function ProfilePage() {
   const { profile, refreshProfile, signOut, loading: authLoading } = useAuth()
   const toast = useToast()
   const router = useRouter()
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [displayName, setDisplayName] = useState('')
   const [phone, setPhone]             = useState('')
   const [carrier, setCarrier]         = useState('')
   const [smsEnabled, setSmsEnabled]   = useState(false)
   const [avatarColor, setAvatarColor] = useState('#f59e0b')
+  const [avatarUrl, setAvatarUrl]     = useState<string | null>(null)
   const [saving, setSaving]           = useState(false)
+  const [uploading, setUploading]     = useState(false)
+  const [previewUrl, setPreviewUrl]   = useState<string | null>(null)
 
   const [subscriptions, setSubscriptions] = useState<string[]>([])
   const [newTruck, setNewTruck]           = useState('')
@@ -46,6 +54,7 @@ export default function ProfilePage() {
       setCarrier(profile.carrier || '')
       setSmsEnabled(profile.sms_enabled)
       setAvatarColor(profile.avatar_color || '#f59e0b')
+      setAvatarUrl(profile.avatar_url || null)
     }
   }, [profile])
 
@@ -56,11 +65,79 @@ export default function ProfilePage() {
   }, [profile])
 
   if (authLoading) return <div className="text-center py-20 text-muted">Loading...</div>
-  if (!profile) {
-    router.push('/login')
-    return null
+  if (!profile) { router.push('/login'); return null }
+
+  const initials = (profile.display_name || profile.username).slice(0, 2).toUpperCase()
+  const displayAvatar = previewUrl || avatarUrl
+
+  // ── Image Upload ──────────────────────────────────────────────────────────
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+    if (!allowed.includes(file.type)) {
+      toast('Only JPG, PNG, WebP, or GIF images allowed')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast('Image must be under 5MB')
+      return
+    }
+
+    // Show local preview immediately
+    const objectUrl = URL.createObjectURL(file)
+    setPreviewUrl(objectUrl)
+
+    setUploading(true)
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+      const path = `avatars/${profile.id}.${ext}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('profiles')
+        .upload(path, file, { upsert: true, contentType: file.type })
+
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('profiles')
+        .getPublicUrl(path)
+
+      // Bust cache with timestamp
+      const urlWithBust = `${publicUrl}?t=${Date.now()}`
+
+      const { error: updateError } = await supabase.from('profiles')
+        .update({ avatar_url: urlWithBust })
+        .eq('id', profile.id)
+
+      if (updateError) throw updateError
+
+      setAvatarUrl(urlWithBust)
+      setPreviewUrl(null)
+      await refreshProfile()
+      toast('Profile image updated ✓')
+    } catch (err: unknown) {
+      setPreviewUrl(null)
+      toast('Upload failed: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
   }
 
+  const removeAvatar = async () => {
+    const { error } = await supabase.from('profiles')
+      .update({ avatar_url: null })
+      .eq('id', profile.id)
+    if (error) { toast('Failed to remove image'); return }
+    setAvatarUrl(null)
+    setPreviewUrl(null)
+    await refreshProfile()
+    toast('Profile image removed')
+  }
+
+  // ── Save Profile ──────────────────────────────────────────────────────────
   const saveProfile = async () => {
     setSaving(true)
     const { error } = await supabase.from('profiles').update({
@@ -72,7 +149,6 @@ export default function ProfilePage() {
     }).eq('id', profile.id)
     if (error) { setSaving(false); toast('Failed to save: ' + error.message); return }
 
-    // Sync notify_sms flag on all subscriptions to match current smsEnabled
     await supabase.from('truck_subscriptions')
       .update({ notify_sms: smsEnabled })
       .eq('user_id', profile.id)
@@ -82,6 +158,7 @@ export default function ProfilePage() {
     toast('Profile saved ✓')
   }
 
+  // ── Subscriptions ─────────────────────────────────────────────────────────
   const addSubscription = async () => {
     if (!newTruck.trim()) return
     const truck = newTruck.trim().toUpperCase().replace(/^TR/i, '')
@@ -103,17 +180,27 @@ export default function ProfilePage() {
     toast(`Unsubscribed from TR${truck}`)
   }
 
-  const initials = (profile.display_name || profile.username).slice(0, 2).toUpperCase()
-
   return (
     <div className="max-w-xl mx-auto space-y-6 py-4">
       <h1 className="text-xl font-bold">👤 Profile</h1>
 
-      {/* Avatar + role */}
+      {/* Avatar preview + role */}
       <div className="bg-card border border-[#333] rounded-2xl p-6 flex items-center gap-4">
-        <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold text-white flex-shrink-0"
-          style={{ background: avatarColor }}>
-          {initials}
+        <div className="relative flex-shrink-0">
+          {displayAvatar ? (
+            <img src={displayAvatar} alt="avatar"
+              className="w-16 h-16 rounded-full object-cover border-2 border-[#444]" />
+          ) : (
+            <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold text-white"
+              style={{ background: avatarColor }}>
+              {initials}
+            </div>
+          )}
+          {uploading && (
+            <div className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center">
+              <span className="text-xs text-white">...</span>
+            </div>
+          )}
         </div>
         <div>
           <div className="font-bold text-lg">{profile.display_name || profile.username}</div>
@@ -125,7 +212,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Edit profile */}
-      <div className="bg-card border border-[#333] rounded-2xl p-6 space-y-4">
+      <div className="bg-card border border-[#333] rounded-2xl p-6 space-y-5">
         <h2 className="font-bold text-sm text-muted uppercase tracking-wider">Edit Profile</h2>
 
         <div>
@@ -134,16 +221,84 @@ export default function ProfilePage() {
             className="w-full bg-input border border-[#333] rounded-lg px-4 py-2.5 text-sm focus:border-amber-500 outline-none" />
         </div>
 
+        {/* Profile Image Upload */}
         <div>
-          <label className="text-xs text-muted mb-1 block">Avatar Color</label>
-          <div className="flex gap-2 flex-wrap">
-            {COLORS.map(c => (
-              <button key={c} onClick={() => setAvatarColor(c)}
-                className={`w-8 h-8 rounded-full border-2 transition-transform ${avatarColor === c ? 'border-white scale-125' : 'border-transparent'}`}
-                style={{ background: c }} />
-            ))}
+          <label className="text-xs text-muted mb-2 block">Profile Image</label>
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              {displayAvatar ? (
+                <img src={displayAvatar} alt="avatar"
+                  className="w-14 h-14 rounded-full object-cover border-2 border-[#444]" />
+              ) : (
+                <div className="w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold text-white border-2 border-[#444]"
+                  style={{ background: avatarColor }}>
+                  {initials}
+                </div>
+              )}
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="bg-[#2a2a2a] hover:bg-[#333] border border-[#444] text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50">
+                {uploading ? '⏳ Uploading...' : '📷 Upload Image'}
+              </button>
+              {(avatarUrl || previewUrl) && (
+                <button onClick={removeAvatar}
+                  className="text-red-400 hover:text-red-300 text-xs transition-colors text-left">
+                  ✕ Remove image
+                </button>
+              )}
+            </div>
+            <input ref={fileInputRef} type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              onChange={handleFileSelect} className="hidden" />
           </div>
+          <p className="text-[10px] text-muted mt-2">JPG, PNG, WebP, or GIF · Max 5MB · GIFs will animate</p>
         </div>
+
+        {/* Avatar Color — only shown when no image */}
+        {!displayAvatar && (
+          <div>
+            <label className="text-xs text-muted mb-2 block">Avatar Color <span className="text-[10px]">(used when no image is set)</span></label>
+            <div className="space-y-3">
+              {/* Preset swatches */}
+              <div className="flex gap-2 flex-wrap">
+                {PRESET_COLORS.map(c => (
+                  <button key={c} onClick={() => setAvatarColor(c)}
+                    className={`w-7 h-7 rounded-full border-2 transition-transform hover:scale-110 ${
+                      avatarColor === c ? 'border-white scale-125' : 'border-transparent'
+                    }`}
+                    style={{ background: c }} />
+                ))}
+              </div>
+              {/* Free color picker */}
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-muted">Custom:</label>
+                <input type="color" value={avatarColor} onChange={e => setAvatarColor(e.target.value)}
+                  className="w-10 h-10 rounded-lg cursor-pointer border-0 bg-transparent" />
+                <span className="text-xs font-mono text-muted">{avatarColor}</span>
+                <div className="w-8 h-8 rounded-full border border-[#444]" style={{ background: avatarColor }} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Show color picker even with image, for fallback */}
+        {displayAvatar && (
+          <div>
+            <label className="text-xs text-muted mb-2 block">Fallback Avatar Color</label>
+            <div className="flex items-center gap-3">
+              <input type="color" value={avatarColor} onChange={e => setAvatarColor(e.target.value)}
+                className="w-10 h-10 rounded-lg cursor-pointer border-0 bg-transparent" />
+              <span className="text-xs font-mono text-muted">{avatarColor}</span>
+              <div className="w-8 h-8 rounded-full border border-[#444] flex items-center justify-center text-xs font-bold text-white"
+                style={{ background: avatarColor }}>
+                {initials}
+              </div>
+            </div>
+          </div>
+        )}
 
         <button onClick={saveProfile} disabled={saving}
           className="bg-amber-500 hover:bg-amber-400 text-black font-bold px-6 py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50">
@@ -201,10 +356,10 @@ export default function ProfilePage() {
       {/* Truck subscriptions */}
       <div className="bg-card border border-[#333] rounded-2xl p-6 space-y-4">
         <h2 className="font-bold text-sm text-muted uppercase tracking-wider">🚚 Truck Subscriptions</h2>
-        <p className="text-xs text-muted">Get notified when a truck&apos;s status changes in Live Movement. You can subscribe to multiple trucks.</p>
+        <p className="text-xs text-muted">Get notified when a truck&apos;s status changes in Live Movement.</p>
         <div className="bg-[#1a1a1a] border border-[#333] rounded-lg p-3 space-y-1 text-xs text-muted">
-          <div><span className="text-amber-400 font-mono">170</span> — all trailers on truck 170 <span className="text-muted/60">(TR170, TR170-1, TR170-2…)</span></div>
-          <div><span className="text-amber-400 font-mono">170-1</span> — only trailer 1 on truck 170 <span className="text-muted/60">(specific)</span></div>
+          <div><span className="text-amber-400 font-mono">170</span> — all trailers on truck 170</div>
+          <div><span className="text-amber-400 font-mono">170-1</span> — only trailer 1 on truck 170</div>
         </div>
 
         <div className="flex gap-2">
