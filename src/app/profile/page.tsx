@@ -42,6 +42,8 @@ export default function ProfilePage() {
   const [saving, setSaving]           = useState(false)
   const [uploading, setUploading]     = useState(false)
   const [previewUrl, setPreviewUrl]   = useState<string | null>(null)
+  const [newEmail, setNewEmail]       = useState('')
+  const [emailSaving, setEmailSaving] = useState(false)
 
   const [subscriptions, setSubscriptions] = useState<string[]>([])
   const [newTruck, setNewTruck]           = useState('')
@@ -136,6 +138,22 @@ export default function ProfilePage() {
     setPreviewUrl(null)
     await refreshProfile()
     toast('Profile image removed')
+  }
+
+  // ── Change Email ─────────────────────────────────────────────────────────
+  const changeEmail = async () => {
+    if (!newEmail.trim() || !newEmail.includes('@')) { toast('Enter a valid email'); return }
+    setEmailSaving(true)
+    const res = await fetch('/api/user/change-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newEmail: newEmail.trim(), userId: profile.id }),
+    })
+    const data = await res.json()
+    setEmailSaving(false)
+    if (data.error) { toast('Error: ' + data.error); return }
+    setNewEmail('')
+    toast('Email updated ✓')
   }
 
   // ── Save Profile ──────────────────────────────────────────────────────────
@@ -304,6 +322,21 @@ export default function ProfilePage() {
         <button onClick={saveProfile} disabled={saving}
           className="bg-amber-500 hover:bg-amber-400 text-black font-bold px-6 py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50">
           {saving ? 'Saving...' : 'Save Profile'}
+        </button>
+      </div>
+
+      {/* Change Email */}
+      <div className="bg-card border border-[#333] rounded-2xl p-6 space-y-4">
+        <h2 className="font-bold text-sm text-muted uppercase tracking-wider">📧 Change Email</h2>
+        <div>
+          <label className="text-xs text-muted mb-1 block">New Email Address</label>
+          <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)}
+            placeholder="new@example.com"
+            className="w-full bg-input border border-[#333] rounded-lg px-4 py-2.5 text-sm focus:border-amber-500 outline-none" />
+        </div>
+        <button onClick={changeEmail} disabled={emailSaving || !newEmail.trim()}
+          className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50">
+          {emailSaving ? 'Updating...' : 'Update Email'}
         </button>
       </div>
 
