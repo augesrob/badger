@@ -104,10 +104,15 @@ export default function Nav() {
             <div className="relative" ref={profileRef}>
               <button onClick={() => setProfileOpen(o => !o)}
                 className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-amber-500/10 transition-colors">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
-                  style={{ background: profile.avatar_color || '#f59e0b' }}>
-                  {avatarInitials}
-                </div>
+                {profile.avatar_url ? (
+                  <img src={profile.avatar_url} alt="avatar"
+                    className="w-8 h-8 rounded-full object-cover" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                    style={{ background: profile.avatar_color || '#f59e0b' }}>
+                    {avatarInitials}
+                  </div>
+                )}
                 <div className="hidden sm:block text-left">
                   <div className="text-xs font-medium leading-none">{profile.display_name || profile.username}</div>
                   <div className="text-[10px] text-muted leading-none mt-0.5">{profile.role.replace('_',' ')}</div>
