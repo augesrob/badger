@@ -55,14 +55,26 @@ export default function Movement() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'printroom_entries' }, () => loadAll())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staging_doors' }, () => loadAll())
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
+
+    // Force full reload when tab resumes from background (catches missed realtime events)
+    const handleResume = () => loadAll()
+    window.addEventListener('badger:resume', handleResume)
+
+    return () => {
+      supabase.removeChannel(channel)
+      window.removeEventListener('badger:resume', handleResume)
+    }
   }, [loadAll])
 
-  // Refresh TTS settings when localStorage changes (from admin panel in another tab)
+  // Refresh TTS settings — both cross-tab (storage event) and same-tab (custom event)
   useEffect(() => {
     const handler = () => setTtsSettings(getTTSSettings('movement'))
     window.addEventListener('storage', handler)
-    return () => window.removeEventListener('storage', handler)
+    window.addEventListener('badger:tts-changed', handler)
+    return () => {
+      window.removeEventListener('storage', handler)
+      window.removeEventListener('badger:tts-changed', handler)
+    }
   }, [])
 
   // TTS: announce door/truck status changes

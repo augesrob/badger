@@ -2,115 +2,151 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 
-// Keeps the app alive on mobile:
-// 1. Wake Lock API - prevents screen/tab from sleeping
-// 2. Visibility change - reconnects Supabase when tab comes back
-// 3. Silent audio loop - keeps audio context alive for TTS on iOS/Android
-// 4. Periodic ping - prevents WebSocket timeout
+// Keeps the app alive on mobile iOS/Android:
+// 1. Wake Lock API — prevents screen from sleeping
+// 2. Silent audio loop — keeps AudioContext alive so iOS TTS works at any time
+// 3. speechSynthesis.resume() on visibility — iOS pauses it when backgrounded
+// 4. Supabase reconnect + forced reload on tab resume (catches missed events)
+// 5. Periodic keep-alive ping every 25s
 
 export function KeepAlive() {
-  const wakeLockRef = useRef<WakeLockSentinel | null>(null)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const audioUnlocked = useRef(false)
+  const wakeLockRef    = useRef<WakeLockSentinel | null>(null)
+  const audioRef       = useRef<HTMLAudioElement | null>(null)
+  const audioCtxRef    = useRef<AudioContext | null>(null)
+  const pingRef        = useRef<ReturnType<typeof setInterval> | null>(null)
+  const speechRef      = useRef<ReturnType<typeof setInterval> | null>(null)
+  const audioUnlocked  = useRef(false)
 
-  // Request Wake Lock
+  // ── Wake Lock ────────────────────────────────────────────────────────────
   const requestWakeLock = useCallback(async () => {
     try {
       if ('wakeLock' in navigator) {
         wakeLockRef.current = await navigator.wakeLock.request('screen')
-        wakeLockRef.current.addEventListener('release', () => {
-          // Re-acquire on release (e.g. tab switch)
-        })
       }
-    } catch {
-      // Wake Lock not supported or denied
-    }
+    } catch { /* not supported or denied */ }
   }, [])
 
-  // Create silent audio to keep audio context alive for TTS
-  const initSilentAudio = useCallback(() => {
-    if (audioRef.current) return
-    // Tiny silent WAV (44 bytes of silence)
-    const silentDataUri = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='
-    const audio = new Audio(silentDataUri)
-    audio.loop = true
-    audio.volume = 0.01 // Nearly silent
-    audioRef.current = audio
+  // ── Silent Audio (keeps iOS AudioContext alive like a music app) ──────────
+  // iOS only allows TTS if the AudioContext was started by a user gesture.
+  // We loop a near-silent buffer so the context never gets suspended.
+  const startSilentLoop = useCallback((ctx: AudioContext) => {
+    // Create a 0.5s buffer of silence, loop it as a source node
+    const buffer = ctx.createBuffer(1, ctx.sampleRate / 2, ctx.sampleRate)
+    const source = ctx.createBufferSource()
+    source.buffer = buffer
+    source.loop = true
+    // tiny gain so iOS doesn't treat it as truly silent and kill the context
+    const gain = ctx.createGain()
+    gain.gain.value = 0.001
+    source.connect(gain)
+    gain.connect(ctx.destination)
+    source.start()
   }, [])
 
-  // Unlock audio on first user interaction (required by iOS/Android)
   const unlockAudio = useCallback(() => {
     if (audioUnlocked.current) return
-    if (!audioRef.current) initSilentAudio()
-    
-    const audio = audioRef.current
-    if (!audio) return
 
-    audio.play().then(() => {
-      audioUnlocked.current = true
-      // Also prime speechSynthesis on user gesture
-      if (window.speechSynthesis) {
-        const primer = new SpeechSynthesisUtterance('')
-        primer.volume = 0
-        window.speechSynthesis.speak(primer)
+    // Also keep a plain <audio> loop for compatibility
+    if (!audioRef.current) {
+      const silentDataUri = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='
+      const audio = new Audio(silentDataUri)
+      audio.loop = true
+      audio.volume = 0.001
+      audioRef.current = audio
+    }
+    audioRef.current.play().catch(() => {})
+
+    // Web Audio API context — required for iOS TTS unlock
+    try {
+      if (!audioCtxRef.current) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const Ctx = window.AudioContext || (window as any).webkitAudioContext
+        if (Ctx) {
+          audioCtxRef.current = new Ctx()
+          startSilentLoop(audioCtxRef.current)
+        }
+      } else if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().then(() => {
+          if (audioCtxRef.current) startSilentLoop(audioCtxRef.current)
+        })
       }
-    }).catch(() => {
-      // Will retry on next interaction
-    })
-  }, [initSilentAudio])
+    } catch { /* ignore */ }
 
-  // Reconnect Supabase realtime
-  const reconnect = useCallback(() => {
+    // Prime speechSynthesis on user gesture (required by iOS)
+    if (window.speechSynthesis) {
+      const primer = new SpeechSynthesisUtterance('')
+      primer.volume = 0
+      window.speechSynthesis.speak(primer)
+    }
+
+    audioUnlocked.current = true
+  }, [startSilentLoop])
+
+  // ── Visibility change — reconnect + resume audio/speech ─────────────────
+  const handleVisibility = useCallback(() => {
+    if (document.visibilityState !== 'visible') return
+
+    // 1. Resume AudioContext if iOS suspended it
+    if (audioCtxRef.current?.state === 'suspended') {
+      audioCtxRef.current.resume()
+    }
+    // 2. Resume speechSynthesis — iOS pauses it when backgrounded
+    if (window.speechSynthesis?.paused) {
+      window.speechSynthesis.resume()
+    }
+    // 3. Re-play silent audio (iOS may have stopped it)
+    if (audioRef.current?.paused) {
+      audioRef.current.play().catch(() => {})
+    }
+    // 4. Reconnect Supabase WebSocket
     supabase.realtime.disconnect()
-    supabase.realtime.connect()
-  }, [])
+    setTimeout(() => supabase.realtime.connect(), 300)
 
-  useEffect(() => {
-    initSilentAudio()
+    // 5. Re-acquire wake lock
     requestWakeLock()
 
-    // Unlock audio on ANY user interaction
-    const events = ['touchstart', 'click', 'keydown'] as const
-    events.forEach(e => document.addEventListener(e, unlockAudio, { once: false, passive: true }))
+    // 6. Dispatch a custom event so pages can force-reload their data
+    //    (catches any realtime events that fired while backgrounded)
+    window.dispatchEvent(new CustomEvent('badger:resume'))
+  }, [requestWakeLock])
 
-    // Visibility change — reconnect when tab comes back
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        reconnect()
-        requestWakeLock()
-        // Re-unlock audio in case context was killed
-        if (audioRef.current) {
-          audioRef.current.play().catch(() => {})
-        }
-      }
-    }
+  useEffect(() => {
+    requestWakeLock()
+
+    // Unlock on any user interaction
+    const events = ['touchstart', 'click', 'keydown'] as const
+    events.forEach(e => document.addEventListener(e, unlockAudio, { passive: true }))
     document.addEventListener('visibilitychange', handleVisibility)
 
-    // Periodic keep-alive ping every 25s to keep WebSocket alive
-    pingIntervalRef.current = setInterval(() => {
+    // Periodic WebSocket keep-alive every 25s
+    pingRef.current = setInterval(() => {
       if (document.visibilityState === 'visible') {
-        // Light query to keep connection warm
         supabase.from('loading_doors').select('id').limit(1).then(() => {})
       }
     }, 25000)
 
-    // iOS Safari fix: speechSynthesis can pause after ~15s of silence
-    const speechKeepAlive = setInterval(() => {
-      if (window.speechSynthesis && !window.speechSynthesis.speaking) {
-        window.speechSynthesis.cancel() // Reset any stuck state
+    // speechSynthesis keep-alive every 10s — iOS pauses synth after ~15s silence
+    speechRef.current = setInterval(() => {
+      if (!window.speechSynthesis) return
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume()
+      }
+      // Cancel any stuck utterance
+      if (!window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel()
       }
     }, 10000)
 
     return () => {
       events.forEach(e => document.removeEventListener(e, unlockAudio))
       document.removeEventListener('visibilitychange', handleVisibility)
-      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current)
-      clearInterval(speechKeepAlive)
+      if (pingRef.current)   clearInterval(pingRef.current)
+      if (speechRef.current) clearInterval(speechRef.current)
       if (wakeLockRef.current) wakeLockRef.current.release()
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null }
+      if (audioRef.current)  { audioRef.current.pause(); audioRef.current = null }
+      if (audioCtxRef.current) { audioCtxRef.current.close(); audioCtxRef.current = null }
     }
-  }, [initSilentAudio, requestWakeLock, unlockAudio, reconnect])
+  }, [unlockAudio, handleVisibility, requestWakeLock])
 
-  return null // Invisible component
+  return null
 }
