@@ -317,6 +317,40 @@ export default function ChatPage() {
   )
 }
 
+// ── Role toggle button (inline styles to avoid Tailwind purge) ───────────────
+function RoleToggleBtn({ label, active, disabled, onClick }: {
+  label: string; active: boolean; disabled: boolean; onClick: () => void
+}) {
+  const [hovered, setHovered] = useState(false)
+
+  const style = active
+    ? {
+        background: hovered ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)',
+        border: `1px solid ${hovered ? 'rgba(239,68,68,0.6)' : 'rgba(34,197,94,0.6)'}`,
+        color: hovered ? '#f87171' : '#4ade80',
+      }
+    : {
+        background: hovered ? 'rgba(34,197,94,0.1)' : '#1e1e1e',
+        border: `1px solid ${hovered ? 'rgba(34,197,94,0.5)' : '#444'}`,
+        color: hovered ? '#4ade80' : '#888',
+      }
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={style}
+      className="text-[11px] px-3 py-1.5 rounded-lg font-medium transition-all disabled:opacity-40 cursor-pointer">
+      {active
+        ? (hovered ? '✗ Remove' : `✓ ${label}`)
+        : (hovered ? `+ ${label}` : `✗ ${label}`)
+      }
+    </button>
+  )
+}
+
 // ── Admin: Manage Rooms modal ────────────────────────────────────────────────
 function ManageRoomsModal({ rooms, onClose }: { rooms: Room[]; onClose: () => void }) {
   const [allRooms, setAllRooms]   = useState<Room[]>(rooms)
@@ -430,16 +464,13 @@ function ManageRoomsModal({ rooms, onClose }: { rooms: Room[]; onClose: () => vo
                     )
                   }
                   return (
-                    <button key={role}
-                      onClick={() => toggleRole(room, role)}
+                    <RoleToggleBtn
+                      key={role}
+                      label={ROLE_LABELS[role]}
+                      active={active}
                       disabled={saving === room.id}
-                      className={`text-[11px] px-3 py-1.5 rounded-lg border transition-colors font-medium ${
-                        active
-                          ? 'bg-green-500/20 border-green-500/50 text-green-400 hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-400'
-                          : 'bg-[#222] border-[#444] text-muted hover:bg-green-500/10 hover:border-green-500/40 hover:text-green-400'
-                      }`}>
-                      {active ? '✓' : '✗'} {ROLE_LABELS[role]}
-                    </button>
+                      onClick={() => toggleRole(room, role)}
+                    />
                   )
                 })}
               </div>
