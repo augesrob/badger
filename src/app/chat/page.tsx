@@ -420,6 +420,7 @@ function RoleToggleBtn({ label, active, disabled, onClick }: {
 function ManageRoomsModal({ onClose }: { onClose: () => void }) {
   const [allRooms, setAllRooms] = useState<Room[]>([])
   const [saving, setSaving]     = useState<number | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [newRoom, setNewRoom]   = useState({ name: '', description: '' })
   const [creating, setCreating] = useState(false)
   const [loaded, setLoaded]     = useState(false)
@@ -432,32 +433,37 @@ function ManageRoomsModal({ onClose }: { onClose: () => void }) {
 
   useEffect(() => { reload() }, [reload])
 
+  const adminRoomApi = async (body: object) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+    const res = await fetch('/api/admin/update-room', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(body),
+    })
+    return res.json()
+  }
+
   const toggleRole = async (roomId: number, role: string) => {
     setSaving(roomId)
-    // Always read from current allRooms state
+    setSaveError(null)
     const current = allRooms.find(r => r.id === roomId)!
     let next: string[] | null
 
     if (current.allowed_roles === null) {
-      // Global → remove this role
       next = ALL_ROLES.filter(r => r !== role && r !== 'admin')
     } else if (current.allowed_roles.includes(role)) {
-      // Has role → remove it
       next = current.allowed_roles.filter(r => r !== role)
     } else {
-      // Missing role → add it
       next = [...current.allowed_roles, role]
-      // If now contains all non-admin roles, reset to null (global)
       const nonAdmin = ALL_ROLES.filter(r => r !== 'admin')
       if (nonAdmin.every(r => next!.includes(r))) next = null
     }
 
-    // Optimistic update
     setAllRooms(prev => prev.map(r => r.id === roomId ? { ...r, allowed_roles: next } : r))
-
-    const { error } = await supabase.from('chat_rooms').update({ allowed_roles: next }).eq('id', roomId)
-    if (error) {
-      // Revert
+    const result = await adminRoomApi({ action: 'update_roles', roomId, allowed_roles: next })
+    if (result.error) {
+      setSaveError(`Save failed: ${result.error}`)
       setAllRooms(prev => prev.map(r => r.id === roomId ? { ...r, allowed_roles: current.allowed_roles } : r))
     }
     setSaving(null)
@@ -465,19 +471,22 @@ function ManageRoomsModal({ onClose }: { onClose: () => void }) {
 
   const makeGlobal = async (roomId: number) => {
     setSaving(roomId)
-    setAllRooms(prev => prev.map(r => r.id === roomId ? { ...r, allowed_roles: null } : r))
-    await supabase.from('chat_rooms').update({ allowed_roles: null }).eq('id', roomId)
+    setSaveError(null)
+    const prevRoles = allRooms.find(r => r.id === roomId)?.allowed_roles
+    setAllRooms(p => p.map(r => r.id === roomId ? { ...r, allowed_roles: null } : r))
+    const result = await adminRoomApi({ action: 'update_roles', roomId, allowed_roles: null })
+    if (result.error) {
+      setSaveError(`Save failed: ${result.error}`)
+      setAllRooms(p => p.map(r => r.id === roomId ? { ...r, allowed_roles: prevRoles ?? null } : r))
+    }
     setSaving(null)
   }
 
   const createRoom = async () => {
     if (!newRoom.name.trim()) return
     setCreating(true)
-    await supabase.from('chat_rooms').insert({
-      name: newRoom.name.trim(),
-      description: newRoom.description.trim() || null,
-      type: 'global', allowed_roles: null,
-    })
+    const result = await adminRoomApi({ action: 'create', name: newRoom.name, description: newRoom.description })
+    if (result.error) setSaveError(`Create failed: ${result.error}`)
     setNewRoom({ name: '', description: '' })
     setCreating(false)
     reload()
@@ -485,9 +494,9 @@ function ManageRoomsModal({ onClose }: { onClose: () => void }) {
 
   const deleteRoom = async (room: Room) => {
     if (!confirm(`Delete room "${room.name}"? All messages will be lost.`)) return
-    await supabase.from('messages').delete().eq('room_id', room.id)
-    await supabase.from('chat_rooms').delete().eq('id', room.id)
-    reload()
+    const result = await adminRoomApi({ action: 'delete', roomId: room.id })
+    if (result.error) setSaveError(`Delete failed: ${result.error}`)
+    else reload()
   }
 
   return (
@@ -502,6 +511,11 @@ function ManageRoomsModal({ onClose }: { onClose: () => void }) {
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {!loaded && <div className="text-center text-muted py-8">Loading...</div>}
+          {saveError && (
+            <div className="bg-red-900/30 border border-red-500/50 text-red-400 text-sm rounded-xl px-4 py-3">
+              ⚠️ {saveError} — check browser console for details. You may need an RLS policy allowing admins to update chat_rooms.
+            </div>
+          )}
 
           {allRooms.map(room => (
             <div key={room.id} className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
