@@ -4,6 +4,71 @@ import { supabase } from '@/lib/supabase'
 import { PrintroomEntry } from '@/lib/types'
 import { useToast } from '@/components/Toast'
 
+async function downloadRouteSheetPDF(
+  page1El: HTMLElement,
+  page2El: HTMLElement,
+  dateStr: string
+) {
+  const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+    import('jspdf'),
+    import('html2canvas'),
+  ])
+
+  // A4 landscape in mm: 297 x 210. We use letter landscape: 279.4 x 215.9
+  const pageW = 279.4
+  const pageH = 215.9
+
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
+
+  const pages = [page1El, page2El]
+
+  for (let i = 0; i < pages.length; i++) {
+    const el = pages[i]
+
+    // Temporarily make the element visible and at full width for capture
+    const prevStyle = el.getAttribute('style') || ''
+    el.style.display = 'block'
+    el.style.width = '1056px'  // ~11in at 96dpi
+    el.style.background = '#fff'
+
+    const canvas = await html2canvas(el, {
+      scale: 2,             // 2x for crisp text
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      width: 1056,
+      windowWidth: 1056,
+    })
+
+    // Restore original style
+    el.setAttribute('style', prevStyle)
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.95)
+
+    // Fit canvas into PDF page with margins (5mm each side)
+    const margin = 5
+    const availW = pageW - margin * 2
+    const availH = pageH - margin * 2
+    const canvasAspect = canvas.width / canvas.height
+    const pageAspect = availW / availH
+
+    let drawW = availW
+    let drawH = availW / canvasAspect
+    if (drawH > availH) {
+      drawH = availH
+      drawW = availH * canvasAspect
+    }
+
+    const x = margin + (availW - drawW) / 2
+    const y = margin + (availH - drawH) / 2
+
+    if (i > 0) pdf.addPage('letter', 'landscape')
+    pdf.addImage(imgData, 'JPEG', x, y, drawW, drawH)
+  }
+
+  pdf.save(`routes-at-the-door-${dateStr}.pdf`)
+}
+
 const STORAGE_KEY = 'badger-routesheet-v1'
 
 function saveToStorage(blocks: DoorBlock[], topRight: string, syncStatus: string) {
@@ -342,9 +407,22 @@ export default function RouteSheet() {
   // Email ping system
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'waiting' | 'checking' | 'error'>('idle')
   const [emailError, setEmailError] = useState('')
+  const [downloading, setDownloading] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const page1Ref = useRef<HTMLDivElement>(null)
   const page2Ref = useRef<HTMLDivElement>(null)
+
+  const handleDownloadPDF = async () => {
+    if (!page1Ref.current || !page2Ref.current) return
+    setDownloading(true)
+    try {
+      const dateStr = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }).replace(/\//g, '-')
+      await downloadRouteSheetPDF(page1Ref.current, page2Ref.current, dateStr)
+    } catch (e) {
+      toast('PDF generation failed: ' + String(e))
+    }
+    setDownloading(false)
+  }
 
   // Auto-scale: measure each page's natural height and compute a scale so it fits
   // in one landscape page (8in usable = ~768px at 96dpi with 0.25in margins).
@@ -554,10 +632,16 @@ export default function RouteSheet() {
             <h1 className="text-xl font-bold">📄 Routes at the Door</h1>
             <p className="text-xs text-muted">Truck # pulled from Print Room • Sync route data via email or CSV upload</p>
           </div>
-          <button onClick={() => window.print()}
-            className="bg-amber-500 text-black px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-amber-400 flex items-center gap-2 flex-shrink-0">
-            🖨️ Print / Download PDF
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={handleDownloadPDF} disabled={downloading}
+              className="bg-green-700 hover:bg-green-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 flex-shrink-0 disabled:opacity-50">
+              {downloading ? '⏳ Generating...' : '⬇️ Download PDF'}
+            </button>
+            <button onClick={() => window.print()}
+              className="bg-amber-500 text-black px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-amber-400 flex items-center gap-2 flex-shrink-0">
+              🖨️ Print
+            </button>
+          </div>
         </div>
 
         {/* Sync status bar */}
