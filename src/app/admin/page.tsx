@@ -509,10 +509,126 @@ export default function Admin() {
   )
 
   function FleetSection() {
+    const [truckUsage, setFleetData] = useState<{ truck: { id: number; truck_number: number; truck_type: string; is_active: boolean; transmission: string; notes: string | null }; inUse: boolean; door?: string; status?: string; statusColor?: string }[]>([])
+    const [loading, setLoading] = useState(true)
+    const [viewFilter, setViewFilter] = useState<'all' | 'in_use' | 'available'>('all')
+    const [typeFilter, setTypeFilter] = useState<string>('all')
+
+    useEffect(() => {
+      const load = async () => {
+        setLoading(true)
+        const [trucksRes, movementRes, printroomRes] = await Promise.all([
+          supabase.from('trucks').select('*').eq('is_active', true).order('truck_number'),
+          supabase.from('live_movement').select('*, status_values(status_name, status_color)'),
+          supabase.from('printroom_entries').select('*, loading_doors(door_name)').not('truck_number', 'is', null),
+        ])
+        const trucks = trucksRes.data || []
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mvLookup: Record<string, any> = {}
+        ;(movementRes.data || []).forEach((m: Record<string, unknown>) => { mvLookup[m.truck_number as string] = m })
+        const doorLookup: Record<string, string> = {}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(printroomRes.data || []).forEach((p: any) => { if (p.truck_number) doorLookup[p.truck_number] = p.loading_doors?.door_name || '' })
+
+        setFleetData(trucks.map(t => {
+          const num = String(t.truck_number)
+          const mv = mvLookup[num]
+          return {
+            truck: t,
+            inUse: !!mv,
+            door: doorLookup[num] || undefined,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            status: (mv as any)?.status_values?.status_name || undefined,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            statusColor: (mv as any)?.status_values?.status_color || undefined,
+          }
+        }))
+        setLoading(false)
+      }
+      load()
+    }, [])
+
+    const typeIcons2: Record<string, string> = { box_truck: '🚚 Box', van: '🚐 Van', tandem: '🚛 Tandem', semi: '🚛 Semi' }
+    const inUseCount = truckUsage.filter(t => t.inUse).length
+    const availCount = truckUsage.filter(t => !t.inUse).length
+
+    const filtered = truckUsage.filter(t => {
+      if (viewFilter === 'in_use' && !t.inUse) return false
+      if (viewFilter === 'available' && t.inUse) return false
+      if (typeFilter !== 'all' && t.truck.truck_type !== typeFilter) return false
+      return true
+    })
+
     return (
       <div>
-        <h2 className="text-xl font-bold mb-4">🚛 Fleet Inventory</h2>
-        <iframe src="/fleet" className="w-full border border-[#333] rounded-xl" style={{ height: 'calc(100vh - 160px)' }} />
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold">🚛 Fleet Inventory</h2>
+          <a href="/fleet" target="_blank" className="text-xs text-amber-500 hover:underline">Open full page ↗</a>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-10 text-gray-500">Loading fleet data...</div>
+        ) : (
+          <>
+            {/* Summary */}
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 text-center">
+                <div className="text-2xl font-extrabold text-white">{truckUsage.length}</div>
+                <div className="text-xs text-gray-500 uppercase mt-1">Total Fleet</div>
+              </div>
+              <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 text-center">
+                <div className="text-2xl font-extrabold text-green-400">{inUseCount}</div>
+                <div className="text-xs text-gray-500 uppercase mt-1">In Use</div>
+              </div>
+              <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 text-center">
+                <div className="text-2xl font-extrabold text-amber-500">{availCount}</div>
+                <div className="text-xs text-gray-500 uppercase mt-1">Available</div>
+              </div>
+            </div>
+
+            {/* Filters */}
+            <div className="flex gap-2 flex-wrap mb-4">
+              {(['all', 'in_use', 'available'] as const).map(f => (
+                <button key={f} onClick={() => setViewFilter(f)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${viewFilter === f ? 'bg-amber-500 text-black' : 'bg-[#222] text-gray-400 hover:text-white'}`}>
+                  {f === 'all' ? `All (${truckUsage.length})` : f === 'in_use' ? `In Use (${inUseCount})` : `Available (${availCount})`}
+                </button>
+              ))}
+              <div className="w-px bg-[#333] mx-1" />
+              {['all', 'box_truck', 'van', 'tandem', 'semi'].map(t => (
+                <button key={t} onClick={() => setTypeFilter(t)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${typeFilter === t ? 'bg-amber-500/20 text-amber-500 border border-amber-500/40' : 'bg-[#222] text-gray-400 hover:text-white'}`}>
+                  {t === 'all' ? '🚛 All Types' : typeIcons2[t]}
+                </button>
+              ))}
+            </div>
+
+            {/* Truck Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+              {filtered.map(({ truck, inUse, door, status, statusColor }) => (
+                <div key={truck.id} className={`rounded-xl p-3 border transition-colors ${inUse ? 'bg-[#1a1a1a] border-green-800/50' : 'bg-[#1a1a1a] border-[#2a2a2a]'}`}>
+                  <div className="flex items-start justify-between mb-1">
+                    <span className="text-xl font-extrabold text-amber-500">{truck.truck_number}</span>
+                    <span className="text-[9px] text-gray-600">{typeIcons2[truck.truck_type]?.split(' ')[1] || ''}</span>
+                  </div>
+                  <div className="text-[10px] text-gray-500 uppercase font-bold mb-1">{typeIcons2[truck.truck_type]?.split(' ')[0]} {typeIcons2[truck.truck_type]?.split(' ')[1]}</div>
+                  {inUse ? (
+                    <div>
+                      {door && <div className="text-[10px] text-amber-400">📍 {door}</div>}
+                      {status && (
+                        <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded text-white"
+                          style={{ background: statusColor || '#444' }}>{status}</span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-green-500 font-medium">Available</div>
+                  )}
+                </div>
+              ))}
+              {filtered.length === 0 && <div className="col-span-full text-center py-10 text-gray-500">No trucks match filter.</div>}
+            </div>
+          </>
+        )}
       </div>
     )
   }
