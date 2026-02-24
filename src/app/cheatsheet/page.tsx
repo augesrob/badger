@@ -66,7 +66,7 @@ function drawCheatPage(
   pdf.text(`PAGE ${pageNum} OF ${totalPages}`, PW - MR - 1, MT + HDR_H / 2, { align: 'right', baseline: 'middle' })
   pdf.setTextColor(0)
 
-  let y = MT + HDR_H
+  const y = MT + HDR_H
 
   // Bottom note area height
   const BTM_H = bottomNote ? 10 : 0
