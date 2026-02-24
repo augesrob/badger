@@ -27,6 +27,211 @@ function saveCS(s: SavedState) { try { localStorage.setItem(STORAGE_KEY, JSON.st
 function loadCS(): SavedState | null { try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : null } catch { return null } }
 function loadRS(): RSStorage | null { try { const r = localStorage.getItem(RS_STORAGE_KEY); return r ? JSON.parse(r) : null } catch { return null } }
 
+// ── Draw one cheat sheet page (2 batches side by side) into jsPDF ──
+function drawCheatPage(
+  pdf: InstanceType<typeof import('jspdf').jsPDF>,
+  batch1: BatchData,
+  batch2: BatchData,
+  namesDate: string,
+  leftNote: string,
+  bottomNote: string,
+  pageNum: number,
+  totalPages: number,
+) {
+  const PW = 215.9  // letter portrait width mm
+  const PH = 279.4  // letter portrait height mm
+  const ML = 6
+  const MR = 6
+  const MT = 6
+  const tableW = PW - ML - MR
+
+  // Header
+  const HDR_H = 10
+  pdf.setFillColor(240, 240, 240)
+  pdf.rect(ML, MT, tableW, HDR_H, 'F')
+  pdf.setDrawColor(0)
+  pdf.setLineWidth(0.5)
+  pdf.rect(ML, MT, tableW, HDR_H, 'S')
+
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(8)
+  pdf.setTextColor(0)
+  if (leftNote) pdf.text(leftNote, ML + 2, MT + HDR_H / 2, { baseline: 'middle' })
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(11)
+  pdf.text(namesDate || 'BADGER LIQUOR — CHEAT SHEET', PW / 2, MT + HDR_H / 2, { align: 'center', baseline: 'middle' })
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(6)
+  pdf.setTextColor(150)
+  pdf.text(`PAGE ${pageNum} OF ${totalPages}`, PW - MR - 1, MT + HDR_H / 2, { align: 'right', baseline: 'middle' })
+  pdf.setTextColor(0)
+
+  let y = MT + HDR_H
+
+  // Bottom note area height
+  const BTM_H = bottomNote ? 10 : 0
+  const availH = PH - y - MT - BTM_H
+
+  // Each batch gets half the width minus a divider
+  const DIVIDER = 2
+  const batchW = (tableW - DIVIDER) / 2
+
+  const batches = [batch1, batch2]
+
+  batches.forEach((batch, bi) => {
+    const bx = ML + bi * (batchW + DIVIDER)
+
+    // Batch title
+    const BTITLE_H = 7
+    pdf.setFillColor(30, 30, 30)
+    pdf.rect(bx, y, batchW, BTITLE_H, 'F')
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(9)
+    pdf.setTextColor(255)
+    pdf.text(`BATCH ${batch.batchNum}`, bx + batchW / 2, y + BTITLE_H / 2, { align: 'center', baseline: 'middle' })
+    pdf.setTextColor(0)
+
+    const contentY = y + BTITLE_H
+    const contentH = availH - BTITLE_H
+
+    // Door column header row
+    const DOOR_HDR_H = 5
+    const doorW = batchW / DOOR_ORDER.length
+
+    DOOR_ORDER.forEach((door, di) => {
+      const dx = bx + di * doorW
+      pdf.setFillColor(200, 200, 200)
+      pdf.rect(dx, contentY, doorW, DOOR_HDR_H, 'F')
+      pdf.setDrawColor(0)
+      pdf.setLineWidth(0.3)
+      pdf.rect(dx, contentY, doorW, DOOR_HDR_H, 'S')
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(7)
+      pdf.setTextColor(0)
+      pdf.text(door, dx + doorW / 2, contentY + DOOR_HDR_H / 2, { align: 'center', baseline: 'middle' })
+    })
+
+    const entryAreaY = contentY + DOOR_HDR_H
+    const entryAreaH = contentH - DOOR_HDR_H
+
+    // Calculate max entries across all doors for this batch
+    const maxEntries = Math.max(...DOOR_ORDER.map(d => (batch.doors[d] || []).length))
+    const entryH = Math.min(18, entryAreaH / Math.max(maxEntries, 1))
+    const routeFontSize = Math.max(5, Math.min(8, entryH * 0.45))
+    const truckFontSize = Math.max(4.5, Math.min(7, entryH * 0.38))
+    const notesFontSize = Math.max(4, Math.min(6, entryH * 0.3))
+
+    DOOR_ORDER.forEach((door, di) => {
+      const dx = bx + di * doorW
+      const entries = batch.doors[door] || [emptyEntry()]
+
+      entries.forEach((ent, ei) => {
+        const ey = entryAreaY + ei * entryH
+        if (ey + entryH > entryAreaY + entryAreaH) return // clip overflow
+
+        // Row bg
+        pdf.setFillColor(ei % 2 === 0 ? 255 : 248, ei % 2 === 0 ? 255 : 248, ei % 2 === 0 ? 255 : 248)
+        pdf.rect(dx, ey, doorW, entryH, 'F')
+        pdf.setDrawColor(180)
+        pdf.setLineWidth(0.1)
+        pdf.rect(dx, ey, doorW, entryH, 'S')
+
+        const cx = dx + 1
+        const maxW = doorW - 2
+
+        if (ent.route) {
+          pdf.setFont('helvetica', 'bold')
+          pdf.setFontSize(routeFontSize)
+          pdf.setTextColor(0)
+          pdf.text(ent.route, cx + maxW / 2, ey + entryH * 0.28, { align: 'center', baseline: 'middle', maxWidth: maxW })
+        }
+        if (ent.truck) {
+          pdf.setFont('helvetica', 'normal')
+          pdf.setFontSize(truckFontSize)
+          pdf.setTextColor(60)
+          pdf.text(ent.truck.toUpperCase().startsWith('TR') ? ent.truck : `TR${ent.truck}`,
+            cx + maxW / 2, ey + entryH * 0.58, { align: 'center', baseline: 'middle', maxWidth: maxW })
+        }
+        if (ent.notes) {
+          pdf.setFont('helvetica', 'italic')
+          pdf.setFontSize(notesFontSize)
+          pdf.setTextColor(80)
+          pdf.text(ent.notes, cx + maxW / 2, ey + entryH * 0.85, { align: 'center', baseline: 'middle', maxWidth: maxW })
+        }
+        pdf.setTextColor(0)
+      })
+
+      // Outer door column border
+      pdf.setDrawColor(0)
+      pdf.setLineWidth(0.3)
+      pdf.rect(dx, entryAreaY, doorW, entryAreaH, 'S')
+    })
+
+    // Batch outer border
+    pdf.setDrawColor(0)
+    pdf.setLineWidth(0.6)
+    pdf.rect(bx, y, batchW, availH, 'S')
+  })
+
+  // Center divider
+  pdf.setFillColor(0)
+  pdf.rect(ML + batchW, y, DIVIDER, availH, 'F')
+
+  // Bottom note
+  if (bottomNote) {
+    const by = PH - MT - BTM_H
+    pdf.setFillColor(250, 250, 240)
+    pdf.rect(ML, by, tableW, BTM_H, 'F')
+    pdf.setDrawColor(0)
+    pdf.setLineWidth(0.4)
+    pdf.rect(ML, by, tableW, BTM_H, 'S')
+    pdf.setFont('helvetica', 'bolditalic')
+    pdf.setFontSize(8)
+    pdf.setTextColor(0)
+    pdf.text(bottomNote, ML + 3, by + BTM_H / 2, { baseline: 'middle', maxWidth: tableW - 6 })
+  }
+
+  // Page outer border
+  pdf.setDrawColor(0)
+  pdf.setLineWidth(0.8)
+  pdf.rect(ML, MT, tableW, PH - MT * 2, 'S')
+}
+
+async function generateCheatPDF(
+  batches: BatchData[],
+  namesDate: string,
+  leftNote: string,
+  bottomNote: string,
+  download: boolean,
+) {
+  const { default: jsPDF } = await import('jspdf')
+
+  const isBatchEmpty = (b: BatchData) =>
+    DOOR_ORDER.every(d => (b.doors[d] || []).every(e => e.route === '' && e.truck === '' && e.notes === ''))
+
+  const hasPage2 = !isBatchEmpty(batches[2]) || !isBatchEmpty(batches[3])
+  const totalPages = hasPage2 ? 2 : 1
+
+  // Portrait letter
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' })
+  drawCheatPage(pdf, batches[0], batches[1], namesDate, leftNote, bottomNote, 1, totalPages)
+
+  if (hasPage2) {
+    pdf.addPage('letter', 'portrait')
+    drawCheatPage(pdf, batches[2], batches[3], namesDate, leftNote, bottomNote, 2, totalPages)
+  }
+
+  if (download) {
+    const date = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }).replace(/\//g, '-')
+    pdf.save(`cheat-sheet-${date}.pdf`)
+  } else {
+    const blob = pdf.output('blob')
+    const url = URL.createObjectURL(blob)
+    const win = window.open(url, '_blank')
+    if (win) win.onload = () => { win.focus(); win.print() }
+  }
+}
+
 export default function CheatSheet() {
   const toast = useToast()
   const [loading, setLoading] = useState(true)
@@ -309,7 +514,10 @@ export default function CheatSheet() {
           <div className="flex gap-2">
             <button onClick={loadData} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-500">🔄 Sync from Route Sheet</button>
             <button onClick={clearAll} className="bg-red-900/50 text-red-400 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-900">🗑️ Clear</button>
-            <button onClick={() => window.print()} className="bg-amber-500 text-black px-6 py-2 rounded-lg text-sm font-bold hover:bg-amber-400">🖨️ Print</button>
+            <button onClick={() => generateCheatPDF(batches, namesDate, leftNote, bottomNote, true)}
+              className="bg-green-700 hover:bg-green-600 text-white px-5 py-2 rounded-lg text-sm font-bold">⬇️ Download PDF</button>
+            <button onClick={() => generateCheatPDF(batches, namesDate, leftNote, bottomNote, false)}
+              className="bg-amber-500 text-black px-5 py-2 rounded-lg text-sm font-bold hover:bg-amber-400">🖨️ Print</button>
           </div>
         </div>
       </div>
