@@ -98,8 +98,7 @@ export async function POST(req: NextRequest) {
     }))
 
     for (const entry of entries) {
-      // Upsert — won't overwrite existing custom changes
-      await supabaseAdmin.from('role_permissions').upsert(entry, { onConflict: 'role_name', ignoreDuplicates: true })
+      await supabaseAdmin.from('role_permissions').upsert(entry, { onConflict: 'role_name' })
     }
     return NextResponse.json({ ok: true, seeded: entries.length })
   }
