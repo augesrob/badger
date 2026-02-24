@@ -788,7 +788,6 @@ export default function RouteSheet() {
               setDownloading(true)
               import('jspdf').then(({ default: jsPDF }) => {
                 const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
-                const half = Math.ceil(blocks.length / 2)
                 // reuse same dedup + split logic inline
                 const deduped = blocks.map(block => {
                   const seen = new Set<string>()
