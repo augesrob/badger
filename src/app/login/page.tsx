@@ -1,10 +1,10 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 export default function LoginPage() {
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, profile, loading: authLoading } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get('redirect') || '/'
@@ -17,6 +17,13 @@ export default function LoginPage() {
   const [error, setError]             = useState('')
   const [loading, setLoading]         = useState(false)
 
+  // Already logged in → redirect immediately
+  useEffect(() => {
+    if (!authLoading && profile) {
+      router.replace(redirect)
+    }
+  }, [authLoading, profile, redirect, router])
+
   const submit = async () => {
     setError('')
     if (!email || !password) { setError('Email and password required'); return }
@@ -27,8 +34,14 @@ export default function LoginPage() {
       : await signUp(email, password, username.trim().toLowerCase(), displayName.trim() || username.trim())
     setLoading(false)
     if (err) { setError(err); return }
-    router.push(redirect)
+    router.replace(redirect)
   }
+
+  if (authLoading) return (
+    <div className="min-h-[80vh] flex items-center justify-center">
+      <div className="text-muted text-sm">Loading...</div>
+    </div>
+  )
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center">

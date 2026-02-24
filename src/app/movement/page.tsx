@@ -49,14 +49,42 @@ export default function Movement() {
 
   useEffect(() => {
     loadAll()
+
+    // Each table gets its own targeted reload instead of loadAll() on everything
+    const fetchTrucks = async () => {
+      const { data } = await supabase.from('live_movement').select('*, status_values(status_name, status_color)').order('truck_number')
+      if (data) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mapped = data.map((t: any) => ({
+          ...t,
+          status_name: t.status_values?.status_name || null,
+          status_color: t.status_values?.status_color || '#6b7280',
+          status_values: undefined,
+        }))
+        setTrucks(mapped)
+      }
+      setLastUpdate(new Date().toLocaleTimeString())
+    }
+    const fetchDoors = async () => {
+      const { data } = await supabase.from('loading_doors').select('*').order('sort_order')
+      if (data) setDoors(data)
+    }
+    const fetchPrintroom = async () => {
+      const { data } = await supabase.from('printroom_entries').select('*, loading_doors(door_name)').order('loading_door_id').order('batch_number').order('row_order')
+      if (data) setPrintroom(data)
+    }
+    const fetchStaging = async () => {
+      const { data } = await supabase.from('staging_doors').select('*').order('door_number').order('door_side')
+      if (data) setStagingDoors(data)
+    }
+
     const channel = supabase.channel('movement-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_movement' }, () => loadAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, () => loadAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'printroom_entries' }, () => loadAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'staging_doors' }, () => loadAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_movement' }, fetchTrucks)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, fetchDoors)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'printroom_entries' }, fetchPrintroom)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staging_doors' }, fetchStaging)
       .subscribe()
 
-    // Force full reload when tab resumes from background (catches missed realtime events)
     const handleResume = () => loadAll()
     window.addEventListener('badger:resume', handleResume)
 

@@ -2,32 +2,31 @@ import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function middleware(req: NextRequest) {
-  let res = NextResponse.next({ request: req })
+  const pathname = req.nextUrl.pathname
 
-  // Public paths — no auth needed
+  // Skip auth check for public paths
   if (
-    req.nextUrl.pathname.startsWith('/login') ||
-    req.nextUrl.pathname.startsWith('/api/') ||
-    req.nextUrl.pathname.startsWith('/_next/') ||
-    req.nextUrl.pathname.startsWith('/favicon')
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/_next/') ||
+    pathname.startsWith('/favicon') ||
+    pathname.includes('.')  // static files (.ico, .png, .woff, etc)
   ) {
-    return res
+    return NextResponse.next()
   }
+
+  let res = NextResponse.next({ request: req })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
-          return req.cookies.getAll()
-        },
+        getAll() { return req.cookies.getAll() },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value))
           res = NextResponse.next({ request: req })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            res.cookies.set(name, value, options)
-          )
+          cookiesToSet.forEach(({ name, value, options }) => res.cookies.set(name, value, options))
         },
       },
     }
@@ -37,7 +36,7 @@ export async function middleware(req: NextRequest) {
 
   if (!user) {
     const loginUrl = new URL('/login', req.url)
-    loginUrl.searchParams.set('redirect', req.nextUrl.pathname)
+    loginUrl.searchParams.set('redirect', pathname)
     return NextResponse.redirect(loginUrl)
   }
 
@@ -45,5 +44,8 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  // Only run on actual page routes, not static assets or api routes
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)' ,
+  ],
 }
