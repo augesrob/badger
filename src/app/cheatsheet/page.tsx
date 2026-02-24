@@ -174,7 +174,7 @@ function drawCheatPage(
   })
 
   // Center divider
-  pdf.setFillColor(0)
+  pdf.setFillColor(0, 0, 0)
   pdf.rect(ML + batchW, y, DIVIDER, availH, 'F')
 
   // Bottom note
