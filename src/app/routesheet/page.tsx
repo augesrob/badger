@@ -13,14 +13,13 @@ function drawRouteSheetPage(
   pageNum: number,
   totalPages: number,
 ) {
-  const PW = 279.4  // letter landscape width mm
-  const PH = 215.9  // letter landscape height mm
-  const ML = 8      // margin left
-  const MR = 8      // margin right
-  const MT = 6      // margin top
+  const PW = 279.4
+  const PH = 215.9
+  const ML = 8
+  const MR = 8
+  const MT = 6
   const tableW = PW - ML - MR
 
-  // ── Column widths (mm) ──
   const COL_DOOR = 18
   const COL_ROUTE = 16
   const COL_SIG = 38
@@ -29,13 +28,18 @@ function drawRouteSheetPage(
   const COL_CASES = 18
   const COL_NOTES = tableW - COL_DOOR - COL_ROUTE - COL_SIG - COL_TRUCK - COL_WAVE - COL_CASES
 
-  const HEADER_H = 14   // header section height
-  const COL_HDR_H = 5   // column label row height
-  const ROW_H = 6.2     // data row height
+  const HEADER_H = 14
+  const COL_HDR_H = 5
+  const FOOTER_H = 5
+
+  // Auto-scale row height to fit all rows on the page
+  const totalRows = blocks.reduce((sum, b) => sum + b.rows.length, 0)
+  const availH = PH - MT - HEADER_H - COL_HDR_H - FOOTER_H
+  const ROW_H = Math.min(6.2, availH / Math.max(totalRows, 1))
 
   let y = MT
 
-  // ── Page header ──
+  // ── Header ──
   pdf.setFont('helvetica', 'bold')
   pdf.setFontSize(9)
   pdf.setTextColor(0)
@@ -53,7 +57,6 @@ function drawRouteSheetPage(
     pdf.setFont('helvetica', 'bold')
     pdf.text(topRight, PW - MR, y + 5, { align: 'right' })
   }
-  // Footer
   pdf.setFontSize(6)
   pdf.setFont('helvetica', 'normal')
   pdf.setTextColor(150)
@@ -63,19 +66,19 @@ function drawRouteSheetPage(
 
   y += HEADER_H
 
-  // ── Column header row ──
+  // ── Column headers ──
+  const colHeaders = ['DOOR', 'ROUTE', 'SIGNATURE', 'TRUCK #', 'WAVE RANGE', 'CASE QTY', 'NOTES']
+  const colWidths = [COL_DOOR, COL_ROUTE, COL_SIG, COL_TRUCK, COL_WAVE, COL_CASES, COL_NOTES]
+
   pdf.setFillColor(220, 220, 220)
   pdf.rect(ML, y, tableW, COL_HDR_H, 'F')
   pdf.setDrawColor(0)
   pdf.setLineWidth(0.4)
   pdf.rect(ML, y, tableW, COL_HDR_H, 'S')
-
   pdf.setFont('helvetica', 'bold')
   pdf.setFontSize(6.5)
   pdf.setTextColor(0)
 
-  const colHeaders = ['DOOR', 'ROUTE', 'SIGNATURE', 'TRUCK #', 'WAVE RANGE', 'CASE QTY', 'NOTES']
-  const colWidths = [COL_DOOR, COL_ROUTE, COL_SIG, COL_TRUCK, COL_WAVE, COL_CASES, COL_NOTES]
   let cx = ML
   colHeaders.forEach((h, i) => {
     pdf.text(h, cx + colWidths[i] / 2, y + COL_HDR_H - 1.2, { align: 'center' })
@@ -89,90 +92,73 @@ function drawRouteSheetPage(
   y += COL_HDR_H
 
   // ── Door blocks ──
+  const textFontSize = Math.max(5.5, Math.min(7.5, ROW_H * 1.1))
+
   blocks.forEach(block => {
     const rowCount = block.rows.length
     const blockH = rowCount * ROW_H
 
-    // Door label cell (spans all rows)
+    // Door label
     pdf.setFillColor(250, 250, 250)
     pdf.rect(ML, y, COL_DOOR, blockH, 'F')
     pdf.setDrawColor(0)
     pdf.setLineWidth(0.3)
     pdf.rect(ML, y, COL_DOOR, blockH, 'S')
-
     pdf.setFont('helvetica', 'bold')
-    pdf.setFontSize(8)
+    pdf.setFontSize(Math.min(8, textFontSize + 0.5))
     pdf.text(block.doorName, ML + COL_DOOR / 2, y + blockH / 2 - (block.loaderName ? 1.5 : 0), { align: 'center', baseline: 'middle' })
     if (block.loaderName) {
       pdf.setFont('helvetica', 'normal')
-      pdf.setFontSize(6.5)
+      pdf.setFontSize(Math.min(6.5, textFontSize))
       pdf.text(block.loaderName, ML + COL_DOOR / 2, y + blockH / 2 + 2.5, { align: 'center', baseline: 'middle' })
     }
 
     // Data rows
     block.rows.forEach((row, ri) => {
       const ry = y + ri * ROW_H
-      const rowBg = ri % 2 === 1 ? [248, 248, 248] : [255, 255, 255]
-      pdf.setFillColor(rowBg[0], rowBg[1], rowBg[2])
+      pdf.setFillColor(ri % 2 === 1 ? 248 : 255, ri % 2 === 1 ? 248 : 255, ri % 2 === 1 ? 248 : 255)
       pdf.rect(ML + COL_DOOR, ry, tableW - COL_DOOR, ROW_H, 'F')
 
-      // Cell borders
       pdf.setDrawColor(180)
       pdf.setLineWidth(0.15)
       let rx = ML + COL_DOOR
-      colWidths.slice(1).forEach((w) => {
-        pdf.rect(rx, ry, w, ROW_H, 'S')
-        rx += w
-      })
+      colWidths.slice(1).forEach((w) => { pdf.rect(rx, ry, w, ROW_H, 'S'); rx += w })
 
-      // Text in cells
-      pdf.setTextColor(0)
-      pdf.setFont('helvetica', 'normal')
       const textY = ry + ROW_H / 2
-      const fontSize = 7.5
+      pdf.setTextColor(0)
 
-      // Route
       if (row.route && row.route !== 'gap') {
-        pdf.setFontSize(fontSize)
+        pdf.setFontSize(textFontSize)
         pdf.setFont('helvetica', 'bold')
         pdf.text(row.route, ML + COL_DOOR + COL_ROUTE / 2, textY, { align: 'center', baseline: 'middle' })
       }
-
-      // Truck #
       if (row.truckNumber) {
         const trNum = row.truckNumber.toUpperCase().startsWith('TR') ? row.truckNumber : `TR${row.truckNumber}`
-        pdf.setFontSize(fontSize)
+        pdf.setFontSize(textFontSize)
         pdf.setFont('helvetica', 'bold')
         pdf.text(trNum, ML + COL_DOOR + COL_ROUTE + COL_SIG + COL_TRUCK / 2, textY, { align: 'center', baseline: 'middle' })
       }
-
-      // Case qty
       if (row.caseQty) {
-        pdf.setFontSize(fontSize)
+        pdf.setFontSize(textFontSize)
         pdf.setFont('helvetica', 'normal')
         pdf.text(row.caseQty, ML + COL_DOOR + COL_ROUTE + COL_SIG + COL_TRUCK + COL_WAVE + COL_CASES / 2, textY, { align: 'center', baseline: 'middle' })
       }
-
-      // Notes
       if (row.notes) {
-        pdf.setFontSize(6.5)
+        pdf.setFontSize(Math.min(6.5, textFontSize))
         pdf.setFont('helvetica', 'normal')
         pdf.setTextColor(40)
-        const notesX = ML + COL_DOOR + COL_ROUTE + COL_SIG + COL_TRUCK + COL_WAVE + COL_CASES + 2
-        pdf.text(row.notes, notesX, textY, { baseline: 'middle', maxWidth: COL_NOTES - 3 })
+        pdf.text(row.notes, ML + COL_DOOR + COL_ROUTE + COL_SIG + COL_TRUCK + COL_WAVE + COL_CASES + 2, textY, { baseline: 'middle', maxWidth: COL_NOTES - 3 })
         pdf.setTextColor(0)
       }
     })
 
-    // Bottom border for this block
     pdf.setDrawColor(0)
     pdf.setLineWidth(0.5)
     pdf.line(ML, y + blockH, ML + tableW, y + blockH)
-
     y += blockH
   })
 
-  // Outer table border
+  // Outer border
   const tableH = y - MT - HEADER_H
   pdf.setDrawColor(0)
   pdf.setLineWidth(0.5)
@@ -187,9 +173,41 @@ async function downloadRouteSheetPDF(
   const { default: jsPDF } = await import('jspdf')
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
 
-  const half = Math.ceil(blocks.length / 2)
-  const page1Blocks = blocks.slice(0, half)
-  const page2Blocks = blocks.slice(half)
+  // Deduplicate rows per door: for semis, only keep the first expanded set.
+  // The duplicate issue comes from multiple printroom entries for the same truck
+  // each getting expanded into all CSV routes.
+  const deduped = blocks.map(block => {
+    const seenTrucks = new Set<string>()
+    const rows: RowData[] = []
+    block.rows.forEach(row => {
+      if (!row.truckNumber) { rows.push(row); return }
+      const key = row.truckNumber.toLowerCase() + '|' + row.route
+      if (seenTrucks.has(key)) return
+      seenTrucks.add(key)
+      rows.push(row)
+    })
+    return { ...block, rows }
+  })
+
+  // Split doors evenly between pages by row count (not door count)
+  const totalRows = deduped.reduce((s, b) => s + b.rows.length, 0)
+  const half = totalRows / 2
+  let page1Blocks: DoorBlock[] = []
+  let page2Blocks: DoorBlock[] = []
+  let running = 0
+  let split = false
+  deduped.forEach(b => {
+    if (!split && running + b.rows.length <= half) {
+      page1Blocks.push(b)
+      running += b.rows.length
+    } else {
+      split = true
+      page2Blocks.push(b)
+    }
+  })
+  // Fallback: at least 1 door per page
+  if (page1Blocks.length === 0) { page1Blocks = deduped.slice(0, 1); page2Blocks = deduped.slice(1) }
+  if (page2Blocks.length === 0) { page2Blocks = page1Blocks.splice(-1) }
 
   drawRouteSheetPage(pdf, page1Blocks, topRight, dateStr, 1, 2)
   pdf.addPage('letter', 'landscape')
