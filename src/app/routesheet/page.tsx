@@ -24,9 +24,8 @@ function drawRouteSheetPage(
   const COL_ROUTE = 16
   const COL_SIG = 38
   const COL_TRUCK = 24
-  const COL_WAVE = 22
   const COL_CASES = 18
-  const COL_NOTES = tableW - COL_DOOR - COL_ROUTE - COL_SIG - COL_TRUCK - COL_WAVE - COL_CASES
+  const COL_NOTES = tableW - COL_DOOR - COL_ROUTE - COL_SIG - COL_TRUCK - COL_CASES
 
   const HEADER_H = 14
   const COL_HDR_H = 5
@@ -67,8 +66,8 @@ function drawRouteSheetPage(
   y += HEADER_H
 
   // ── Column headers ──
-  const colHeaders = ['DOOR', 'ROUTE', 'SIGNATURE', 'TRUCK #', 'WAVE RANGE', 'CASE QTY', 'NOTES']
-  const colWidths = [COL_DOOR, COL_ROUTE, COL_SIG, COL_TRUCK, COL_WAVE, COL_CASES, COL_NOTES]
+  const colHeaders = ['DOOR', 'ROUTE', 'SIGNATURE', 'TRUCK #', 'CASE QTY', 'NOTES']
+  const colWidths = [COL_DOOR, COL_ROUTE, COL_SIG, COL_TRUCK, COL_CASES, COL_NOTES]
 
   pdf.setFillColor(220, 220, 220)
   pdf.rect(ML, y, tableW, COL_HDR_H, 'F')
@@ -141,13 +140,13 @@ function drawRouteSheetPage(
       if (row.caseQty) {
         pdf.setFontSize(textFontSize)
         pdf.setFont('helvetica', 'normal')
-        pdf.text(row.caseQty, ML + COL_DOOR + COL_ROUTE + COL_SIG + COL_TRUCK + COL_WAVE + COL_CASES / 2, textY, { align: 'center', baseline: 'middle' })
+        pdf.text(row.caseQty, ML + COL_DOOR + COL_ROUTE + COL_SIG + COL_TRUCK + COL_CASES / 2, textY, { align: 'center', baseline: 'middle' })
       }
       if (row.notes) {
         pdf.setFontSize(Math.min(6.5, textFontSize))
         pdf.setFont('helvetica', 'normal')
         pdf.setTextColor(40)
-        pdf.text(row.notes, ML + COL_DOOR + COL_ROUTE + COL_SIG + COL_TRUCK + COL_WAVE + COL_CASES + 2, textY, { baseline: 'middle', maxWidth: COL_NOTES - 3 })
+        pdf.text(row.notes, ML + COL_DOOR + COL_ROUTE + COL_SIG + COL_TRUCK + COL_CASES + 2, textY, { baseline: 'middle', maxWidth: COL_NOTES - 3 })
         pdf.setTextColor(0)
       }
     })
