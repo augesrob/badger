@@ -59,19 +59,21 @@ export default function AdminUsersPage() {
 
   const fetchUsers = useCallback(async () => {
     setLoading(true)
-    // Try to get emails from the view (requires service role or RLS exception)
-    const { data } = await supabase
+    // Try view with emails first, fall back to profiles if view doesn't exist/RLS blocks
+    const { data: viewData, error: viewError } = await supabase
       .from('profiles_with_email')
       .select('*')
       .order('created_at', { ascending: false })
-      .catch(() => ({ data: null }))
 
-    // Fallback to profiles only if view not available
-    if (!data) {
-      const { data: fallback } = await supabase.from('profiles').select('*').order('created_at', { ascending: false })
-      setUsers((fallback || []) as UserRow[])
+    if (!viewError && viewData) {
+      setUsers(viewData as UserRow[])
     } else {
-      setUsers(data as UserRow[])
+      // Fallback: profiles only (no email column)
+      const { data: fallback } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false })
+      setUsers((fallback || []) as UserRow[])
     }
     setLoading(false)
   }, [])
@@ -203,9 +205,9 @@ export default function AdminUsersPage() {
 
       {/* User list */}
       <div className="bg-card border border-[#333] rounded-2xl overflow-hidden">
-        <div className="grid text-xs text-muted font-bold uppercase tracking-wider px-6 py-3 border-b border-[#333]"
-          style={{ gridTemplateColumns: '1fr 160px 140px 60px' }}>
-          <span>User</span><span>Email</span><span>Role</span><span></span>
+        <div className="hidden md:grid text-xs text-muted font-bold uppercase tracking-wider px-6 py-3 border-b border-[#333]"
+          style={{ gridTemplateColumns: '1fr 180px 150px 110px' }}>
+          <span>User</span><span>Email</span><span>Role</span><span>Actions</span>
         </div>
 
         {filtered.length === 0 && (
@@ -217,10 +219,10 @@ export default function AdminUsersPage() {
           const initials = (user.display_name || user.username).slice(0, 2).toUpperCase()
           return (
             <div key={user.id}
-              className="grid items-center px-6 py-3 border-b border-[#222] hover:bg-[#1a1a1a] transition-colors cursor-pointer"
-              style={{ gridTemplateColumns: '1fr 160px 140px 60px' }}
-              onClick={() => openEdit(user)}>
+              className="flex flex-wrap md:grid items-center px-6 py-4 border-b border-[#222] hover:bg-[#1a1a1a] transition-colors gap-3"
+              style={{ gridTemplateColumns: '1fr 180px 150px 110px' }}>
 
+              {/* Avatar + name */}
               <div className="flex items-center gap-3 min-w-0">
                 {user.avatar_url ? (
                   <img src={user.avatar_url} alt="avatar" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
@@ -237,16 +239,29 @@ export default function AdminUsersPage() {
                 </div>
               </div>
 
-              <div className="text-xs text-muted truncate pr-2">{user.email || '—'}</div>
+              <div className="text-xs text-muted truncate pr-2 hidden md:block">{user.email || '—'}</div>
 
-              <div className="text-xs font-medium" style={{ color: roleInfo?.color }}>{roleInfo?.label}</div>
+              <div className="hidden md:block">
+                <span className="text-xs font-medium px-2 py-1 rounded-full border"
+                  style={{ color: roleInfo?.color, borderColor: (roleInfo?.color || '#888') + '44', background: (roleInfo?.color || '#888') + '11' }}>
+                  {roleInfo?.label}
+                </span>
+              </div>
 
-              <div className="flex justify-end gap-1" onClick={e => e.stopPropagation()}>
+              {/* Actions */}
+              <div className="flex items-center gap-2 ml-auto md:ml-0">
                 <button onClick={() => openEdit(user)}
-                  className="text-muted hover:text-amber-400 text-sm p-1 transition-colors" title="Edit user">✏️</button>
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                  style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', color: '#fbbf24' }}>
+                  ✏️ Edit
+                </button>
                 {user.id !== profile?.id && (
                   <button onClick={() => deleteUser(user)}
-                    className="text-red-500/50 hover:text-red-400 text-sm p-1 transition-colors" title="Delete user">🗑️</button>
+                    className="px-2 py-1.5 rounded-lg text-xs transition-colors"
+                    style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}
+                    title="Delete user">
+                    🗑️
+                  </button>
                 )}
               </div>
             </div>
