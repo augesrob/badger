@@ -36,8 +36,7 @@ export async function POST(req: NextRequest) {
     const firstError = results.find(r => r.error)
     if (firstError?.error) {
       // Column may not exist yet — try adding it then retry
-      await supabaseAdmin.rpc('exec_sql', { sql: 'ALTER TABLE chat_rooms ADD COLUMN IF NOT EXISTS sort_order integer DEFAULT 0' })
-        .catch(() => null)
+      try { await supabaseAdmin.rpc('exec_sql', { sql: 'ALTER TABLE chat_rooms ADD COLUMN IF NOT EXISTS sort_order integer DEFAULT 0' }) } catch { /* ignore */ }
       const retry = await Promise.all(
         (orderedIds as number[]).map((id, idx) =>
           supabaseAdmin.from('chat_rooms').update({ sort_order: idx }).eq('id', id)
