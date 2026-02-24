@@ -50,7 +50,6 @@ async function downloadRouteSheetPDF(
     const availW = pageW - margin * 2
     const availH = pageH - margin * 2
     const canvasAspect = canvas.width / canvas.height
-    const pageAspect = availW / availH
 
     let drawW = availW
     let drawH = availW / canvasAspect
