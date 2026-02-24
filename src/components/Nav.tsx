@@ -56,8 +56,8 @@ export default function Nav() {
 
         <div className="flex flex-1 items-center">
 
-          {/* Print Room dropdown — print_room, truck_mover, admin */}
-          {can('printroom') && (
+          {/* Print Room dropdown — only show items the user has permission for */}
+          {(can('printroom') || can('routesheet') || can('cheatsheet')) && (
             <div className="relative" ref={printRef}>
               <button onClick={() => setPrintOpen(o => !o)}
                 className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-[3px] transition-colors flex items-center gap-1 ${
@@ -67,18 +67,30 @@ export default function Nav() {
               </button>
               {printOpen && (
                 <div className="absolute left-0 top-full bg-nav border border-amber-500/30 rounded-b-lg shadow-2xl min-w-[180px] z-[100]" style={{ marginTop: '-2px' }}>
-                  {[
-                    { href: '/printroom',   label: '🖨️ Print Room' },
-                    { href: '/routesheet',  label: '📄 Route Sheet' },
-                    { href: '/cheatsheet',  label: '📋 Cheat Sheet' },
-                  ].map(c => (
-                    <Link key={c.href} href={c.href} onClick={() => setPrintOpen(false)}
+                  {can('printroom') && (
+                    <Link href="/printroom" onClick={() => setPrintOpen(false)}
                       className={`block px-4 py-3 text-sm font-medium transition-colors border-b border-white/5 last:border-0 ${
-                        pathname === c.href ? 'text-amber-500 bg-amber-500/10' : 'text-muted hover:text-amber-500 hover:bg-amber-500/5'
+                        pathname === '/printroom' ? 'text-amber-500 bg-amber-500/10' : 'text-muted hover:text-amber-500 hover:bg-amber-500/5'
                       }`}>
-                      {c.label}
+                      🖨️ Print Room
                     </Link>
-                  ))}
+                  )}
+                  {can('routesheet') && (
+                    <Link href="/routesheet" onClick={() => setPrintOpen(false)}
+                      className={`block px-4 py-3 text-sm font-medium transition-colors border-b border-white/5 last:border-0 ${
+                        pathname === '/routesheet' ? 'text-amber-500 bg-amber-500/10' : 'text-muted hover:text-amber-500 hover:bg-amber-500/5'
+                      }`}>
+                      📄 Route Sheet
+                    </Link>
+                  )}
+                  {can('cheatsheet') && (
+                    <Link href="/cheatsheet" onClick={() => setPrintOpen(false)}
+                      className={`block px-4 py-3 text-sm font-medium transition-colors border-b border-white/5 last:border-0 ${
+                        pathname === '/cheatsheet' ? 'text-amber-500 bg-amber-500/10' : 'text-muted hover:text-amber-500 hover:bg-amber-500/5'
+                      }`}>
+                      📋 Cheat Sheet
+                    </Link>
+                  )}
                 </div>
               )}
             </div>
