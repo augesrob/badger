@@ -4,66 +4,196 @@ import { supabase } from '@/lib/supabase'
 import { PrintroomEntry } from '@/lib/types'
 import { useToast } from '@/components/Toast'
 
-async function downloadRouteSheetPDF(
-  page1El: HTMLElement,
-  page2El: HTMLElement,
-  dateStr: string
+// Draw one page of the route sheet directly into jsPDF — no screenshot, pure vector
+function drawRouteSheetPage(
+  pdf: InstanceType<typeof import('jspdf').jsPDF>,
+  blocks: DoorBlock[],
+  topRight: string,
+  dateStr: string,
+  pageNum: number,
+  totalPages: number,
 ) {
-  const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
-    import('jspdf'),
-    import('html2canvas'),
-  ])
+  const PW = 279.4  // letter landscape width mm
+  const PH = 215.9  // letter landscape height mm
+  const ML = 8      // margin left
+  const MR = 8      // margin right
+  const MT = 6      // margin top
+  const tableW = PW - ML - MR
 
-  // A4 landscape in mm: 297 x 210. We use letter landscape: 279.4 x 215.9
-  const pageW = 279.4
-  const pageH = 215.9
+  // ── Column widths (mm) ──
+  const COL_DOOR = 18
+  const COL_ROUTE = 16
+  const COL_SIG = 38
+  const COL_TRUCK = 24
+  const COL_WAVE = 22
+  const COL_CASES = 18
+  const COL_NOTES = tableW - COL_DOOR - COL_ROUTE - COL_SIG - COL_TRUCK - COL_WAVE - COL_CASES
 
-  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
+  const HEADER_H = 14   // header section height
+  const COL_HDR_H = 5   // column label row height
+  const ROW_H = 6.2     // data row height
 
-  const pages = [page1El, page2El]
+  let y = MT
 
-  for (let i = 0; i < pages.length; i++) {
-    const el = pages[i]
+  // ── Page header ──
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(9)
+  pdf.setTextColor(0)
+  pdf.text(dateStr, ML, y + 4)
+  pdf.setFontSize(7)
+  pdf.setFont('helvetica', 'normal')
+  pdf.setTextColor(80)
+  pdf.text('FOND DU LAC, WI  //  BADGER LIQUOR', PW / 2, y + 3, { align: 'center' })
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(16)
+  pdf.setTextColor(0)
+  pdf.text('ROUTES AT THE DOOR', PW / 2, y + 9, { align: 'center' })
+  if (topRight) {
+    pdf.setFontSize(8)
+    pdf.setFont('helvetica', 'bold')
+    pdf.text(topRight, PW - MR, y + 5, { align: 'right' })
+  }
+  // Footer
+  pdf.setFontSize(6)
+  pdf.setFont('helvetica', 'normal')
+  pdf.setTextColor(150)
+  pdf.text(`PAGE ${pageNum} OF ${totalPages}`, PW - MR, PH - 3, { align: 'right' })
+  pdf.text('BADGER LIQUOR - ROUTES AT THE DOOR', ML, PH - 3)
+  pdf.setTextColor(0)
 
-    // Temporarily make the element visible and at full width for capture
-    const prevStyle = el.getAttribute('style') || ''
-    el.style.display = 'block'
-    el.style.width = '1056px'  // ~11in at 96dpi
-    el.style.background = '#fff'
+  y += HEADER_H
 
-    const canvas = await html2canvas(el, {
-      scale: 2,             // 2x for crisp text
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      logging: false,
-      width: 1056,
-      windowWidth: 1056,
-    })
+  // ── Column header row ──
+  pdf.setFillColor(220, 220, 220)
+  pdf.rect(ML, y, tableW, COL_HDR_H, 'F')
+  pdf.setDrawColor(0)
+  pdf.setLineWidth(0.4)
+  pdf.rect(ML, y, tableW, COL_HDR_H, 'S')
 
-    // Restore original style
-    el.setAttribute('style', prevStyle)
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(6.5)
+  pdf.setTextColor(0)
 
-    const imgData = canvas.toDataURL('image/jpeg', 0.95)
+  const colHeaders = ['DOOR', 'ROUTE', 'SIGNATURE', 'TRUCK #', 'WAVE RANGE', 'CASE QTY', 'NOTES']
+  const colWidths = [COL_DOOR, COL_ROUTE, COL_SIG, COL_TRUCK, COL_WAVE, COL_CASES, COL_NOTES]
+  let cx = ML
+  colHeaders.forEach((h, i) => {
+    pdf.text(h, cx + colWidths[i] / 2, y + COL_HDR_H - 1.2, { align: 'center' })
+    if (i < colHeaders.length - 1) {
+      pdf.setLineWidth(0.2)
+      pdf.line(cx + colWidths[i], y, cx + colWidths[i], y + COL_HDR_H)
+    }
+    cx += colWidths[i]
+  })
 
-    // Fit canvas into PDF page with margins (5mm each side)
-    const margin = 5
-    const availW = pageW - margin * 2
-    const availH = pageH - margin * 2
-    const canvasAspect = canvas.width / canvas.height
+  y += COL_HDR_H
 
-    let drawW = availW
-    let drawH = availW / canvasAspect
-    if (drawH > availH) {
-      drawH = availH
-      drawW = availH * canvasAspect
+  // ── Door blocks ──
+  blocks.forEach(block => {
+    const rowCount = block.rows.length
+    const blockH = rowCount * ROW_H
+
+    // Door label cell (spans all rows)
+    pdf.setFillColor(250, 250, 250)
+    pdf.rect(ML, y, COL_DOOR, blockH, 'F')
+    pdf.setDrawColor(0)
+    pdf.setLineWidth(0.3)
+    pdf.rect(ML, y, COL_DOOR, blockH, 'S')
+
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(8)
+    pdf.text(block.doorName, ML + COL_DOOR / 2, y + blockH / 2 - (block.loaderName ? 1.5 : 0), { align: 'center', baseline: 'middle' })
+    if (block.loaderName) {
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(6.5)
+      pdf.text(block.loaderName, ML + COL_DOOR / 2, y + blockH / 2 + 2.5, { align: 'center', baseline: 'middle' })
     }
 
-    const x = margin + (availW - drawW) / 2
-    const y = margin + (availH - drawH) / 2
+    // Data rows
+    block.rows.forEach((row, ri) => {
+      const ry = y + ri * ROW_H
+      const rowBg = ri % 2 === 1 ? [248, 248, 248] : [255, 255, 255]
+      pdf.setFillColor(rowBg[0], rowBg[1], rowBg[2])
+      pdf.rect(ML + COL_DOOR, ry, tableW - COL_DOOR, ROW_H, 'F')
 
-    if (i > 0) pdf.addPage('letter', 'landscape')
-    pdf.addImage(imgData, 'JPEG', x, y, drawW, drawH)
-  }
+      // Cell borders
+      pdf.setDrawColor(180)
+      pdf.setLineWidth(0.15)
+      let rx = ML + COL_DOOR
+      colWidths.slice(1).forEach((w, ci) => {
+        pdf.rect(rx, ry, w, ROW_H, 'S')
+        rx += w
+      })
+
+      // Text in cells
+      pdf.setTextColor(0)
+      pdf.setFont('helvetica', 'normal')
+      const textY = ry + ROW_H / 2
+      const fontSize = 7.5
+
+      // Route
+      if (row.route && row.route !== 'gap') {
+        pdf.setFontSize(fontSize)
+        pdf.setFont('helvetica', 'bold')
+        pdf.text(row.route, ML + COL_DOOR + COL_ROUTE / 2, textY, { align: 'center', baseline: 'middle' })
+      }
+
+      // Truck #
+      if (row.truckNumber) {
+        const trNum = row.truckNumber.toUpperCase().startsWith('TR') ? row.truckNumber : `TR${row.truckNumber}`
+        pdf.setFontSize(fontSize)
+        pdf.setFont('helvetica', 'bold')
+        pdf.text(trNum, ML + COL_DOOR + COL_ROUTE + COL_SIG + COL_TRUCK / 2, textY, { align: 'center', baseline: 'middle' })
+      }
+
+      // Case qty
+      if (row.caseQty) {
+        pdf.setFontSize(fontSize)
+        pdf.setFont('helvetica', 'normal')
+        pdf.text(row.caseQty, ML + COL_DOOR + COL_ROUTE + COL_SIG + COL_TRUCK + COL_WAVE + COL_CASES / 2, textY, { align: 'center', baseline: 'middle' })
+      }
+
+      // Notes
+      if (row.notes) {
+        pdf.setFontSize(6.5)
+        pdf.setFont('helvetica', 'normal')
+        pdf.setTextColor(40)
+        const notesX = ML + COL_DOOR + COL_ROUTE + COL_SIG + COL_TRUCK + COL_WAVE + COL_CASES + 2
+        pdf.text(row.notes, notesX, textY, { baseline: 'middle', maxWidth: COL_NOTES - 3 })
+        pdf.setTextColor(0)
+      }
+    })
+
+    // Bottom border for this block
+    pdf.setDrawColor(0)
+    pdf.setLineWidth(0.5)
+    pdf.line(ML, y + blockH, ML + tableW, y + blockH)
+
+    y += blockH
+  })
+
+  // Outer table border
+  const tableH = y - MT - HEADER_H
+  pdf.setDrawColor(0)
+  pdf.setLineWidth(0.5)
+  pdf.rect(ML, MT + HEADER_H, tableW, tableH + COL_HDR_H, 'S')
+}
+
+async function downloadRouteSheetPDF(
+  blocks: DoorBlock[],
+  topRight: string,
+  dateStr: string,
+) {
+  const { default: jsPDF } = await import('jspdf')
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
+
+  const half = Math.ceil(blocks.length / 2)
+  const page1Blocks = blocks.slice(0, half)
+  const page2Blocks = blocks.slice(half)
+
+  drawRouteSheetPage(pdf, page1Blocks, topRight, dateStr, 1, 2)
+  pdf.addPage('letter', 'landscape')
+  drawRouteSheetPage(pdf, page2Blocks, topRight, dateStr, 2, 2)
 
   pdf.save(`routes-at-the-door-${dateStr}.pdf`)
 }
@@ -412,11 +542,10 @@ export default function RouteSheet() {
   const page2Ref = useRef<HTMLDivElement>(null)
 
   const handleDownloadPDF = async () => {
-    if (!page1Ref.current || !page2Ref.current) return
     setDownloading(true)
     try {
       const dateStr = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }).replace(/\//g, '-')
-      await downloadRouteSheetPDF(page1Ref.current, page2Ref.current, dateStr)
+      await downloadRouteSheetPDF(blocks, topRightRef.current, dateStr)
     } catch (e) {
       toast('PDF generation failed: ' + String(e))
     }
