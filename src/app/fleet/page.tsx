@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Truck, Tractor, TrailerItem } from '@/lib/types'
+import RequirePage from '@/components/RequirePage'
 
 interface TruckUsage {
   truck: Truck
@@ -157,6 +158,7 @@ export default function Fleet() {
   if (loading) return <div className="text-center py-20 text-gray-500">Loading...</div>
 
   return (
+    <RequirePage pageKey="fleet">
     <div>
       <h1 className="text-xl font-bold mb-1">🚛 Fleet Overview</h1>
       <p className="text-xs text-gray-500 mb-4">Real-time truck availability across all operations</p>
@@ -258,5 +260,6 @@ export default function Fleet() {
         <div className="text-center py-8 text-gray-600">No trucks match your filters</div>
       )}
     </div>
+    </RequirePage>
   )
 }

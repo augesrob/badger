@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { PrintroomEntry } from '@/lib/types'
 import { useToast } from '@/components/Toast'
+import RequirePage from '@/components/RequirePage'
 
 // Draw one page of the route sheet directly into jsPDF — no screenshot, pure vector
 function drawRouteSheetPage(
@@ -769,6 +770,7 @@ export default function RouteSheet() {
   if (loading) return <div className="text-center py-20 text-gray-500">Loading...</div>
 
   return (
+    <RequirePage pageKey="routesheet">
     <div>
       {/* Screen-only toolbar */}
       <div className="no-print mb-4">
@@ -932,5 +934,6 @@ export default function RouteSheet() {
 
       </div>
     </div>
+    </RequirePage>
   )
 }

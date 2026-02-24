@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Tractor, TrailerItem } from '@/lib/types'
+import RequirePage from '@/components/RequirePage'
 
 export default function SemiTrailerList() {
   const [tractors, setTractors] = useState<Tractor[]>([])
@@ -92,6 +93,7 @@ export default function SemiTrailerList() {
   }
 
   return (
+    <RequirePage pageKey="drivers_semis">
     <div>
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -195,5 +197,6 @@ export default function SemiTrailerList() {
         </div>
       )}
     </div>
+    </RequirePage>
   )
 }

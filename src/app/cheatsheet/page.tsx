@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { PrintroomEntry } from '@/lib/types'
 import { useToast } from '@/components/Toast'
+import RequirePage from '@/components/RequirePage'
 
 const STORAGE_KEY = 'badger-cheatsheet-v2'
 const RS_STORAGE_KEY = 'badger-routesheet-v1'
@@ -504,6 +505,7 @@ export default function CheatSheet() {
   )
 
   return (
+    <RequirePage pageKey="cheatsheet">
     <div>
       <div className="no-print mb-4">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
@@ -560,5 +562,6 @@ export default function CheatSheet() {
         )
       })()}
     </div>
+    </RequirePage>
   )
 }

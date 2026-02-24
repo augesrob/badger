@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import RequirePage from '@/components/RequirePage'
 import { LoadingDoor, LiveMovement, PrintroomEntry, StagingDoor, Tractor, TrailerItem, doorStatusColor } from '@/lib/types'
 
 export default function DriversLiveView() {
@@ -189,6 +190,7 @@ export default function DriversLiveView() {
   }
 
   return (
+    <RequirePage pageKey="drivers_live">
     <div>
       {/* Sticky door status bar - read only */}
       <div className="sticky top-[49px] z-40 bg-[#0f0f0f] border-b border-[#333] -mx-4 px-4 py-2 mb-3">
@@ -241,5 +243,6 @@ export default function DriversLiveView() {
         <div className="text-center py-20 text-gray-500">No trucks yet.</div>
       )}
     </div>
+    </RequirePage>
   )
 }

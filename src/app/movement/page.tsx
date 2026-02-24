@@ -5,6 +5,7 @@ import { useToast } from '@/components/Toast'
 import { LoadingDoor, LiveMovement, StatusValue, PrintroomEntry, StagingDoor, Tractor, TrailerItem, DOOR_STATUSES, doorStatusColor } from '@/lib/types'
 import { getTTSSettings, useMovementTTS } from '@/lib/tts'
 import { TTSMiniToggle } from '@/components/TTSPanel'
+import RequirePage from '@/components/RequirePage'
 
 export default function Movement() {
   const toast = useToast()
@@ -295,6 +296,7 @@ export default function Movement() {
   }
 
   return (
+    <RequirePage pageKey="movement">
     <div>
       {/* STICKY Door Status Bar - always visible at top */}
       <div className="sticky top-[49px] z-40 bg-[#0f0f0f] border-b border-[#333] -mx-4 px-4 py-2 mb-3">
@@ -377,5 +379,6 @@ export default function Movement() {
         </div>
       )}
     </div>
+    </RequirePage>
   )
 }

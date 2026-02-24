@@ -5,6 +5,7 @@ import { useToast } from '@/components/Toast'
 import { StagingDoor } from '@/lib/types'
 import { PreShiftTable } from '@/components/PreShiftTable'
 import { runPreshiftAutomation } from '@/lib/automation'
+import RequirePage from '@/components/RequirePage'
 
 export default function PreShift() {
   const toast = useToast()
@@ -43,10 +44,12 @@ export default function PreShift() {
   if (loading) return <div className="text-center py-20 text-gray-500">Loading...</div>
 
   return (
+    <RequirePage pageKey="preshift">
     <div>
       <h1 className="text-2xl font-bold mb-2">📋 PreShift Setup</h1>
       <p className="text-sm text-gray-500 mb-4">Truck Order – Door Placement. Enter truck numbers for each staging door.</p>
       <PreShiftTable doors={doors} onSave={saveField} activeTrucks={activeTrucks} />
     </div>
+    </RequirePage>
   )
 }

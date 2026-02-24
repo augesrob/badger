@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { LoadingDoor, PrintroomEntry, StagingDoor } from '@/lib/types'
 import { runAutomation, runPreshiftAutomation } from '@/lib/automation'
+import RequirePage from '@/components/RequirePage'
 
 export default function PrintRoom() {
   const toast = useToast()
@@ -201,6 +202,7 @@ export default function PrintRoom() {
   if (loading) return <div className="text-center py-20 text-gray-500">Loading...</div>
 
   return (
+    <RequirePage pageKey="printroom">
     <div>
       <h1 className="text-2xl font-bold mb-1">🖨️ Print Room</h1>
       <p className="text-sm text-gray-500 mb-4">Enter trucks per door. Trucks auto-appear in Live Movement.</p>
@@ -358,5 +360,6 @@ export default function PrintRoom() {
         </div>
       )}
     </div>
+    </RequirePage>
   )
 }
