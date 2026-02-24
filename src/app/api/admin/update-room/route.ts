@@ -7,7 +7,7 @@ const supabaseAdmin = createClient(
 )
 
 export async function POST(req: NextRequest) {
-  const { roomId, allowed_roles, action, name, description } = await req.json()
+  const { roomId, allowed_roles, action, name, description, orderedIds } = await req.json()
 
   // Verify caller is admin
   const authHeader = req.headers.get('authorization')
@@ -23,6 +23,29 @@ export async function POST(req: NextRequest) {
   if (action === 'update_roles') {
     const { error } = await supabaseAdmin.from('chat_rooms').update({ allowed_roles }).eq('id', roomId)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
+  if (action === 'reorder') {
+    // orderedIds is an array of room ids in the new order
+    // Try to update sort_order column; if column doesn't exist, add it first
+    const updates = (orderedIds as number[]).map((id, idx) =>
+      supabaseAdmin.from('chat_rooms').update({ sort_order: idx }).eq('id', id)
+    )
+    const results = await Promise.all(updates)
+    const firstError = results.find(r => r.error)
+    if (firstError?.error) {
+      // Column may not exist yet — try adding it then retry
+      await supabaseAdmin.rpc('exec_sql', { sql: 'ALTER TABLE chat_rooms ADD COLUMN IF NOT EXISTS sort_order integer DEFAULT 0' })
+        .catch(() => null)
+      const retry = await Promise.all(
+        (orderedIds as number[]).map((id, idx) =>
+          supabaseAdmin.from('chat_rooms').update({ sort_order: idx }).eq('id', id)
+        )
+      )
+      const retryError = retry.find(r => r.error)
+      if (retryError?.error) return NextResponse.json({ error: retryError.error.message }, { status: 500 })
+    }
     return NextResponse.json({ ok: true })
   }
 

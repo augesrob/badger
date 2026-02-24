@@ -94,7 +94,7 @@ export default function ChatPage() {
   // ── Load rooms ──────────────────────────────────────────────────────────
   const loadRooms = useCallback(async (keepActive = false) => {
     if (!profile) return
-    const { data } = await supabase.from('chat_rooms').select('*').order('id')
+    const { data } = await supabase.from('chat_rooms').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('id')
     const visible = (data || []).filter((r: Room) => canSeeRoom(r, profile.role))
     setRooms(prev => {
       const merged = visible.map((r: Room) => {
@@ -177,7 +177,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (!authLoading && !profile) { router.push('/login'); return }
     if (!profile) return
-    supabase.from('chat_rooms').select('*').order('id').then(({ data }) => {
+    supabase.from('chat_rooms').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('id').then(({ data }) => {
       const visible = (data || []).filter((r: Room) => canSeeRoom(r, profile.role))
       const withUnread = visible.map((r: Room) => ({ ...r, unread: 0 }))
       setRooms(withUnread)
@@ -388,7 +388,7 @@ export default function ChatPage() {
             setShowManage(false)
             await loadRooms(true)
             // Re-subscribe with potentially updated room list
-            const { data } = await supabase.from('chat_rooms').select('*').order('id')
+            const { data } = await supabase.from('chat_rooms').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('id')
             const visible = (data || []).filter((r: Room) => canSeeRoom(r, profile.role))
             subscribeAll(visible.map((r: Room) => r.id))
           }}
@@ -424,9 +424,11 @@ function ManageRoomsModal({ onClose }: { onClose: () => void }) {
   const [newRoom, setNewRoom]   = useState({ name: '', description: '' })
   const [creating, setCreating] = useState(false)
   const [loaded, setLoaded]     = useState(false)
+  const dragItem = useRef<number | null>(null)
+  const dragOver = useRef<number | null>(null)
 
   const reload = useCallback(async () => {
-    const { data } = await supabase.from('chat_rooms').select('*').order('id')
+    const { data } = await supabase.from('chat_rooms').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('id')
     setAllRooms((data || []).map((r: Room) => ({ ...r, unread: 0 })))
     setLoaded(true)
   }, [])
@@ -499,6 +501,20 @@ function ManageRoomsModal({ onClose }: { onClose: () => void }) {
     else reload()
   }
 
+  const handleDragEnd = async () => {
+    if (dragItem.current === null || dragOver.current === null || dragItem.current === dragOver.current) {
+      dragItem.current = null; dragOver.current = null; return
+    }
+    const reordered = [...allRooms]
+    const from = dragItem.current
+    const to = dragOver.current
+    const [moved] = reordered.splice(from, 1)
+    reordered.splice(to, 0, moved)
+    dragItem.current = null; dragOver.current = null
+    setAllRooms(reordered)
+    await adminRoomApi({ action: 'reorder', orderedIds: reordered.map(r => r.id) })
+  }
+
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-[#111] border border-[#333] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
@@ -517,12 +533,21 @@ function ManageRoomsModal({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {allRooms.map(room => (
-            <div key={room.id} className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
+          {allRooms.map((room, idx) => (
+            <div key={room.id}
+              draggable
+              onDragStart={() => { dragItem.current = idx }}
+              onDragEnter={() => { dragOver.current = idx }}
+              onDragEnd={handleDragEnd}
+              onDragOver={e => e.preventDefault()}
+              className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 cursor-grab active:cursor-grabbing active:opacity-60 active:border-amber-500/50 transition-opacity select-none">
               <div className="flex items-start justify-between gap-3 mb-2">
-                <div>
-                  <div className="font-semibold text-white">{room.name}</div>
-                  {room.description && <div className="text-xs text-muted mt-0.5">{room.description}</div>}
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-muted text-sm flex-shrink-0" title="Drag to reorder">⠿⠿</span>
+                  <div className="min-w-0">
+                    <div className="font-semibold text-white">{room.name}</div>
+                    {room.description && <div className="text-xs text-muted mt-0.5">{room.description}</div>}
+                  </div>
                 </div>
                 <div className="flex gap-2 items-center flex-shrink-0">
                   {room.allowed_roles !== null && (
