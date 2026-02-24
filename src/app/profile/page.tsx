@@ -4,6 +4,7 @@ import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { useRouter } from 'next/navigation'
+import NotificationPrefs from '@/components/NotificationPrefs'
 
 const CARRIERS = [
   { label: 'Verizon',     value: 'verizon',    gateway: 'vtext.com' },
@@ -424,6 +425,13 @@ export default function ProfilePage() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Notification Preferences */}
+      <div className="bg-card border border-[#333] rounded-2xl p-6 space-y-4">
+        <h2 className="font-bold text-sm text-muted uppercase tracking-wider">🔔 Notification Preferences</h2>
+        <p className="text-xs text-muted">Choose which events notify you and how you receive them.</p>
+        <NotificationPrefs userId={profile.id} />
       </div>
 
       {/* Sign out */}

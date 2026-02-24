@@ -59,19 +59,48 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ sent: 0, message: 'No matching subscribers' })
     }
 
+    // Load notification preferences for all matched users
+    const userIds = uniqueSubs.map(s => s.user_id)
+    const { data: prefRows } = await supabase
+      .from('notification_preferences')
+      .select('user_id, notify_truck_status, channel_app, channel_sms')
+      .in('user_id', userIds)
+
+    const prefMap: Record<string, { notify_truck_status: boolean; channel_app: boolean; channel_sms: boolean }> = {}
+    ;(prefRows || []).forEach(p => { prefMap[p.user_id] = p })
+
+    // Filter to users who have truck_status notifications enabled
+    const notifiableSubs = uniqueSubs.filter(s => {
+      const p = prefMap[s.user_id]
+      // Default to true if no prefs row yet
+      return p ? p.notify_truck_status : true
+    })
+
     const truckLabel = `TR${normalized}`
     const trailerLabel = isSemi ? ` (trailer ${normalized.split('-')[1]})` : ''
     const msg = `Badger: ${truckLabel}${trailerLabel}: ${new_status}${location ? ` @ ${location}` : ''}${changed_by ? ` · ${changed_by}` : ''}`
 
-    // Insert in-app notifications
-    await supabase.from('notifications').insert(
-      uniqueSubs.map(s => ({
-        user_id: s.user_id,
-        truck_number: normalized,
-        message: `🚚 ${msg}`,
-        type: 'status_change',
-      }))
-    )
+    // In-app notifications — only for users with channel_app enabled
+    const appSubs = notifiableSubs.filter(s => {
+      const p = prefMap[s.user_id]
+      return p ? p.channel_app : true
+    })
+    if (appSubs.length > 0) {
+      await supabase.from('notifications').insert(
+        appSubs.map(s => ({
+          user_id: s.user_id,
+          truck_number: normalized,
+          message: `🚚 ${msg}`,
+          type: 'status_change',
+        }))
+      )
+    }
+
+    // SMS — only for users with channel_sms enabled + SMS configured
+    const smsSubs = notifiableSubs.filter(s => {
+      const p = prefMap[s.user_id]
+      return p ? p.channel_sms : true
+    })
 
     // Send SMS via Gmail SMTP
     const transporter = nodemailer.createTransport({
@@ -85,7 +114,7 @@ export async function POST(req: NextRequest) {
     })
 
     const smsResults: string[] = []
-    for (const sub of uniqueSubs) {
+    for (const sub of smsSubs) {
       const p = (sub as { profiles?: { phone?: string; carrier?: string; sms_enabled?: boolean } }).profiles
       if (!sub.notify_sms || !p?.phone || !p?.carrier || !p?.sms_enabled) continue
       const gateway = GATEWAYS[p.carrier]
@@ -106,7 +135,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({
-      sent_notifications: uniqueSubs.length,
+      sent_notifications: appSubs.length,
       sent_sms: smsResults.length,
       sms_recipients: smsResults,
     })

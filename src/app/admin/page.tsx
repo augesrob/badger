@@ -7,6 +7,7 @@ import { TTSPanel } from '@/components/TTSPanel'
 import { runPreshiftAutomation, runAutomation } from '@/lib/automation'
 import Link from 'next/link'
 import RoleManager from '@/components/RoleManager'
+import NotificationPrefs from '@/components/NotificationPrefs'
 
 const NAV_ITEMS = [
   { id: 'trucks',      label: '🚚 Truck Database',   ready: true },
@@ -948,41 +949,87 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function NotificationsSection() {
+  const [users, setUsers]           = useState<{ id: string; display_name: string | null; username: string; role: string; avatar_color: string }[]>([])
+  const [loadingUsers, setLoadingUsers] = useState(true)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  useEffect(() => {
+    supabase.from('profiles').select('id, display_name, username, role, avatar_color')
+      .order('display_name')
+      .then(({ data }) => { setUsers(data || []); setLoadingUsers(false) })
+  }, [])
+
+  const ROLE_COLORS: Record<string, string> = {
+    admin: '#f59e0b', print_room: '#3b82f6', truck_mover: '#8b5cf6',
+    trainee: '#22c55e', driver: '#6b7280',
+  }
+  const ROLE_LABELS: Record<string, string> = {
+    admin: '👑 Admin', print_room: '🖨️ Print Room', truck_mover: '🚛 Truck Mover',
+    trainee: '📚 Trainee', driver: '🚚 Driver',
+  }
+
   return (
     <div>
-      <h2 className="text-xl font-bold mb-2">🔔 Notifications</h2>
-      <p className="text-xs text-gray-500 mb-4">Settings are saved per browser/device. Each user controls their own notifications.</p>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-xl font-bold">🔔 Notification Preferences</h2>
+          <p className="text-xs text-gray-500 mt-1">Manage notification settings for each user. Users can also manage their own in their Profile.</p>
+        </div>
+      </div>
 
-      {/* TTS / Sound */}
-      <div className="mb-6">
+      {/* TTS / Sound — kept for admin reference */}
+      <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 mb-6">
         <div className="flex items-center gap-2 mb-3">
           <span className="text-sm font-bold text-amber-500">🔊 TTS / Sound</span>
-          <span className="text-[10px] text-gray-500 bg-[#222] px-2 py-0.5 rounded">Voice Announcements</span>
+          <span className="text-[10px] text-gray-500 bg-[#222] px-2 py-0.5 rounded">Your Voice Announcements</span>
         </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <h3 className="text-xs text-gray-400 font-bold uppercase mb-2">Movement Page</h3>
-            <TTSPanel page="movement" />
-          </div>
-          <div>
-            <h3 className="text-xs text-gray-400 font-bold uppercase mb-2">Print Room Page</h3>
-            <TTSPanel page="printroom" />
-          </div>
+          <div><h3 className="text-xs text-gray-400 font-bold uppercase mb-2">Movement Page</h3><TTSPanel page="movement" /></div>
+          <div><h3 className="text-xs text-gray-400 font-bold uppercase mb-2">Print Room Page</h3><TTSPanel page="printroom" /></div>
         </div>
       </div>
 
-      {/* Future categories */}
-      <div className="border-t border-[#333] pt-4 mt-4">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-sm font-bold text-gray-500">📱 Push Notifications</span>
-          <span className="text-[9px] bg-[#222] text-gray-500 px-1.5 py-0.5 rounded">Coming Soon</span>
+      {/* Per-user notification preferences */}
+      <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Per-User Preferences</h3>
+
+      {loadingUsers ? (
+        <div className="text-center py-10 text-gray-500">Loading users...</div>
+      ) : (
+        <div className="space-y-2">
+          {users.map(u => {
+            const isOpen = expandedId === u.id
+            const initials = (u.display_name || u.username).slice(0, 2).toUpperCase()
+            return (
+              <div key={u.id} className={`bg-[#1a1a1a] border rounded-xl overflow-hidden transition-colors ${isOpen ? 'border-amber-500/40' : 'border-[#2a2a2a]'}`}>
+                {/* User row header */}
+                <button className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors"
+                  onClick={() => setExpandedId(isOpen ? null : u.id)}>
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                    style={{ background: u.avatar_color || '#f59e0b' }}>
+                    {initials}
+                  </div>
+                  <div className="flex-1 text-left min-w-0">
+                    <div className="text-sm font-medium text-white">{u.display_name || u.username}</div>
+                    <div className="text-[10px] text-gray-500">@{u.username}</div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                    style={{ background: (ROLE_COLORS[u.role] || '#444') + '30', color: ROLE_COLORS[u.role] || '#aaa' }}>
+                    {ROLE_LABELS[u.role] || u.role}
+                  </span>
+                  <span className="text-gray-500 text-sm ml-2">{isOpen ? '▲' : '▼'}</span>
+                </button>
+
+                {/* Expanded prefs */}
+                {isOpen && (
+                  <div className="border-t border-[#2a2a2a] px-4 py-4">
+                    <NotificationPrefs userId={u.id} compact={false} />
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-gray-500">💬 Slack / Discord</span>
-          <span className="text-[9px] bg-[#222] text-gray-500 px-1.5 py-0.5 rounded">Coming Soon</span>
-        </div>
-      </div>
+      )}
     </div>
   )
 }
