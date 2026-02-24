@@ -6,18 +6,20 @@ import { Truck, Trailer, StatusValue, Route, TrailerItem, Tractor, AutomationRul
 import { TTSPanel } from '@/components/TTSPanel'
 import { runPreshiftAutomation, runAutomation } from '@/lib/automation'
 import Link from 'next/link'
+import RoleManager from '@/components/RoleManager'
 
 const NAV_ITEMS = [
-  { id: 'trucks', label: '🚚 Truck Database', ready: true },
-  { id: 'tractors', label: '🚛 Tractor Trailers', ready: true },
-  { id: 'fleet', label: '🚛 Fleet Inventory', ready: true },
-  { id: 'automation', label: '⚡ Automation', ready: true },
-  { id: 'statuses', label: '🏷️ Status Values', ready: true },
-  { id: 'routes', label: '🗺️ Routes', ready: true },
-  { id: 'reset', label: '⚠️ Data Reset', ready: true },
-  { id: 'notifications', label: '🔔 Notifications', ready: true },
-  { id: 'api', label: '🔌 API', ready: false },
-  { id: 'accounts', label: '👤 Accounts', ready: true, href: '/admin/users' },
+  { id: 'trucks',      label: '🚚 Truck Database',   ready: true },
+  { id: 'tractors',    label: '🚛 Tractor Trailers',  ready: true },
+  { id: 'fleet',       label: '🚛 Fleet Inventory',   ready: true },
+  { id: 'automation',  label: '⚡ Automation',         ready: true },
+  { id: 'statuses',    label: '🏷️ Status Values',     ready: true },
+  { id: 'routes',      label: '🗺️ Routes',            ready: true },
+  { id: 'roles',       label: '🛡️ Role Manager',      ready: true },
+  { id: 'reset',       label: '⚠️ Data Reset',        ready: true },
+  { id: 'notifications', label: '🔔 Notifications',   ready: true },
+  { id: 'api',         label: '🔌 API',               ready: false },
+  { id: 'accounts',    label: '👤 Accounts',          ready: true, href: '/admin/users' },
 ]
 
 export default function Admin() {
@@ -523,6 +525,7 @@ export default function Admin() {
       case 'automation': return <AutomationSection />
       case 'statuses': return statusSectionJSX()
       case 'routes': return <RouteSection />
+      case 'roles': return <RoleManager />
       case 'reset': return <ResetSection />
       case 'notifications': return <NotificationsSection />
       default: return <PlannedSection title={NAV_ITEMS.find(n => n.id === activeSection)?.label || ''} />

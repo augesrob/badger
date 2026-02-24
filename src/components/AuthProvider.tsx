@@ -1,9 +1,10 @@
 'use client'
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { DEFAULT_ROLE_PERMISSIONS } from '@/lib/permissions'
 import type { User, Session } from '@supabase/supabase-js'
 
-export type Role = 'admin' | 'print_room' | 'truck_mover' | 'trainee' | 'driver'
+export type Role = 'admin' | 'print_room' | 'truck_mover' | 'trainee' | 'driver' | string
 
 export interface Profile {
   id: string
@@ -17,6 +18,11 @@ export interface Profile {
   avatar_url: string | null
 }
 
+// PageKey is now a plain string — no longer a fixed union.
+// The full list lives in src/lib/permissions.ts (MASTER_PAGES).
+export type PageKey = string
+export type FeatureKey = string
+
 interface AuthCtx {
   user: User | null
   profile: Profile | null
@@ -26,39 +32,62 @@ interface AuthCtx {
   signUp: (email: string, password: string, username: string, displayName: string) => Promise<string | null>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
-  // Role helpers
+  // Permission helpers
   isAdmin: boolean
   can: (page: PageKey) => boolean
-}
-
-export type PageKey = 'printroom' | 'routesheet' | 'cheatsheet' | 'preshift' | 'movement' | 'admin' | 'fleet' | 'chat' | 'profile' | 'drivers'
-
-// What each role can access
-const ACCESS: Record<Role, PageKey[]> = {
-  admin:       ['printroom','routesheet','cheatsheet','preshift','movement','admin','fleet','chat','profile','drivers'],
-  print_room:  ['printroom','routesheet','cheatsheet','preshift','movement','fleet','chat','profile','drivers'],
-  truck_mover: ['printroom','routesheet','cheatsheet','preshift','movement','fleet','chat','profile','drivers'],
-  trainee:     ['movement','preshift','chat','profile','drivers'],
-  driver:      ['movement','chat','profile','drivers'],
+  canFeature: (feature: FeatureKey) => boolean
+  // Raw permission sets (useful for UI checks)
+  allowedPages: Set<string>
+  allowedFeatures: Set<string>
 }
 
 const Ctx = createContext<AuthCtx>({
   user: null, profile: null, session: null, loading: true,
   signIn: async () => null, signUp: async () => null,
   signOut: async () => {}, refreshProfile: async () => {},
-  isAdmin: false, can: () => false,
+  isAdmin: false, can: () => false, canFeature: () => false,
+  allowedPages: new Set(), allowedFeatures: new Set(),
 })
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser]       = useState<User | null>(null)
-  const [profile, setProfile] = useState<Profile | null>(null)
-  const [session, setSession] = useState<Session | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [user, setUser]             = useState<User | null>(null)
+  const [profile, setProfile]       = useState<Profile | null>(null)
+  const [session, setSession]       = useState<Session | null>(null)
+  const [loading, setLoading]       = useState(true)
+  const [allowedPages, setAllowedPages]       = useState<Set<string>>(new Set())
+  const [allowedFeatures, setAllowedFeatures] = useState<Set<string>>(new Set())
+
+  // Load role permissions from DB, fall back to hardcoded defaults
+  const loadPermissions = useCallback(async (role: Role) => {
+    try {
+      const { data } = await supabase
+        .from('role_permissions')
+        .select('pages, features')
+        .eq('role_name', role)
+        .single()
+
+      if (data) {
+        setAllowedPages(new Set(data.pages || []))
+        setAllowedFeatures(new Set(data.features || []))
+        return
+      }
+    } catch {
+      // Table may not exist yet — fall through to defaults
+    }
+
+    // Fallback to hardcoded defaults
+    const defaults = DEFAULT_ROLE_PERMISSIONS[role] || { pages: ['profile'], features: [] }
+    setAllowedPages(new Set(defaults.pages))
+    setAllowedFeatures(new Set(defaults.features))
+  }, [])
 
   const fetchProfile = useCallback(async (uid: string) => {
     const { data } = await supabase.from('profiles').select('*').eq('id', uid).single()
-    if (data) setProfile(data as Profile)
-  }, [])
+    if (data) {
+      setProfile(data as Profile)
+      await loadPermissions(data.role)
+    }
+  }, [loadPermissions])
 
   const refreshProfile = useCallback(async () => {
     if (user) await fetchProfile(user.id)
@@ -76,7 +105,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session)
       setUser(session?.user ?? null)
       if (session?.user) fetchProfile(session.user.id)
-      else setProfile(null)
+      else {
+        setProfile(null)
+        setAllowedPages(new Set())
+        setAllowedFeatures(new Set())
+      }
     })
     return () => subscription.unsubscribe()
   }, [fetchProfile])
@@ -87,7 +120,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signUp = async (email: string, password: string, username: string, displayName: string): Promise<string | null> => {
-    // Check username not taken
     const { data: existing } = await supabase.from('profiles').select('id').eq('username', username).maybeSingle()
     if (existing) return 'Username already taken'
     const { error } = await supabase.auth.signUp({
@@ -100,16 +132,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     await supabase.auth.signOut()
     setProfile(null)
+    setAllowedPages(new Set())
+    setAllowedFeatures(new Set())
   }
 
-  const isAdmin = profile?.role === 'admin'
-  const can = (page: PageKey) => {
-    if (!profile) return false
-    return ACCESS[profile.role]?.includes(page) ?? false
-  }
+  const isAdmin   = profile?.role === 'admin'
+  const can       = (page: PageKey)    => isAdmin || allowedPages.has(page)
+  const canFeature = (feat: FeatureKey) => isAdmin || allowedFeatures.has(feat)
 
   return (
-    <Ctx.Provider value={{ user, profile, session, loading, signIn, signUp, signOut, refreshProfile, isAdmin, can }}>
+    <Ctx.Provider value={{
+      user, profile, session, loading,
+      signIn, signUp, signOut, refreshProfile,
+      isAdmin, can, canFeature,
+      allowedPages, allowedFeatures,
+    }}>
       {children}
     </Ctx.Provider>
   )
