@@ -252,11 +252,11 @@ select.status-select { color: #fff !important; }
   width: 100%;
   border: none;
   background: transparent;
-  padding: 4px 6px;
+  padding: 3px 6px;
   font-size: 12px;
   color: #000;
   outline: none;
-  min-height: 26px;
+  min-height: 22px;
 }
 .rs-input::placeholder { color: #ccc; }
 .rs-input:focus { background: #fffde7; }
@@ -330,34 +330,37 @@ select.status-select { color: #fff !important; }
     margin: 0;
   }
 
-  /* Each rs-page = one printed landscape page; allow overflow to next page if too tall */
+  /* Each rs-page = exactly one printed landscape page */
   .rs-page {
     page-break-after: always;
     break-after: page;
-    width: 10.5in;
-    overflow: visible;
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
     position: relative;
     margin: 0;
     padding: 0;
+    display: block;
   }
   .rs-page:last-child {
     page-break-after: avoid;
     break-after: avoid;
   }
 
-  /* Content is auto-scaled by JS to fill the page */
+  /* Content scaled by JS to fit — transform-origin must be top left */
   .rs-page-content {
     transform-origin: top left;
+    display: block;
   }
 
   /* Clean inputs */
   .rs-input {
     border: none !important;
     background: transparent !important;
-    padding: 1px 3px !important;
+    padding: 0px 3px !important;
     min-height: 0 !important;
     height: auto !important;
-    line-height: 1.3 !important;
+    line-height: 1.2 !important;
   }
   .rs-input:focus { background: transparent !important; }
   .rs-input::placeholder { color: transparent !important; }
@@ -369,9 +372,9 @@ select.status-select { color: #fff !important; }
     margin: 0.25in;
   }
 
-  /* Compact print sizing */
-  .rs-header { padding: 4px 10px !important; }
-  .rs-title { font-size: 16px !important; letter-spacing: 1px !important; }
+  /* Compact print sizing — tight but readable */
+  .rs-header { padding: 3px 10px !important; }
+  .rs-title { font-size: 15px !important; letter-spacing: 1px !important; }
   .rs-date { font-size: 10px !important; }
   .rs-subtitle { font-size: 8px !important; letter-spacing: 0 !important; }
   .rs-static-text { font-size: 10px !important; padding: 2px 4px !important; }
@@ -384,10 +387,11 @@ select.status-select { color: #fff !important; }
   .rs-door-label { padding: 2px !important; }
   .rs-loader-input { font-size: 8px !important; margin-top: 1px !important; padding: 0 2px !important; }
 
-  .rs-row { border-bottom: 1px solid #bbb !important; }
+  /* Tight rows — this is the key to fitting more per page */
+  .rs-row { border-bottom: 1px solid #bbb !important; min-height: 0 !important; }
   .rs-cell { padding: 0 !important; border-right-color: #bbb !important; }
-  .rs-input { font-size: 9px !important; padding: 1px 3px !important; }
-  .rs-truck-value { font-size: 9px !important; padding: 1px 3px !important; line-height: 1.3 !important; }
+  .rs-input { font-size: 9px !important; padding: 1px 3px !important; min-height: 18px !important; }
+  .rs-truck-value { font-size: 9px !important; padding: 1px 3px !important; line-height: 1.2 !important; min-height: 18px !important; display: flex !important; align-items: center !important; justify-content: center !important; }
 
   .rs-door-block { break-inside: avoid; page-break-inside: avoid; }
   .rs-footer { display: none !important; }

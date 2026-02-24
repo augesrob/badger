@@ -187,12 +187,19 @@ export default function RouteSheet() {
       return false
     }
 
-    // For a semi entered without a dash (e.g. "222"), find all CSV routes
-    // that belong to it. CSV may have TR222 directly, or we already have the exact key.
+    // For a semi, match CSV routes by:
+    // 1. Direct key match (e.g. "231-1" → TR231-1)
+    // 2. Base number match — strip the "-N" suffix (e.g. "222-1" → look up "222" in CSV)
     const getSemiRoutes = (truckKey: string): CSVRoute[] => {
-      // Direct match first (handles both "222" and "231-1")
+      // Direct match first
       const direct = routesByTruck[truckKey]
       if (direct && direct.length > 0) return direct
+      // Strip trailer suffix: "222-1" → "222", "189-1" → "189"
+      const base = truckKey.replace(/-\d+$/, '')
+      if (base !== truckKey) {
+        const baseMatch = routesByTruck[base]
+        if (baseMatch && baseMatch.length > 0) return baseMatch
+      }
       return []
     }
 
@@ -339,48 +346,34 @@ export default function RouteSheet() {
   const page1Ref = useRef<HTMLDivElement>(null)
   const page2Ref = useRef<HTMLDivElement>(null)
 
-  // Auto-scale page content to fill the print page height
-  // Landscape 8.5x11 with 0.25in margins = 8in tall usable = 768px at 96dpi
-  // Only scales at print time — screen view is never transformed
+  // Auto-scale: measure each page's natural height and compute a scale so it fits
+  // in one landscape page (8in usable = ~768px at 96dpi with 0.25in margins).
+  // We inject a CSS custom property on the element so the print stylesheet can use it.
+  const PRINT_PAGE_H = 740 // px at 96dpi for landscape + 0.25in margins (conservative)
+
   const autoScalePages = useCallback(() => {
-    if (typeof window === 'undefined') return
-    const isPrinting = window.matchMedia('print').matches
-    if (!isPrinting) {
-      // Reset any lingering transforms on screen
-      ;[page1Ref, page2Ref].forEach(ref => {
-        const content = ref.current?.querySelector('.rs-page-content') as HTMLElement | null
-        if (content) {
-          content.style.transform = ''
-          content.style.width = ''
-        }
-      })
-      return
-    }
-    const PAGE_HEIGHT = 768
-    const PAGE_WIDTH = 1008
     ;[page1Ref, page2Ref].forEach(ref => {
       const el = ref.current
       if (!el) return
-      const content = el.querySelector('.rs-page-content') as HTMLElement
+      const content = el.querySelector('.rs-page-content') as HTMLElement | null
       if (!content) return
-      content.style.transform = 'none'
-      content.style.width = `${PAGE_WIDTH}px`
+      // Reset first to measure natural height
+      content.style.transform = ''
+      content.style.width = ''
       const natural = content.scrollHeight
-      if (natural > 0) {
-        const targetHeight = PAGE_HEIGHT * 0.95
-        const scale = Math.min(targetHeight / natural, 1.3)
+      if (natural > PRINT_PAGE_H) {
+        const scale = PRINT_PAGE_H / natural
         content.style.transform = `scale(${scale})`
         content.style.transformOrigin = 'top left'
-        content.style.width = `${PAGE_WIDTH / scale}px`
+        // Widen the content to compensate so it still fills the page width
+        content.style.width = `${100 / scale}%`
       }
     })
   }, [])
 
-  // Scale pages only at print time via beforeprint/afterprint events
   useEffect(() => {
     const beforePrint = () => autoScalePages()
     const afterPrint = () => {
-      // Reset transforms after printing so screen layout is unaffected
       ;[page1Ref, page2Ref].forEach(ref => {
         const content = ref.current?.querySelector('.rs-page-content') as HTMLElement | null
         if (content) { content.style.transform = ''; content.style.width = '' }
