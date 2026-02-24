@@ -782,8 +782,35 @@ export default function RouteSheet() {
               className="bg-green-700 hover:bg-green-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 flex-shrink-0 disabled:opacity-50">
               {downloading ? '⏳ Generating...' : '⬇️ Download PDF'}
             </button>
-            <button onClick={() => window.print()}
-              className="bg-amber-500 text-black px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-amber-400 flex items-center gap-2 flex-shrink-0">
+            <button onClick={() => {
+              // Generate PDF then open in new tab for printing
+              const dateStr = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }).replace(/\//g, '-')
+              setDownloading(true)
+              import('jspdf').then(({ default: jsPDF }) => {
+                const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
+                const half = Math.ceil(blocks.length / 2)
+                // reuse same dedup + split logic inline
+                const deduped = blocks.map(block => {
+                  const seen = new Set<string>()
+                  return { ...block, rows: block.rows.filter(r => { const k = r.truckNumber + '|' + r.route; if (seen.has(k)) return false; seen.add(k); return true }) }
+                })
+                const totalRows = deduped.reduce((s, b) => s + b.rows.length, 0)
+                const halfRows = totalRows / 2
+                let p1: DoorBlock[] = [], p2: DoorBlock[] = [], running = 0, split = false
+                deduped.forEach(b => { if (!split && running + b.rows.length <= halfRows) { p1.push(b); running += b.rows.length } else { split = true; p2.push(b) } })
+                if (p1.length === 0) { p1 = deduped.slice(0, 1); p2 = deduped.slice(1) }
+                if (p2.length === 0) { p2 = p1.splice(-1) }
+                drawRouteSheetPage(pdf, p1, topRightRef.current, dateStr, 1, 2)
+                pdf.addPage('letter', 'landscape')
+                drawRouteSheetPage(pdf, p2, topRightRef.current, dateStr, 2, 2)
+                const blob = pdf.output('blob')
+                const url = URL.createObjectURL(blob)
+                const win = window.open(url, '_blank')
+                if (win) win.onload = () => { win.focus(); win.print() }
+                setDownloading(false)
+              })
+            }} disabled={downloading}
+              className="bg-amber-500 text-black px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-amber-400 flex items-center gap-2 flex-shrink-0 disabled:opacity-50">
               🖨️ Print
             </button>
           </div>
