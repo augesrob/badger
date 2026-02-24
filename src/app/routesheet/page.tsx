@@ -120,7 +120,7 @@ function drawRouteSheetPage(
       pdf.setDrawColor(180)
       pdf.setLineWidth(0.15)
       let rx = ML + COL_DOOR
-      colWidths.slice(1).forEach((w, ci) => {
+      colWidths.slice(1).forEach((w) => {
         pdf.rect(rx, ry, w, ROW_H, 'S')
         rx += w
       })
