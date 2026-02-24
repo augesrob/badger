@@ -31,15 +31,15 @@ interface AuthCtx {
   can: (page: PageKey) => boolean
 }
 
-export type PageKey = 'printroom' | 'routesheet' | 'cheatsheet' | 'preshift' | 'movement' | 'admin' | 'fleet' | 'chat' | 'profile'
+export type PageKey = 'printroom' | 'routesheet' | 'cheatsheet' | 'preshift' | 'movement' | 'admin' | 'fleet' | 'chat' | 'profile' | 'drivers'
 
 // What each role can access
 const ACCESS: Record<Role, PageKey[]> = {
-  admin:       ['printroom','routesheet','cheatsheet','preshift','movement','admin','fleet','chat','profile'],
-  print_room:  ['printroom','routesheet','cheatsheet','preshift','movement','fleet','chat','profile'],
-  truck_mover: ['printroom','routesheet','cheatsheet','preshift','movement','fleet','chat','profile'],
-  trainee:     ['movement','preshift','chat','profile'],
-  driver:      ['movement','chat','profile'],
+  admin:       ['printroom','routesheet','cheatsheet','preshift','movement','admin','fleet','chat','profile','drivers'],
+  print_room:  ['printroom','routesheet','cheatsheet','preshift','movement','fleet','chat','profile','drivers'],
+  truck_mover: ['printroom','routesheet','cheatsheet','preshift','movement','fleet','chat','profile','drivers'],
+  trainee:     ['movement','preshift','chat','profile','drivers'],
+  driver:      ['movement','chat','profile','drivers'],
 }
 
 const Ctx = createContext<AuthCtx>({

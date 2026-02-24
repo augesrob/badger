@@ -12,14 +12,17 @@ export default function Nav() {
   const { theme, toggle } = useTheme()
   const { profile, signOut, can, loading } = useAuth()
   const [printOpen,   setPrintOpen]   = useState(false)
+  const [driversOpen, setDriversOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const printRef   = useRef<HTMLDivElement>(null)
+  const driversRef = useRef<HTMLDivElement>(null)
   const profileRef = useRef<HTMLDivElement>(null)
 
   // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (printRef.current   && !printRef.current.contains(e.target as Node))   setPrintOpen(false)
+      if (driversRef.current && !driversRef.current.contains(e.target as Node)) setDriversOpen(false)
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false)
     }
     document.addEventListener('mousedown', handler)
@@ -38,7 +41,8 @@ export default function Nav() {
     )
   }
 
-  const printActive = ['/printroom','/routesheet','/cheatsheet'].includes(pathname)
+  const printActive   = ['/printroom','/routesheet','/cheatsheet'].includes(pathname)
+  const driversActive = pathname.startsWith('/drivers')
   const avatarInitials = (profile?.display_name || profile?.username || '?').slice(0, 2).toUpperCase()
 
   return (
@@ -82,6 +86,34 @@ export default function Nav() {
 
           {can('preshift')  && navLink('/preshift',  '📋 PreShift')}
           {can('movement')  && navLink('/movement',  '🚚 Live Movement')}
+
+          {/* Drivers dropdown */}
+          {can('drivers') && (
+            <div className="relative" ref={driversRef}>
+              <button onClick={() => setDriversOpen(o => !o)}
+                className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-[3px] transition-colors flex items-center gap-1 ${
+                  driversActive ? 'text-amber-500 border-amber-500 bg-amber-500/5' : 'text-muted border-transparent hover:text-amber-500'
+                }`}>
+                🚚 Drivers <span className="text-[9px] opacity-60">▾</span>
+              </button>
+              {driversOpen && (
+                <div className="absolute left-0 top-full bg-nav border border-amber-500/30 rounded-b-lg shadow-2xl min-w-[190px] z-[100]" style={{ marginTop: '-2px' }}>
+                  {[
+                    { href: '/drivers/live',  label: '📍 Live View' },
+                    { href: '/drivers/semis', label: '🚛 Semi / Trailer List' },
+                  ].map(c => (
+                    <Link key={c.href} href={c.href} onClick={() => setDriversOpen(false)}
+                      className={`block px-4 py-3 text-sm font-medium transition-colors border-b border-white/5 last:border-0 ${
+                        pathname === c.href ? 'text-amber-500 bg-amber-500/10' : 'text-muted hover:text-amber-500 hover:bg-amber-500/5'
+                      }`}>
+                      {c.label}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {can('fleet')     && navLink('/fleet',     '🚛 Fleet')}
           {can('chat')      && navLink('/chat',      '💬 Chat')}
           {can('admin')     && navLink('/admin',     '⚙️ Admin')}
