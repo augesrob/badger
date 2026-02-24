@@ -1,6 +1,5 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/AuthProvider'
 import { MASTER_PAGES, MASTER_FEATURES } from '@/lib/permissions'
 import { useToast } from '@/components/Toast'
