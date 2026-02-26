@@ -26,6 +26,7 @@ export default function Movement() {
       supabase.from('loading_doors').select('*').order('sort_order'),
       supabase.from('live_movement').select('*, status_values(status_name, status_color)').order('truck_number'),
       supabase.from('status_values').select('*').eq('is_active', true).order('sort_order'),
+      supabase.from('door_status_values').select('*').order('sort_order'),
       supabase.from('printroom_entries').select('*, loading_doors(door_name)').order('loading_door_id').order('batch_number').order('row_order'),
       supabase.from('staging_doors').select('*').order('door_number').order('door_side'),
       supabase.from('tractors').select('*, trailer_1:trailer_list!tractors_trailer_1_id_fkey(*), trailer_2:trailer_list!tractors_trailer_2_id_fkey(*), trailer_3:trailer_list!tractors_trailer_3_id_fkey(*), trailer_4:trailer_list!tractors_trailer_4_id_fkey(*)').order('truck_number'),
