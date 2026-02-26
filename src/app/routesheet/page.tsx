@@ -500,6 +500,8 @@ export default function RouteSheet() {
     })
     setSyncStatus('synced')
     toast('Route data synced!')
+    // Notify same-tab listeners (printroom page) that route data is ready
+    window.dispatchEvent(new CustomEvent('badger-routes-synced'))
     e.target.value = ''
   }
 
@@ -673,6 +675,8 @@ export default function RouteSheet() {
           setSyncStatus('synced')
           setEmailStatus('idle')
           toast('Route data received and synced!')
+          // Notify same-tab listeners (printroom page) that route data is ready
+          window.dispatchEvent(new CustomEvent('badger-routes-synced'))
         }
       } else {
         // Not found yet, keep waiting

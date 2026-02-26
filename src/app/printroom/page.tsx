@@ -23,11 +23,20 @@ export default function PrintRoom() {
   } | null>(null)
   const [highlightIds, setHighlightIds] = useState<Set<number>>(new Set())
 
+  // Route sync state
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<{
+    updated: { truck: string; door: string; route: string }[]
+    missing: { truck: string; door: string }[]   // in printroom but not in routesheet
+  } | null>(null)
+  const [tractorNums, setTractorNums] = useState<Set<string>>(new Set())
+
   const loadData = useCallback(async () => {
-    const [doorsRes, entriesRes, stagingRes] = await Promise.all([
+    const [doorsRes, entriesRes, stagingRes, tractorsRes] = await Promise.all([
       supabase.from('loading_doors').select('*').order('sort_order'),
       supabase.from('printroom_entries').select('*').order('batch_number').order('row_order'),
       supabase.from('staging_doors').select('*').order('door_number').order('door_side'),
+      supabase.from('tractors').select('truck_number'),
     ])
 
     if (doorsRes.data) setDoors(doorsRes.data)
@@ -40,6 +49,10 @@ export default function PrintRoom() {
       setEntries(grouped)
     }
     if (stagingRes.data) setStagingDoors(stagingRes.data)
+    if (tractorsRes.data) {
+      const nums = new Set<string>(tractorsRes.data.map((t: { truck_number: number }) => String(t.truck_number)))
+      setTractorNums(nums)
+    }
     setLoading(false)
   }, [])
 
@@ -199,13 +212,130 @@ export default function PrintRoom() {
     setTimeout(() => setHighlightIds(new Set()), 2000)
   }
 
+
+  // ── ROUTE SYNC ──────────────────────────────────────────────────────────────
+  const isSemiTruck = (truckNumber: string): boolean => {
+    const key = truckNumber.replace(/^TR/i, '')
+    if (/^\d+-\d+$/.test(key)) return true       // 231-1 format
+    if (tractorNums.has(key)) return true           // bare tractor number
+    return false
+  }
+
+  const syncRoutesFromRouteSheet = async () => {
+    setSyncing(true)
+    setSyncResult(null)
+
+    // Read routesheet localStorage
+    let rsData: { blocks: { doorName: string; rows: { truckNumber: string; route: string; caseQty: string }[] }[] } | null = null
+    try {
+      const raw = localStorage.getItem('badger-routesheet-v1')
+      if (raw) rsData = JSON.parse(raw)
+    } catch { /* ignore */ }
+
+    if (!rsData || !rsData.blocks || rsData.blocks.length === 0) {
+      toast('No route data found — sync routes on the Route Sheet page first', 'error')
+      setSyncing(false)
+      return
+    }
+
+    // Build lookup: truckKey (no TR prefix, lowercase) → route
+    const routeMap: Record<string, string> = {}
+    rsData.blocks.forEach(block => {
+      block.rows.forEach(row => {
+        if (!row.truckNumber || !row.route || row.route === 'gap') return
+        const key = row.truckNumber.replace(/^TR/i, '').toLowerCase()
+        // For box trucks, first route wins (semis will be filtered out anyway)
+        if (!routeMap[key]) routeMap[key] = row.route
+      })
+    })
+
+    if (Object.keys(routeMap).length === 0) {
+      toast('Route sheet has no route data yet — request data first', 'error')
+      setSyncing(false)
+      return
+    }
+
+    // Collect all non-end, non-empty printroom entries that are NOT semis
+    const allEntries: (PrintroomEntry & { door_name: string })[] = []
+    doors.forEach(door => {
+      const doorEntries = entries[door.id] || []
+      doorEntries.forEach(e => {
+        if (e.is_end_marker || !e.truck_number || e.truck_number === 'end') return
+        if (isSemiTruck(e.truck_number)) return   // skip semis/tractors
+        allEntries.push({ ...e, door_name: door.door_name })
+      })
+    })
+
+    const updated: { truck: string; door: string; route: string }[] = []
+    const missing: { truck: string; door: string }[] = []
+
+    // Build all DB updates
+    const updates: Promise<void>[] = []
+    allEntries.forEach(e => {
+      const key = (e.truck_number || '').replace(/^TR/i, '').toLowerCase()
+      const route = routeMap[key]
+      if (route) {
+        updated.push({ truck: e.truck_number!, door: e.door_name, route })
+        updates.push(
+          supabase.from('printroom_entries').update({ route_info: route }).eq('id', e.id).then(() => {})
+        )
+      } else {
+        missing.push({ truck: e.truck_number!, door: e.door_name })
+      }
+    })
+
+    await Promise.all(updates)
+    await loadData()
+
+    setSyncResult({ updated, missing })
+    if (updated.length > 0) toast(`Synced ${updated.length} route${updated.length !== 1 ? 's' : ''}`)
+    else toast('No routes to sync — check route sheet data', 'error')
+    setSyncing(false)
+  }
+
+  // Listen for routesheet sync completion — both cross-tab (storage) and same-tab (custom event)
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'badger-routesheet-v1' && e.newValue) {
+        try {
+          const data = JSON.parse(e.newValue)
+          if (data.syncStatus === 'synced') syncRoutesFromRouteSheet()
+        } catch { /* ignore */ }
+      }
+    }
+    const onCustom = () => syncRoutesFromRouteSheet()
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('badger-routes-synced', onCustom)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('badger-routes-synced', onCustom)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, doors, tractorNums])
+  // ────────────────────────────────────────────────────────────────────────────
+
   if (loading) return <div className="text-center py-20 text-gray-500">Loading...</div>
 
   return (
     <RequirePage pageKey="printroom">
     <div>
-      <h1 className="text-2xl font-bold mb-1">🖨️ Print Room</h1>
-      <p className="text-sm text-gray-500 mb-4">Enter trucks per door. Trucks auto-appear in Live Movement.</p>
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <div>
+          <h1 className="text-2xl font-bold">🖨️ Print Room</h1>
+          <p className="text-sm text-gray-500">Enter trucks per door. Trucks auto-appear in Live Movement.</p>
+        </div>
+        <button
+          onClick={syncRoutesFromRouteSheet}
+          disabled={syncing}
+          title="Pull routes from Route Sheet data and fill the Rt column (ignores semis/tractors)"
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border transition-colors flex-shrink-0 ${
+            syncing
+              ? 'bg-[#222] text-gray-500 border-[#333] cursor-wait'
+              : 'bg-amber-500/10 text-amber-500 border-amber-500/30 hover:bg-amber-500/20'
+          }`}>
+          {syncing ? '⏳ Syncing...' : '🔄 Sync Routes'}
+        </button>
+      </div>
 
       <div className="flex gap-4 items-start">
         {/* LEFT: Loading Doors */}
@@ -360,6 +490,63 @@ export default function PrintRoom() {
         </div>
       )}
     </div>
+
+      {/* ── Route Sync Result Dialog ── */}
+      {syncResult && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-6 max-w-lg w-full max-h-[80vh] overflow-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-amber-500 font-bold text-lg">🔄 Route Sync Results</h3>
+              <button onClick={() => setSyncResult(null)} className="text-gray-400 hover:text-white text-xl">✕</button>
+            </div>
+
+            {syncResult.updated.length > 0 && (
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-green-400 font-bold text-sm">✅ Updated ({syncResult.updated.length})</span>
+                </div>
+                <div className="space-y-1 max-h-48 overflow-auto">
+                  {syncResult.updated.map((u, i) => (
+                    <div key={i} className="flex items-center justify-between bg-green-900/20 border border-green-800/40 rounded-lg px-3 py-1.5 text-sm">
+                      <span className="font-bold text-amber-500">{u.truck}</span>
+                      <span className="text-xs text-gray-400">{u.door}</span>
+                      <span className="text-green-400 font-bold">→ {u.route}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {syncResult.missing.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-red-400 font-bold text-sm">⚠️ Not in Route Sheet ({syncResult.missing.length})</span>
+                  <span className="text-xs text-gray-500">— these trucks are in Print Room but have no route data</span>
+                </div>
+                <div className="space-y-1 max-h-48 overflow-auto">
+                  {syncResult.missing.map((m, i) => (
+                    <div key={i} className="flex items-center justify-between bg-red-900/20 border border-red-800/40 rounded-lg px-3 py-1.5 text-sm">
+                      <span className="font-bold text-amber-500">{m.truck}</span>
+                      <span className="text-xs text-gray-400">{m.door}</span>
+                      <span className="text-red-400 text-xs">No route found</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">These may be trucks added after the route data was pulled, or trucks not on today&apos;s routes.</p>
+              </div>
+            )}
+
+            {syncResult.updated.length === 0 && syncResult.missing.length === 0 && (
+              <p className="text-gray-400 text-sm">No box trucks found in Print Room to sync.</p>
+            )}
+
+            <button onClick={() => setSyncResult(null)}
+              className="mt-4 w-full bg-amber-500 text-black py-2 rounded-lg font-bold hover:bg-amber-400">
+              Done
+            </button>
+          </div>
+        </div>
+      )}
     </RequirePage>
   )
 }
