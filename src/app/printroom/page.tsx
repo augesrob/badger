@@ -244,13 +244,6 @@ export default function PrintRoom() {
 
 
   // ── ROUTE SYNC ──────────────────────────────────────────────────────────────
-  const isSemiTruck = (truckNumber: string): boolean => {
-    const key = truckNumber.replace(/^TR/i, '')
-    if (/^\d+-\d+$/.test(key)) return true       // 231-1 format
-    if (tractorNums.has(key)) return true           // bare tractor number
-    return false
-  }
-
   const syncRoutesFromRouteSheet = async () => {
     setSyncing(true)
     setSyncResult(null)
