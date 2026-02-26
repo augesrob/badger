@@ -270,7 +270,7 @@ export default function PrintRoom() {
     const missing: { truck: string; door: string }[] = []
 
     // Build all DB updates
-    const updates: Promise<void>[] = []
+    const updates: Promise<unknown>[] = []
     allEntries.forEach(e => {
       const key = (e.truck_number || '').replace(/^TR/i, '').toLowerCase()
       const route = routeMap[key]
