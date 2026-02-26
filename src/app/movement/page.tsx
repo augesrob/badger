@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
-import { LoadingDoor, LiveMovement, StatusValue, PrintroomEntry, StagingDoor, Tractor, TrailerItem, DOOR_STATUSES, doorStatusColor } from '@/lib/types'
+import { LoadingDoor, LiveMovement, StatusValue, PrintroomEntry, StagingDoor, Tractor, TrailerItem, DoorStatusValue, DOOR_STATUSES, doorStatusColor } from '@/lib/types'
 import { getTTSSettings, useMovementTTS } from '@/lib/tts'
 import { TTSMiniToggle } from '@/components/TTSPanel'
 import RequirePage from '@/components/RequirePage'
@@ -12,6 +12,7 @@ export default function Movement() {
   const [doors, setDoors] = useState<LoadingDoor[]>([])
   const [trucks, setTrucks] = useState<LiveMovement[]>([])
   const [statuses, setStatuses] = useState<StatusValue[]>([])
+  const [doorStatusValues, setDoorStatusValues] = useState<DoorStatusValue[]>([])
   const [printroom, setPrintroom] = useState<(PrintroomEntry & { loading_doors?: { door_name: string } })[]>([])
   const [stagingDoors, setStagingDoors] = useState<StagingDoor[]>([])
   const [tractors, setTractors] = useState<Tractor[]>([])
@@ -21,7 +22,7 @@ export default function Movement() {
   const [ttsSettings, setTtsSettings] = useState(() => getTTSSettings('movement'))
 
   const loadAll = useCallback(async () => {
-    const [doorsRes, trucksRes, statusRes, prRes, stagingRes, tractorRes] = await Promise.all([
+    const [doorsRes, trucksRes, statusRes, doorStatusRes, prRes, stagingRes, tractorRes] = await Promise.all([
       supabase.from('loading_doors').select('*').order('sort_order'),
       supabase.from('live_movement').select('*, status_values(status_name, status_color)').order('truck_number'),
       supabase.from('status_values').select('*').eq('is_active', true).order('sort_order'),
@@ -42,6 +43,7 @@ export default function Movement() {
       setTrucks(mapped)
     }
     if (statusRes.data) setStatuses(statusRes.data)
+    if (doorStatusRes.data) setDoorStatusValues(doorStatusRes.data)
     if (prRes.data) setPrintroom(prRes.data)
     if (stagingRes.data) setStagingDoors(stagingRes.data)
     if (tractorRes.data) setTractors(tractorRes.data)
@@ -222,7 +224,7 @@ export default function Movement() {
     const group = doorGroups[doorName] || []
     const door = doors.find(d => d.door_name === doorName)
     const doorSt = door?.door_status || 'Loading'
-    const doorCol = doorStatusColor(doorSt)
+    const doorCol = doorStatusColor(doorSt, doorStatusValues)
 
     return (
       <div className="flex-1 min-w-0">
@@ -231,7 +233,7 @@ export default function Movement() {
           <span className="text-lg font-extrabold" style={{ color: accent }}>{doorName}</span>
           <select value={doorSt} onChange={e => door && setDoorStatus(door.id, e.target.value)}
             className="status-select text-[10px] ml-auto" style={{ background: doorCol }}>
-            {DOOR_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+            {(doorStatusValues.length > 0 ? doorStatusValues.map(s => s.status_name) : [...DOOR_STATUSES]).map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
 
@@ -303,14 +305,14 @@ export default function Movement() {
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {doors.map(d => {
             const st = d.door_status || 'Loading'
-            const col = doorStatusColor(st)
+            const col = doorStatusColor(st, doorStatusValues)
             return (
               <div key={d.id} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 flex-shrink-0 border"
                 style={{ borderColor: col, background: `${col}15` }}>
                 <span className="text-xs font-extrabold text-white">{d.door_name}</span>
                 <select value={st} onChange={e => setDoorStatus(d.id, e.target.value)}
                   className="status-select text-[10px] py-0.5 px-1" style={{ background: col }}>
-                  {DOOR_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {(doorStatusValues.length > 0 ? doorStatusValues.map(s => s.status_name) : [...DOOR_STATUSES]).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
             )

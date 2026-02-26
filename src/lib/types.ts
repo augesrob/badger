@@ -24,6 +24,26 @@ export interface StatusValue {
   is_active: boolean
 }
 
+export interface DoorStatusValue {
+  id: number
+  status_name: string
+  status_color: string
+  sort_order: number
+  is_active: boolean
+}
+
+export interface GlobalMessage {
+  id: number
+  message: string
+  message_type: 'info' | 'warning' | 'success' | 'error'
+  created_by: string | null
+  created_at: string
+  expires_at: string | null
+  visible_roles: string[]
+  dismissed_by: string[]
+  is_active: boolean
+}
+
 export interface LoadingDoor {
   id: number
   door_name: string
@@ -116,6 +136,8 @@ export interface AutomationRule {
   sort_order: number
 }
 
+// Default door statuses — used as fallback when DB values aren't loaded yet.
+// The live list comes from the door_status_values table (managed in Admin → Status Values).
 export const DOOR_STATUSES = [
   'Loading',
   'End Of Tote',
@@ -128,7 +150,13 @@ export const DOOR_STATUSES = [
 
 export type DoorStatus = typeof DOOR_STATUSES[number]
 
-export function doorStatusColor(status: string): string {
+export function doorStatusColor(status: string, dynamicStatuses?: DoorStatusValue[]): string {
+  // Use dynamic DB values if provided (loaded from door_status_values table)
+  if (dynamicStatuses && dynamicStatuses.length > 0) {
+    const match = dynamicStatuses.find(s => s.status_name === status)
+    if (match) return match.status_color
+  }
+  // Fallback to hardcoded defaults
   const colors: Record<string, string> = {
     'Loading': '#3b82f6',
     'End Of Tote': '#f59e0b',

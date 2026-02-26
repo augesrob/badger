@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import RequirePage from '@/components/RequirePage'
-import { LoadingDoor, LiveMovement, PrintroomEntry, StagingDoor, Tractor, TrailerItem, doorStatusColor } from '@/lib/types'
+import { LoadingDoor, LiveMovement, PrintroomEntry, StagingDoor, Tractor, TrailerItem, DoorStatusValue, doorStatusColor } from '@/lib/types'
 
 export default function DriversLiveView() {
   const [doors, setDoors] = useState<LoadingDoor[]>([])
@@ -11,16 +11,19 @@ export default function DriversLiveView() {
   const [stagingDoors, setStagingDoors] = useState<StagingDoor[]>([])
   const [tractors, setTractors] = useState<Tractor[]>([])
   const [lastUpdate, setLastUpdate] = useState('')
+  const [doorStatusValues, setDoorStatusValues] = useState<DoorStatusValue[]>([])
 
   const loadAll = useCallback(async () => {
-    const [doorsRes, trucksRes, prRes, stagingRes, tractorRes] = await Promise.all([
+    const [doorsRes, trucksRes, prRes, stagingRes, tractorRes, doorStatusRes] = await Promise.all([
       supabase.from('loading_doors').select('*').order('sort_order'),
       supabase.from('live_movement').select('*, status_values(status_name, status_color)').order('truck_number'),
       supabase.from('printroom_entries').select('*, loading_doors(door_name)').order('loading_door_id').order('batch_number').order('row_order'),
       supabase.from('staging_doors').select('*').order('door_number').order('door_side'),
       supabase.from('tractors').select('*, trailer_1:trailer_list!tractors_trailer_1_id_fkey(*), trailer_2:trailer_list!tractors_trailer_2_id_fkey(*), trailer_3:trailer_list!tractors_trailer_3_id_fkey(*), trailer_4:trailer_list!tractors_trailer_4_id_fkey(*)').order('truck_number'),
+      supabase.from('door_status_values').select('*').order('sort_order'),
     ])
     if (doorsRes.data) setDoors(doorsRes.data)
+    if (doorStatusRes.data) setDoorStatusValues(doorStatusRes.data)
     if (trucksRes.data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setTrucks(trucksRes.data.map((t: any) => ({
@@ -119,7 +122,7 @@ export default function DriversLiveView() {
   const renderDoorPanel = (doorName: string, accent: string) => {
     const door = doors.find(d => d.door_name === doorName)
     const doorSt = door?.door_status || 'Loading'
-    const doorCol = doorStatusColor(doorSt)
+    const doorCol = doorStatusColor(doorSt, doorStatusValues)
     const group = printroomTrucks
       .filter(t => truckToDoor[t.truck_number]?.door_name === doorName)
       .sort((a, b) => (truckToDoor[a.truck_number]?.order || 0) - (truckToDoor[b.truck_number]?.order || 0))
@@ -197,7 +200,7 @@ export default function DriversLiveView() {
         <div className="flex gap-1.5 overflow-x-auto pb-1 items-center">
           {doors.map(d => {
             const st = d.door_status || 'Loading'
-            const col = doorStatusColor(st)
+            const col = doorStatusColor(st, doorStatusValues)
             return (
               <div key={d.id} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 flex-shrink-0 border"
                 style={{ borderColor: col, background: `${col}15` }}>

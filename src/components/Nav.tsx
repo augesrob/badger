@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useTheme } from './ThemeProvider'
 import { useAuth } from './AuthProvider'
+import GlobalMessageBanner from './GlobalMessageBanner'
 import { NotificationBell } from './NotificationBell'
 import { useState, useRef, useEffect } from 'react'
 
@@ -46,6 +47,8 @@ export default function Nav() {
   const avatarInitials = (profile?.display_name || profile?.username || '?').slice(0, 2).toUpperCase()
 
   return (
+    <>
+    <GlobalMessageBanner userRole={profile?.role} />
     <nav className="sticky top-0 z-50 bg-nav border-b-2 border-amber-500">
       <div className="max-w-[1400px] mx-auto flex items-center flex-wrap">
 
@@ -187,5 +190,6 @@ export default function Nav() {
         </div>
       </div>
     </nav>
+    </>
   )
 }
