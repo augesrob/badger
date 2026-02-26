@@ -277,7 +277,7 @@ export default function PrintRoom() {
       if (route) {
         updated.push({ truck: e.truck_number!, door: e.door_name, route })
         updates.push(
-          supabase.from('printroom_entries').update({ route_info: route }).eq('id', e.id).then(() => {})
+          Promise.resolve(supabase.from('printroom_entries').update({ route_info: route }).eq('id', e.id))
         )
       } else {
         missing.push({ truck: e.truck_number!, door: e.door_name })
