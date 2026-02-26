@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
   if (action === 'send') return handleSend()
   if (action === 'check') return handleCheck()
   if (action === 'status') return handleStatus()
+  if (action === 'test') return handleTest()
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 }
@@ -84,6 +85,14 @@ async function handleCheck() {
 
 // Gmail REST API check (fully compatible with Vercel serverless)
 async function checkViaGmailAPI() {
+  // Log which env vars are configured (not their values)
+  console.log('Gmail OAuth check — env vars present:', {
+    client_id: !!GMAIL_CLIENT_ID,
+    client_secret: !!GMAIL_CLIENT_SECRET,
+    refresh_token: !!GMAIL_REFRESH_TOKEN,
+    client_id_len: GMAIL_CLIENT_ID.length,
+    refresh_token_len: GMAIL_REFRESH_TOKEN.length,
+  })
   try {
     // Get access token from refresh token
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
@@ -99,7 +108,12 @@ async function checkViaGmailAPI() {
 
     const tokenData = await tokenRes.json()
     if (!tokenData.access_token) {
-      return NextResponse.json({ error: 'Failed to get Gmail access token' }, { status: 500 })
+      const reason = tokenData.error_description || tokenData.error || 'unknown'
+      console.error('Gmail token error:', JSON.stringify(tokenData))
+      return NextResponse.json({ 
+        error: `Failed to get Gmail access token: ${reason}`,
+        detail: tokenData,
+      }, { status: 500 })
     }
 
     const accessToken = tokenData.access_token
@@ -180,6 +194,44 @@ async function checkViaGmailAPI() {
   } catch (err) {
     console.error('Gmail API error:', err)
     return NextResponse.json({ error: `Gmail check failed: ${err instanceof Error ? err.message : 'Unknown'}` }, { status: 500 })
+  }
+}
+
+// Test Gmail OAuth credentials
+async function handleTest() {
+  const configured = {
+    smtp: !!(EMAIL_USER && EMAIL_PASS),
+    oauth: !!(GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN),
+    email_user: EMAIL_USER ? EMAIL_USER.substring(0, 5) + '...' : '(not set)',
+    gmail_client_id_prefix: GMAIL_CLIENT_ID ? GMAIL_CLIENT_ID.substring(0, 20) + '...' : '(not set)',
+  }
+
+  if (!configured.oauth) {
+    return NextResponse.json({ 
+      configured,
+      error: 'Gmail OAuth not configured. Need GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN in Vercel env vars.' 
+    })
+  }
+
+  try {
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: GMAIL_CLIENT_ID,
+        client_secret: GMAIL_CLIENT_SECRET,
+        refresh_token: GMAIL_REFRESH_TOKEN,
+        grant_type: 'refresh_token',
+      }),
+    })
+    const tokenData = await tokenRes.json()
+    if (tokenData.access_token) {
+      return NextResponse.json({ configured, success: true, message: 'Gmail OAuth working ✅', token_type: tokenData.token_type, expires_in: tokenData.expires_in })
+    } else {
+      return NextResponse.json({ configured, success: false, error: tokenData.error, error_description: tokenData.error_description, detail: tokenData })
+    }
+  } catch (err) {
+    return NextResponse.json({ configured, success: false, error: String(err) })
   }
 }
 

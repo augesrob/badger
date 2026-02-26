@@ -325,6 +325,17 @@ export default function RouteSheet() {
           setBlocks(saved.blocks)
           setTopRight(saved.topRight || '')
           setSyncStatus('synced')
+          // Rebuild csvData count from saved blocks so the status bar shows correct count
+          const restoredRoutes: CSVRoute[] = []
+          saved.blocks.forEach((b: DoorBlock) => {
+            b.rows.forEach((r: RowData) => {
+              if (r.truckNumber && r.route && r.route !== 'gap') {
+                const truckKey = r.truckNumber.replace(/^TR/i, '')
+                restoredRoutes.push({ truckNumber: r.truckNumber, truckKey, route: r.route, casesExpected: parseInt(r.caseQty) || 0 })
+              }
+            })
+          })
+          setCsvData(restoredRoutes)
           setLoading(false)
           saveToStorage(saved.blocks, saved.topRight || '', 'synced')
           return { blocks: saved.blocks, tNums }
@@ -555,6 +566,7 @@ export default function RouteSheet() {
 
   // Email ping system
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'waiting' | 'checking' | 'error'>('idle')
+  const [gmailTest, setGmailTest] = useState<{ success: boolean; message?: string; error?: string; error_description?: string; configured?: Record<string, unknown> } | null>(null)
   const [emailError, setEmailError] = useState('')
   const [downloading, setDownloading] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -612,6 +624,22 @@ export default function RouteSheet() {
       window.removeEventListener('afterprint', afterPrint)
     }
   }, [autoScalePages])
+
+  // Test Gmail OAuth credentials
+  const testGmail = async () => {
+    setGmailTest(null)
+    try {
+      const res = await fetch('/api/route-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'test' }),
+      })
+      const data = await res.json()
+      setGmailTest(data)
+    } catch (e) {
+      setGmailTest({ success: false, error: String(e) })
+    }
+  }
 
   // Send ping email
   const sendPing = async () => {
@@ -877,8 +905,38 @@ export default function RouteSheet() {
               📎 CSV
               <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
             </label>
+            <button onClick={testGmail}
+              className="bg-[#333] text-gray-400 px-3 py-2 rounded-lg text-xs font-bold hover:bg-[#444] flex items-center gap-1"
+              title="Test Gmail OAuth credentials">
+              🔧
+            </button>
           </div>
         </div>
+
+        {/* Gmail test result */}
+        {gmailTest && (
+          <div className={`mt-2 rounded-lg px-4 py-3 text-xs border flex items-start gap-3 ${gmailTest.success ? 'bg-green-900/30 border-green-700 text-green-300' : 'bg-red-900/30 border-red-700 text-red-300'}`}>
+            <span className="text-base flex-shrink-0">{gmailTest.success ? '✅' : '❌'}</span>
+            <div className="flex-1 min-w-0">
+              {gmailTest.success
+                ? <span>{gmailTest.message}</span>
+                : <>
+                    <div className="font-bold mb-1">{gmailTest.error || 'Gmail OAuth failed'}</div>
+                    {gmailTest.error_description && <div className="text-red-400 mb-1">{gmailTest.error_description}</div>}
+                    {gmailTest.configured && (
+                      <div className="text-gray-400 mt-1">
+                        SMTP: {gmailTest.configured.smtp ? '✅' : '❌'} · OAuth: {gmailTest.configured.oauth ? '✅' : '❌'} · 
+                        User: {String(gmailTest.configured.email_user)} · 
+                        Client ID: {String(gmailTest.configured.gmail_client_id_prefix)}
+                      </div>
+                    )}
+                    <div className="text-gray-500 mt-1">Check Vercel env vars: GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN</div>
+                  </>
+              }
+            </div>
+            <button onClick={() => setGmailTest(null)} className="text-gray-500 hover:text-white flex-shrink-0">✕</button>
+          </div>
+        )}
       </div>
 
       {/* ===== PRINTABLE SHEET ===== */}
