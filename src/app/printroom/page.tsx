@@ -105,6 +105,36 @@ export default function PrintRoom() {
     const { error } = await supabase.from('printroom_entries').update({ [field]: value || null }).eq('id', id)
     if (error) { toast('Save failed', 'error'); return }
 
+    // Sync notes/route_info changes into routesheet localStorage so routesheet stays current
+    if ((field === 'notes' || field === 'route_info') && value !== undefined) {
+      try {
+        const raw = localStorage.getItem('badger-routesheet-v1')
+        if (raw) {
+          const rsData = JSON.parse(raw)
+          if (rsData?.blocks) {
+            // Get truck number for this entry
+            const { data: entry } = await supabase.from('printroom_entries').select('truck_number').eq('id', id).maybeSingle()
+            const truckNum = entry?.truck_number
+            if (truckNum) {
+              rsData.blocks = rsData.blocks.map((block: { rows: { truckNumber: string; notes: string; route: string }[] }) => ({
+                ...block,
+                rows: block.rows.map((row: { truckNumber: string; notes: string; route: string }) => {
+                  const rowKey = row.truckNumber?.replace(/^TR/i, '')
+                  if (rowKey === truckNum || row.truckNumber === truckNum) {
+                    return field === 'notes'
+                      ? { ...row, notes: String(value) }
+                      : { ...row, route: String(value) }
+                  }
+                  return row
+                })
+              }))
+              localStorage.setItem('badger-routesheet-v1', JSON.stringify(rsData))
+            }
+          }
+        }
+      } catch { /* localStorage sync is best-effort */ }
+    }
+
     if (field === 'truck_number') {
       // Clean up old truck from movement if no longer in any printroom entry
       if (oldTruckNumber && oldTruckNumber !== 'end' && oldTruckNumber !== String(value)) {

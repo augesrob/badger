@@ -132,6 +132,14 @@ function drawRouteSheetPage(
         pdf.setFont('helvetica', 'bold')
         pdf.text(row.route, ML + COL_DOOR + COL_ROUTE / 2, textY, { align: 'center', baseline: 'middle' })
       }
+      // Signature — render handwritten-style text if present
+      if (row.signature) {
+        pdf.setFontSize(Math.min(7.5, textFontSize))
+        pdf.setFont('helvetica', 'italic')
+        pdf.setTextColor(20, 20, 120)
+        pdf.text(row.signature, ML + COL_DOOR + COL_ROUTE + COL_SIG / 2, textY, { align: 'center', baseline: 'middle', maxWidth: COL_SIG - 2 })
+        pdf.setTextColor(0)
+      }
       if (row.truckNumber) {
         const trNum = row.truckNumber.toUpperCase().startsWith('TR') ? row.truckNumber : `TR${row.truckNumber}`
         pdf.setFontSize(textFontSize)
@@ -549,16 +557,40 @@ export default function RouteSheet() {
     })
   }
 
+  // Sync a single field back to printroom_entries by truck number
+  // Used to push notes/route_info changes from routesheet → printroom → movement
+  const syncFieldToPrintroom = useCallback(async (truckNumber: string, field: 'notes' | 'route_info', value: string) => {
+    if (!truckNumber || truckNumber === 'end') return
+    const cleanTruck = truckNumber.replace(/^TR/i, '')
+    // Find all printroom entries with this truck number and update them
+    await supabase
+      .from('printroom_entries')
+      .update({ [field]: value || null })
+      .eq('truck_number', cleanTruck)
+  }, [])
+
   const updateBlock = (doorIdx: number, field: 'loaderName', value: string) => {
     mutateBlocks(prev => prev.map((b, i) => i === doorIdx ? { ...b, [field]: value } : b))
   }
 
   const updateRow = (doorIdx: number, rowIdx: number, field: keyof RowData, value: string) => {
+    let truckForSync = ''
     mutateBlocks(prev => prev.map((b, i) => {
       if (i !== doorIdx) return b
-      const newRows = b.rows.map((r, j) => j === rowIdx ? { ...r, [field]: value } : r)
+      const newRows = b.rows.map((r, j) => {
+        if (j !== rowIdx) return r
+        if (field === 'notes' || field === 'route') truckForSync = r.truckNumber
+        return { ...r, [field]: value }
+      })
       return { ...b, rows: newRows }
     }))
+    // Push notes and route changes back to printroom so movement picks them up
+    if (field === 'notes' && truckForSync) {
+      syncFieldToPrintroom(truckForSync, 'notes', value)
+    }
+    if (field === 'route' && truckForSync) {
+      syncFieldToPrintroom(truckForSync, 'route_info', value)
+    }
   }
 
   const addRow = (doorIdx: number) => {
