@@ -268,15 +268,27 @@ export default function PrintRoom() {
       return
     }
 
-    // Build lookup: truckKey (no TR prefix, lowercase) → route
+    // Build lookup: truckKey (no TR prefix, lowercase) → first route found
+    // Collect ALL routes per truck so semis get their highest route number
     const routeMap: Record<string, string> = {}
+    const allRoutesMap: Record<string, string[]> = {}
     rsData.blocks.forEach(block => {
       block.rows.forEach(row => {
-        if (!row.truckNumber || !row.route || row.route === 'gap') return
-        const key = row.truckNumber.replace(/^TR/i, '').toLowerCase()
-        // For box trucks, first route wins (semis will be filtered out anyway)
+        if (!row.truckNumber || !row.route || row.route === 'gap' || row.route === 'CPU') return
+        const key = row.truckNumber.replace(/^TR/i, '').trim().toLowerCase()
+        if (!allRoutesMap[key]) allRoutesMap[key] = []
+        if (!allRoutesMap[key].includes(row.route)) allRoutesMap[key].push(row.route)
         if (!routeMap[key]) routeMap[key] = row.route
       })
+    })
+
+    // For semis: use highest route number as the Rt value
+    Object.keys(allRoutesMap).forEach(key => {
+      const routes = allRoutesMap[key]
+      if (routes.length > 1) {
+        const sorted = [...routes].sort((a, b) => parseInt(b) - parseInt(a))
+        routeMap[key] = sorted[0]
+      }
     })
 
     if (Object.keys(routeMap).length === 0) {
@@ -285,13 +297,12 @@ export default function PrintRoom() {
       return
     }
 
-    // Collect all non-end, non-empty printroom entries that are NOT semis
+    // Collect ALL non-end, non-empty printroom entries (including semis — fill their Rt too)
     const allEntries: (PrintroomEntry & { door_name: string })[] = []
     doors.forEach(door => {
       const doorEntries = entries[door.id] || []
       doorEntries.forEach(e => {
         if (e.is_end_marker || !e.truck_number || e.truck_number === 'end') return
-        if (isSemiTruck(e.truck_number)) return   // skip semis/tractors
         allEntries.push({ ...e, door_name: door.door_name })
       })
     })
@@ -526,7 +537,10 @@ export default function PrintRoom() {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-6 max-w-lg w-full max-h-[80vh] overflow-auto">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-amber-500 font-bold text-lg">🔄 Route Sync Results</h3>
+              <div>
+                <h3 className="text-amber-500 font-bold text-lg">🔄 Route Sync Results</h3>
+                <p className="text-xs text-gray-500">{syncResult.updated.length + syncResult.missing.length} trucks processed</p>
+              </div>
               <button onClick={() => setSyncResult(null)} className="text-gray-400 hover:text-white text-xl">✕</button>
             </div>
 
@@ -558,7 +572,7 @@ export default function PrintRoom() {
                     <div key={i} className="flex items-center justify-between bg-red-900/20 border border-red-800/40 rounded-lg px-3 py-1.5 text-sm">
                       <span className="font-bold text-amber-500">{m.truck}</span>
                       <span className="text-xs text-gray-400">{m.door}</span>
-                      <span className="text-red-400 text-xs">No route found</span>
+                      <span className="text-red-400 text-xs">Not in route sheet</span>
                     </div>
                   ))}
                 </div>
