@@ -271,7 +271,7 @@ export default function RouteSheet() {
 
   const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (forceFresh = false) => {
     const [doorsRes, entriesRes, tractorsRes] = await Promise.all([
       supabase.from('loading_doors').select('*').order('sort_order'),
       supabase.from('printroom_entries').select('*, loading_doors(door_name)').order('batch_number').order('row_order'),
@@ -321,7 +321,7 @@ export default function RouteSheet() {
 
         // If already synced with CSV, use saved blocks exactly as-is — no re-merge
         // Re-merging with fresh printroom rows would overwrite normalized route/caseQty data
-        if (saved.syncStatus === 'synced') {
+        if (saved.syncStatus === 'synced' && !forceFresh) {
           setBlocks(saved.blocks)
           setTopRight(saved.topRight || '')
           setSyncStatus('synced')
@@ -395,10 +395,14 @@ export default function RouteSheet() {
     setCsvData(routes)
 
     // Group CSV routes by truckKey (for semis with multiple routes)
+    // Store under multiple key variants so matching is robust
     const routesByTruck: Record<string, CSVRoute[]> = {}
     routes.forEach(r => {
-      if (!routesByTruck[r.truckKey]) routesByTruck[r.truckKey] = []
-      routesByTruck[r.truckKey].push(r)
+      const keys = [r.truckKey, r.truckKey.toLowerCase(), r.truckKey.toUpperCase()]
+      keys.forEach(k => {
+        if (!routesByTruck[k]) routesByTruck[k] = []
+        if (!routesByTruck[k].some(x => x.route === r.route)) routesByTruck[k].push(r)
+      })
     })
 
     // Check if a printroom truck is a semi:
@@ -414,14 +418,18 @@ export default function RouteSheet() {
     // 1. Direct key match (e.g. "231-1" → TR231-1)
     // 2. Base number match — strip the "-N" suffix (e.g. "222-1" → look up "222" in CSV)
     const getSemiRoutes = (truckKey: string): CSVRoute[] => {
-      // Direct match first
-      const direct = routesByTruck[truckKey]
-      if (direct && direct.length > 0) return direct
+      // Try multiple key formats: exact, uppercase, lowercase
+      const variants = [truckKey, truckKey.toUpperCase(), truckKey.toLowerCase()]
+      for (const v of variants) {
+        if (routesByTruck[v] && routesByTruck[v].length > 0) return routesByTruck[v]
+      }
       // Strip trailer suffix: "222-1" → "222", "189-1" → "189"
       const base = truckKey.replace(/-\d+$/, '')
       if (base !== truckKey) {
-        const baseMatch = routesByTruck[base]
-        if (baseMatch && baseMatch.length > 0) return baseMatch
+        const baseVariants = [base, base.toUpperCase(), base.toLowerCase()]
+        for (const v of baseVariants) {
+          if (routesByTruck[v] && routesByTruck[v].length > 0) return routesByTruck[v]
+        }
       }
       return []
     }
@@ -437,8 +445,8 @@ export default function RouteSheet() {
         }
 
         const truckKey = row.truckNumber
-        // Normalize: strip TR prefix for comparison
-        const truckKeyNorm = truckKey.replace(/^TR/i, '').toLowerCase()
+        // Normalize: strip TR prefix and whitespace for comparison
+        const truckKeyNorm = truckKey.replace(/^TR/i, '').trim().toLowerCase()
 
         // Gap marker — display as route label only, no truck number; deduplicate (keep only first)
         if (truckKeyNorm === 'gap') {
@@ -503,12 +511,16 @@ export default function RouteSheet() {
     if (!file) return
     setSyncStatus('waiting')
     const text = await file.text()
-    setBlocks(prev => {
-      const merged = parseAndMergeCSV(text, prev, tractorNumsRef.current)
-      // Save immediately — don't rely on useEffect which may fire before state commits
-      saveToStorage(merged, topRightRef.current, 'synced')
-      return merged
-    })
+
+    // Always re-load fresh printroom data before merging so we have current trucks
+    // (avoids stale blocks from a previous session's localStorage)
+    const freshResult = await loadData(true)
+    const freshBlocks = freshResult?.blocks ?? []
+    const freshTractors = freshResult?.tNums ?? tractorNumsRef.current
+
+    const merged = parseAndMergeCSV(text, freshBlocks, freshTractors)
+    saveToStorage(merged, topRightRef.current, 'synced')
+    setBlocks(merged)
     setSyncStatus('synced')
     toast('Route data synced!')
     // Notify same-tab listeners (printroom page) that route data is ready
