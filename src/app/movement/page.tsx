@@ -94,8 +94,8 @@ export default function Movement() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staging_doors' }, fetchStaging)
       .subscribe()
 
-    // Fallback poll every 8s — catches any realtime misses
-    const poll = setInterval(() => loadAll(), 8_000)
+    // Fallback poll every 30s — optimistic updates handle local changes instantly, this just catches remote changes if realtime drops
+    const poll = setInterval(() => loadAll(), 30_000)
 
     // Reload immediately when tab becomes visible again
     const handleVisibility = () => { if (document.visibilityState === 'visible') loadAll() }
