@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
-import { LoadingDoor, LiveMovement, StatusValue, PrintroomEntry, StagingDoor, Tractor, TrailerItem, DoorStatusValue, DOOR_STATUSES, doorStatusColor } from '@/lib/types'
+import { LoadingDoor, LiveMovement, StatusValue, PrintroomEntry, StagingDoor, Tractor, TrailerItem, DoorStatusValue, DockLockStatusValue, DOOR_STATUSES, doorStatusColor } from '@/lib/types'
 import { getTTSSettings, useMovementTTS } from '@/lib/tts'
 import { TTSMiniToggle } from '@/components/TTSPanel'
 import RequirePage from '@/components/RequirePage'
@@ -13,6 +13,7 @@ export default function Movement() {
   const [trucks, setTrucks] = useState<LiveMovement[]>([])
   const [statuses, setStatuses] = useState<StatusValue[]>([])
   const [doorStatusValues, setDoorStatusValues] = useState<DoorStatusValue[]>([])
+  const [dockLockStatusValues, setDockLockStatusValues] = useState<DockLockStatusValue[]>([])
   const [printroom, setPrintroom] = useState<(PrintroomEntry & { loading_doors?: { door_name: string } })[]>([])
   const [stagingDoors, setStagingDoors] = useState<StagingDoor[]>([])
   const [tractors, setTractors] = useState<Tractor[]>([])
@@ -22,11 +23,12 @@ export default function Movement() {
   const [ttsSettings, setTtsSettings] = useState(() => getTTSSettings('movement'))
 
   const loadAll = useCallback(async () => {
-    const [doorsRes, trucksRes, statusRes, doorStatusRes, prRes, stagingRes, tractorRes] = await Promise.all([
+    const [doorsRes, trucksRes, statusRes, doorStatusRes, dockLockStatusRes, prRes, stagingRes, tractorRes] = await Promise.all([
       supabase.from('loading_doors').select('*').order('sort_order'),
       supabase.from('live_movement').select('*, status_values(status_name, status_color)').order('truck_number'),
       supabase.from('status_values').select('*').eq('is_active', true).order('sort_order'),
       supabase.from('door_status_values').select('*').order('sort_order'),
+      supabase.from('dock_lock_status_values').select('*').order('sort_order'),
       supabase.from('printroom_entries').select('*, loading_doors(door_name)').order('loading_door_id').order('batch_number').order('row_order'),
       supabase.from('staging_doors').select('*').order('door_number').order('door_side'),
       supabase.from('tractors').select('*, trailer_1:trailer_list!tractors_trailer_1_id_fkey(*), trailer_2:trailer_list!tractors_trailer_2_id_fkey(*), trailer_3:trailer_list!tractors_trailer_3_id_fkey(*), trailer_4:trailer_list!tractors_trailer_4_id_fkey(*)').order('truck_number'),
@@ -45,6 +47,7 @@ export default function Movement() {
     }
     if (statusRes.data) setStatuses(statusRes.data)
     if (doorStatusRes.data) setDoorStatusValues(doorStatusRes.data)
+    if (dockLockStatusRes.data) setDockLockStatusValues(dockLockStatusRes.data)
     if (prRes.data) setPrintroom(prRes.data)
     if (stagingRes.data) setStagingDoors(stagingRes.data)
     if (tractorRes.data) setTractors(tractorRes.data)
@@ -242,18 +245,23 @@ export default function Movement() {
             className="status-select text-[10px] ml-auto" style={{ background: doorCol }}>
             {(doorStatusValues.length > 0 ? doorStatusValues.map(s => s.status_name) : [...DOOR_STATUSES]).map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          {DOCK_LOCK_DOORS.has(doorName) && (
-            <select
-              value={door?.dock_lock_status || ''}
-              onChange={e => door && setDockLock(door.id, e.target.value || null)}
-              className="status-select text-[10px]"
-              style={{ background: door?.dock_lock_status === 'working' ? '#16a34a' : door?.dock_lock_status === 'not_working' ? '#dc2626' : '#374151' }}
-            >
-              <option value="">🔒 Dock Lock</option>
-              <option value="working">✅ Working</option>
-              <option value="not_working">❌ Not Working</option>
-            </select>
-          )}
+          {DOCK_LOCK_DOORS.has(doorName) && (() => {
+            const matched = dockLockStatusValues.find(s => s.status_name === door?.dock_lock_status)
+            const bgColor = matched ? matched.status_color : '#374151'
+            return (
+              <select
+                value={door?.dock_lock_status || ''}
+                onChange={e => door && setDockLock(door.id, e.target.value || null)}
+                className="status-select text-[10px]"
+                style={{ background: bgColor }}
+              >
+                <option value="">🔒 Dock Lock</option>
+                {dockLockStatusValues.map(s => (
+                  <option key={s.id} value={s.status_name}>{s.status_name}</option>
+                ))}
+              </select>
+            )
+          })()}
         </div>
 
         {/* Column headers */}
