@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
-import { Truck, Trailer, StatusValue, DoorStatusValue, GlobalMessage, Route, TrailerItem, Tractor, AutomationRule } from '@/lib/types'
+import { Truck, Trailer, StatusValue, DoorStatusValue, DockLockStatusValue, GlobalMessage, Route, TrailerItem, Tractor, AutomationRule } from '@/lib/types'
 import { TTSPanel } from '@/components/TTSPanel'
 import { runPreshiftAutomation, runAutomation } from '@/lib/automation'
 import Link from 'next/link'
@@ -45,9 +45,11 @@ export default function Admin() {
   // Status/Route state
   const [statuses, setStatuses] = useState<StatusValue[]>([])
   const [doorStatuses, setDoorStatuses] = useState<DoorStatusValue[]>([])
+  const [dockLockStatuses, setDockLockStatuses] = useState<DockLockStatusValue[]>([])
   const [routes, setRoutes] = useState<Route[]>([])
   const [newStatus, setNewStatus] = useState({ name: '', color: '#6b7280' })
   const [newDoorStatus, setNewDoorStatus] = useState({ name: '', color: '#6b7280' })
+  const [newDockLockStatus, setNewDockLockStatus] = useState({ name: '', color: '#22c55e' })
   const [newRoute, setNewRoute] = useState({ name: '', number: '' })
   const [resetLog, setResetLog] = useState<{ id: number; reset_type: string; reset_at: string; reset_by: string }[]>([])
   const [statusTab, setStatusTab] = useState<'truck' | 'door'>('truck')
@@ -57,6 +59,8 @@ export default function Admin() {
   const [editStatusForm, setEditStatusForm] = useState({ name: '', color: '' })
   const [editDoorStatusId, setEditDoorStatusId] = useState<number | null>(null)
   const [editDoorStatusForm, setEditDoorStatusForm] = useState({ name: '', color: '' })
+  const [editDockLockStatusId, setEditDockLockStatusId] = useState<number | null>(null)
+  const [editDockLockStatusForm, setEditDockLockStatusForm] = useState({ name: '', color: '' })
 
   // Global messages state
   const [globalMessages, setGlobalMessages] = useState<GlobalMessage[]>([])
@@ -69,10 +73,11 @@ export default function Admin() {
   const [ruleForm, setRuleForm] = useState({ rule_name: '', description: '', trigger_type: 'truck_number_equals', trigger_value: '', action_type: 'set_truck_status', action_value: '', sort_order: '100' })
 
   const loadAll = useCallback(async () => {
-    const [trucksRes, statusRes, doorStatusRes, routeRes, resetRes, tractorRes, trailerRes, rulesRes, msgRes] = await Promise.all([
+    const [trucksRes, statusRes, doorStatusRes, dockLockStatusRes, routeRes, resetRes, tractorRes, trailerRes, rulesRes, msgRes] = await Promise.all([
       supabase.from('trucks').select('*').order('truck_number'),
       supabase.from('status_values').select('*').order('sort_order'),
       supabase.from('door_status_values').select('*').order('sort_order'),
+      supabase.from('dock_lock_status_values').select('*').order('sort_order'),
       supabase.from('routes').select('*').order('sort_order'),
       supabase.from('reset_log').select('*').order('reset_at', { ascending: false }).limit(20),
       supabase.from('tractors').select('*, trailer_1:trailer_list!tractors_trailer_1_id_fkey(*), trailer_2:trailer_list!tractors_trailer_2_id_fkey(*), trailer_3:trailer_list!tractors_trailer_3_id_fkey(*), trailer_4:trailer_list!tractors_trailer_4_id_fkey(*)').order('truck_number'),
@@ -93,6 +98,7 @@ export default function Admin() {
     }
     if (statusRes.data) setStatuses(statusRes.data)
     if (doorStatusRes.data) setDoorStatuses(doorStatusRes.data)
+    if (dockLockStatusRes.data) setDockLockStatuses(dockLockStatusRes.data)
     if (routeRes.data) setRoutes(routeRes.data)
     if (msgRes.data) setGlobalMessages(msgRes.data)
     if (resetRes.data) setResetLog(resetRes.data)
@@ -307,6 +313,22 @@ export default function Admin() {
     setEditDoorStatusId(null); toast('Door status updated'); loadAll()
   }
 
+  // === DOCK LOCK STATUS CRUD ===
+  const addDockLockStatus = async () => {
+    if (!newDockLockStatus.name) { toast('Enter status name', 'error'); return }
+    const maxOrder = dockLockStatuses.length > 0 ? Math.max(...dockLockStatuses.map(s => s.sort_order)) + 1 : 1
+    const { error } = await supabase.from('dock_lock_status_values').insert({ status_name: newDockLockStatus.name, status_color: newDockLockStatus.color, sort_order: maxOrder })
+    if (error) { toast('Already exists', 'error'); return }
+    setNewDockLockStatus({ name: '', color: '#22c55e' }); toast('Dock lock status added'); loadAll()
+  }
+  const deleteDockLockStatus = async (id: number) => { if (!confirm('Delete?')) return; await supabase.from('dock_lock_status_values').delete().eq('id', id); loadAll() }
+  const startEditDockLockStatus = (s: DockLockStatusValue) => { setEditDockLockStatusId(s.id); setEditDockLockStatusForm({ name: s.status_name, color: s.status_color }) }
+  const saveEditDockLockStatus = async () => {
+    if (!editDockLockStatusId || !editDockLockStatusForm.name) return
+    await supabase.from('dock_lock_status_values').update({ status_name: editDockLockStatusForm.name, status_color: editDockLockStatusForm.color }).eq('id', editDockLockStatusId)
+    setEditDockLockStatusId(null); toast('Dock lock status updated'); loadAll()
+  }
+
   // === GLOBAL MESSAGES CRUD ===
   const addGlobalMessage = async () => {
     if (!newMsg.message.trim()) { toast('Enter a message', 'error'); return }
@@ -376,6 +398,10 @@ export default function Admin() {
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${statusTab === 'door' ? 'bg-amber-500 text-black' : 'text-gray-400 hover:text-white'}`}>
           🚪 Door Statuses ({doorStatuses.length})
         </button>
+        <button onClick={() => setStatusTab('docklock')}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${statusTab === 'docklock' ? 'bg-amber-500 text-black' : 'text-gray-400 hover:text-white'}`}>
+          🔒 Dock Lock ({dockLockStatuses.length})
+        </button>
       </div>
 
       {statusTab === 'truck' ? (
@@ -399,7 +425,7 @@ export default function Admin() {
             {statuses.length === 0 && <p className="text-sm text-gray-500">No truck statuses yet.</p>}
           </div>
         </div>
-      ) : (
+      ) : statusTab === 'door' ? (
         <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
           <p className="text-[11px] text-gray-500 mb-3">Used on Loading Doors (12A, 13A, etc.), voice commands, and the Android app.</p>
           <div className="flex gap-2 mb-4 flex-wrap items-end">
@@ -418,6 +444,27 @@ export default function Admin() {
                 onEdit={() => startEditDoorStatus(s)} onDelete={() => deleteDoorStatus(s.id)} />
             ))}
             {doorStatuses.length === 0 && <p className="text-sm text-gray-500">No door statuses yet.</p>}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
+          <p className="text-[11px] text-gray-500 mb-3">Controls the dock lock chip shown on doors 13A–15B in Movement and Android app. Changes sync live to the app.</p>
+          <div className="flex gap-2 mb-4 flex-wrap items-end">
+            <div><label className="text-xs text-gray-500 uppercase font-bold block mb-1">Status Name</label>
+              <input value={newDockLockStatus.name} onChange={e => setNewDockLockStatus({ ...newDockLockStatus, name: e.target.value })}
+                onKeyDown={e => e.key === 'Enter' && addDockLockStatus()} placeholder="e.g. Working" className="input-field" /></div>
+            <div><label className="text-xs text-gray-500 uppercase font-bold block mb-1">Color</label>
+              <input type="color" value={newDockLockStatus.color} onChange={e => setNewDockLockStatus({ ...newDockLockStatus, color: e.target.value })} className="w-10 h-[38px] rounded cursor-pointer border-0" /></div>
+            <button onClick={addDockLockStatus} className="bg-amber-500 text-black px-4 py-2 rounded text-sm font-bold hover:bg-amber-400">+ Add</button>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {dockLockStatuses.map(s => (
+              <StatusChip key={s.id} s={s}
+                editId={editDockLockStatusId} editForm={editDockLockStatusForm} setEditForm={setEditDockLockStatusForm}
+                onSave={saveEditDockLockStatus} onCancel={() => setEditDockLockStatusId(null)}
+                onEdit={() => startEditDockLockStatus(s)} onDelete={() => deleteDockLockStatus(s.id)} />
+            ))}
+            {dockLockStatuses.length === 0 && <p className="text-sm text-gray-500">No dock lock statuses yet. Add "Working" and "Not Working" to get started.</p>}
           </div>
         </div>
       )}
@@ -1037,232 +1084,233 @@ export default function Admin() {
     )
   }
 
-    function NotificationsSection() {
-    const [users, setUsers]           = useState<{ id: string; display_name: string | null; username: string; role: string; avatar_color: string }[]>([])
-    const [loadingUsers, setLoadingUsers] = useState(true)
-    const [expandedId, setExpandedId] = useState<string | null>(null)
-    const [notifTab, setNotifTab] = useState<'messages' | 'prefs'>('messages')
+}
 
-    useEffect(() => {
-      supabase.from('profiles').select('id, display_name, username, role, avatar_color')
-        .order('display_name')
-        .then(({ data }) => { setUsers(data || []); setLoadingUsers(false) })
-    }, [])
 
-    const ROLE_COLORS: Record<string, string> = {
-      admin: '#f59e0b', print_room: '#3b82f6', truck_mover: '#8b5cf6',
-      trainee: '#22c55e', driver: '#6b7280',
-    }
-    const ROLE_LABELS: Record<string, string> = {
-      admin: '👑 Admin', print_room: '🖨️ Print Room', truck_mover: '🚛 Truck Mover',
-      trainee: '📚 Trainee', driver: '🚚 Driver',
-    }
-    const ALL_ROLES = ['admin','print_room','truck_mover','trainee','driver']
-    const MSG_TYPES = [
-      { value: 'info',    label: '💬 Info',    bg: 'bg-blue-900/40',   border: 'border-blue-600',   text: 'text-blue-300'   },
-      { value: 'warning', label: '⚠️ Warning', bg: 'bg-yellow-900/40', border: 'border-yellow-600', text: 'text-yellow-300' },
-      { value: 'success', label: '✅ Success', bg: 'bg-green-900/40',  border: 'border-green-600',  text: 'text-green-300'  },
-      { value: 'error',   label: '🚨 Alert',   bg: 'bg-red-900/40',    border: 'border-red-600',    text: 'text-red-300'    },
-    ]
-    const typeStyle = (type: string) => MSG_TYPES.find(t => t.value === type) || MSG_TYPES[0]
 
-    return (
-      <div>
-        <h2 className="text-xl font-bold mb-4">🔔 Notifications</h2>
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function NotificationsSection() {
+const [users, setUsers]           = useState<{ id: string; display_name: string | null; username: string; role: string; avatar_color: string }[]>([])
+const [loadingUsers, setLoadingUsers] = useState(true)
+const [expandedId, setExpandedId] = useState<string | null>(null)
+const [notifTab, setNotifTab] = useState<'messages' | 'prefs'>('messages')
 
-        {/* Tab bar */}
-        <div className="flex gap-1 mb-5 bg-[#111] rounded-lg p-1 w-fit">
-          <button onClick={() => setNotifTab('messages')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${notifTab === 'messages' ? 'bg-amber-500 text-black' : 'text-gray-400 hover:text-white'}`}>
-            📢 Global Messages
-          </button>
-          <button onClick={() => setNotifTab('prefs')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${notifTab === 'prefs' ? 'bg-amber-500 text-black' : 'text-gray-400 hover:text-white'}`}>
-            🔔 User Preferences
-          </button>
-        </div>
+useEffect(() => {
+  supabase.from('profiles').select('id, display_name, username, role, avatar_color')
+    .order('display_name')
+    .then(({ data }) => { setUsers(data || []); setLoadingUsers(false) })
+}, [])
 
-        {notifTab === 'messages' ? (
-          <div className="space-y-4">
-            {/* Compose new message */}
-            <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
-              <h3 className="text-sm font-bold text-amber-500 mb-3">📢 Post a Global Message</h3>
-              <p className="text-xs text-gray-500 mb-4">Appears as a banner at the top of the website for the roles you choose. Dismissable per user.</p>
+const ROLE_COLORS: Record<string, string> = {
+  admin: '#f59e0b', print_room: '#3b82f6', truck_mover: '#8b5cf6',
+  trainee: '#22c55e', driver: '#6b7280',
+}
+const ROLE_LABELS: Record<string, string> = {
+  admin: '👑 Admin', print_room: '🖨️ Print Room', truck_mover: '🚛 Truck Mover',
+  trainee: '📚 Trainee', driver: '🚚 Driver',
+}
+const ALL_ROLES = ['admin','print_room','truck_mover','trainee','driver']
+const MSG_TYPES = [
+  { value: 'info',    label: '💬 Info',    bg: 'bg-blue-900/40',   border: 'border-blue-600',   text: 'text-blue-300'   },
+  { value: 'warning', label: '⚠️ Warning', bg: 'bg-yellow-900/40', border: 'border-yellow-600', text: 'text-yellow-300' },
+  { value: 'success', label: '✅ Success', bg: 'bg-green-900/40',  border: 'border-green-600',  text: 'text-green-300'  },
+  { value: 'error',   label: '🚨 Alert',   bg: 'bg-red-900/40',    border: 'border-red-600',    text: 'text-red-300'    },
+]
+const typeStyle = (type: string) => MSG_TYPES.find(t => t.value === type) || MSG_TYPES[0]
 
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Message</label>
-                  <textarea value={newMsg.message} onChange={e => setNewMsg({ ...newMsg, message: e.target.value })}
-                    placeholder="e.g. I'll be coming in late today — cover the 6AM trucks. Back by 8AM."
-                    rows={2} className="input-field w-full resize-none" />
-                </div>
+return (
+  <div>
+    <h2 className="text-xl font-bold mb-4">🔔 Notifications</h2>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Type</label>
-                    <div className="flex gap-1.5 flex-wrap">
-                      {MSG_TYPES.map(t => (
-                        <button key={t.value} onClick={() => setNewMsg({ ...newMsg, message_type: t.value })}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-colors ${newMsg.message_type === t.value ? `${t.bg} ${t.border} ${t.text}` : 'bg-[#111] border-[#333] text-gray-500 hover:text-white'}`}>
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Expires After</label>
-                    <select value={newMsg.expires_hours} onChange={e => setNewMsg({ ...newMsg, expires_hours: e.target.value })} className="input-field">
-                      <option value="">Never expires</option>
-                      <option value="1">1 hour</option>
-                      <option value="2">2 hours</option>
-                      <option value="4">4 hours</option>
-                      <option value="8">8 hours</option>
-                      <option value="24">24 hours</option>
-                      <option value="48">2 days</option>
-                    </select>
-                  </div>
-                </div>
+    {/* Tab bar */}
+    <div className="flex gap-1 mb-5 bg-[#111] rounded-lg p-1 w-fit">
+      <button onClick={() => setNotifTab('messages')}
+        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${notifTab === 'messages' ? 'bg-amber-500 text-black' : 'text-gray-400 hover:text-white'}`}>
+        📢 Global Messages
+      </button>
+      <button onClick={() => setNotifTab('prefs')}
+        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${notifTab === 'prefs' ? 'bg-amber-500 text-black' : 'text-gray-400 hover:text-white'}`}>
+        🔔 User Preferences
+      </button>
+    </div>
 
-                <div>
-                  <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Visible To</label>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {ALL_ROLES.map(r => (
-                      <button key={r} onClick={() => setNewMsg(prev => ({
-                        ...prev,
-                        visible_roles: prev.visible_roles.includes(r)
-                          ? prev.visible_roles.filter(x => x !== r)
-                          : [...prev.visible_roles, r]
-                      }))}
-                        className={`px-2.5 py-1 rounded-full text-xs font-bold border transition-colors ${newMsg.visible_roles.includes(r) ? 'border-amber-500 text-amber-500 bg-amber-500/10' : 'border-[#333] text-gray-500 hover:text-white'}`}>
-                        {ROLE_LABELS[r]}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+    {notifTab === 'messages' ? (
+      <div className="space-y-4">
+        {/* Compose new message */}
+        <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
+          <h3 className="text-sm font-bold text-amber-500 mb-3">📢 Post a Global Message</h3>
+          <p className="text-xs text-gray-500 mb-4">Appears as a banner at the top of the website for the roles you choose. Dismissable per user.</p>
 
-                <button onClick={addGlobalMessage}
-                  className="bg-amber-500 text-black px-5 py-2 rounded-lg text-sm font-bold hover:bg-amber-400 w-full">
-                  📢 Post Message
-                </button>
-              </div>
-            </div>
-
-            {/* Active messages */}
+          <div className="space-y-3">
             <div>
-              <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Active Messages</h3>
-              {globalMessages.filter(m => m.is_active).length === 0 && (
-                <div className="text-sm text-gray-500 py-4 text-center">No active messages.</div>
-              )}
-              <div className="space-y-2">
-                {globalMessages.filter(m => m.is_active).map(m => {
-                  const ts = typeStyle(m.message_type)
-                  const expired = m.expires_at && new Date(m.expires_at) < new Date()
-                  return (
-                    <div key={m.id} className={`rounded-xl p-4 border ${ts.bg} ${ts.border} ${expired ? 'opacity-50' : ''}`}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-medium ${ts.text} mb-1`}>{m.message}</p>
-                          <div className="flex flex-wrap gap-2 text-[10px] text-gray-400">
-                            <span>Posted {new Date(m.created_at).toLocaleString()}</span>
-                            {m.expires_at && <span>· Expires {new Date(m.expires_at).toLocaleString()}</span>}
-                            {expired && <span className="text-red-400 font-bold">· EXPIRED</span>}
-                            <span>· Dismissed by {m.dismissed_by.length}</span>
-                            <span>· Roles: {m.visible_roles.map(r => ROLE_LABELS[r] || r).join(', ')}</span>
-                          </div>
-                        </div>
-                        <div className="flex gap-2 flex-shrink-0">
-                          <button onClick={() => deactivateMessage(m.id)}
-                            className="text-xs text-gray-500 hover:text-white bg-[#222] px-2 py-1 rounded">
-                            Hide
-                          </button>
-                          <button onClick={() => deleteMessage(m.id)}
-                            className="text-xs text-red-500/60 hover:text-red-400 bg-[#222] px-2 py-1 rounded">
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+              <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Message</label>
+              <textarea value={newMsg.message} onChange={e => setNewMsg({ ...newMsg, message: e.target.value })}
+                placeholder="e.g. I'll be coming in late today — cover the 6AM trucks. Back by 8AM."
+                rows={2} className="input-field w-full resize-none" />
             </div>
 
-            {/* Past messages */}
-            {globalMessages.filter(m => !m.is_active).length > 0 && (
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <h3 className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">Past / Hidden Messages</h3>
-                <div className="space-y-1.5">
-                  {globalMessages.filter(m => !m.is_active).map(m => (
-                    <div key={m.id} className="flex items-center justify-between bg-[#111] border border-[#222] rounded-lg px-3 py-2 opacity-50">
-                      <p className="text-xs text-gray-400 truncate flex-1">{m.message}</p>
-                      <button onClick={() => deleteMessage(m.id)} className="text-red-500/50 hover:text-red-400 ml-3">&times;</button>
-                    </div>
+                <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Type</label>
+                <div className="flex gap-1.5 flex-wrap">
+                  {MSG_TYPES.map(t => (
+                    <button key={t.value} onClick={() => setNewMsg({ ...newMsg, message_type: t.value })}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-colors ${newMsg.message_type === t.value ? `${t.bg} ${t.border} ${t.text}` : 'bg-[#111] border-[#333] text-gray-500 hover:text-white'}`}>
+                      {t.label}
+                    </button>
                   ))}
                 </div>
               </div>
-            )}
-          </div>
-        ) : (
-          /* User preferences tab */
-          <div>
-            {/* TTS panel */}
-            <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 mb-6">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-sm font-bold text-amber-500">🔊 TTS / Sound</span>
-                <span className="text-[10px] text-gray-500 bg-[#222] px-2 py-0.5 rounded">Your Voice Announcements</span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><h3 className="text-xs text-gray-400 font-bold uppercase mb-2">Movement Page</h3><TTSPanel page="movement" /></div>
-                <div><h3 className="text-xs text-gray-400 font-bold uppercase mb-2">Print Room Page</h3><TTSPanel page="printroom" /></div>
+              <div>
+                <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Expires After</label>
+                <select value={newMsg.expires_hours} onChange={e => setNewMsg({ ...newMsg, expires_hours: e.target.value })} className="input-field">
+                  <option value="">Never expires</option>
+                  <option value="1">1 hour</option>
+                  <option value="2">2 hours</option>
+                  <option value="4">4 hours</option>
+                  <option value="8">8 hours</option>
+                  <option value="24">24 hours</option>
+                  <option value="48">2 days</option>
+                </select>
               </div>
             </div>
 
-            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Per-User Preferences</h3>
-            {loadingUsers ? (
-              <div className="text-center py-10 text-gray-500">Loading users...</div>
-            ) : (
-              <div className="space-y-2">
-                {users.map(u => {
-                  const isOpen = expandedId === u.id
-                  const initials = (u.display_name || u.username).slice(0, 2).toUpperCase()
-                  return (
-                    <div key={u.id} className={`bg-[#1a1a1a] border rounded-xl overflow-hidden transition-colors ${isOpen ? 'border-amber-500/40' : 'border-[#2a2a2a]'}`}>
-                      <button className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors"
-                        onClick={() => setExpandedId(isOpen ? null : u.id)}>
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                          style={{ background: u.avatar_color || '#f59e0b' }}>
-                          {initials}
-                        </div>
-                        <div className="flex-1 text-left min-w-0">
-                          <div className="text-sm font-medium text-white">{u.display_name || u.username}</div>
-                          <div className="text-[10px] text-gray-500">@{u.username}</div>
-                        </div>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                          style={{ background: (ROLE_COLORS[u.role] || '#444') + '30', color: ROLE_COLORS[u.role] || '#aaa' }}>
-                          {ROLE_LABELS[u.role] || u.role}
-                        </span>
-                        <span className="text-gray-500 text-sm ml-2">{isOpen ? '▲' : '▼'}</span>
-                      </button>
-                      {isOpen && (
-                        <div className="border-t border-[#2a2a2a] px-4 py-4">
-                          <NotificationPrefs userId={u.id} compact={false} />
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+            <div>
+              <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Visible To</label>
+              <div className="flex gap-1.5 flex-wrap">
+                {ALL_ROLES.map(r => (
+                  <button key={r} onClick={() => setNewMsg(prev => ({
+                    ...prev,
+                    visible_roles: prev.visible_roles.includes(r)
+                      ? prev.visible_roles.filter(x => x !== r)
+                      : [...prev.visible_roles, r]
+                  }))}
+                    className={`px-2.5 py-1 rounded-full text-xs font-bold border transition-colors ${newMsg.visible_roles.includes(r) ? 'border-amber-500 text-amber-500 bg-amber-500/10' : 'border-[#333] text-gray-500 hover:text-white'}`}>
+                    {ROLE_LABELS[r]}
+                  </button>
+                ))}
               </div>
-            )}
+            </div>
+
+            <button onClick={addGlobalMessage}
+              className="bg-amber-500 text-black px-5 py-2 rounded-lg text-sm font-bold hover:bg-amber-400 w-full">
+              📢 Post Message
+            </button>
+          </div>
+        </div>
+
+        {/* Active messages */}
+        <div>
+          <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Active Messages</h3>
+          {globalMessages.filter(m => m.is_active).length === 0 && (
+            <div className="text-sm text-gray-500 py-4 text-center">No active messages.</div>
+          )}
+          <div className="space-y-2">
+            {globalMessages.filter(m => m.is_active).map(m => {
+              const ts = typeStyle(m.message_type)
+              const expired = m.expires_at && new Date(m.expires_at) < new Date()
+              return (
+                <div key={m.id} className={`rounded-xl p-4 border ${ts.bg} ${ts.border} ${expired ? 'opacity-50' : ''}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium ${ts.text} mb-1`}>{m.message}</p>
+                      <div className="flex flex-wrap gap-2 text-[10px] text-gray-400">
+                        <span>Posted {new Date(m.created_at).toLocaleString()}</span>
+                        {m.expires_at && <span>· Expires {new Date(m.expires_at).toLocaleString()}</span>}
+                        {expired && <span className="text-red-400 font-bold">· EXPIRED</span>}
+                        <span>· Dismissed by {m.dismissed_by.length}</span>
+                        <span>· Roles: {m.visible_roles.map(r => ROLE_LABELS[r] || r).join(', ')}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button onClick={() => deactivateMessage(m.id)}
+                        className="text-xs text-gray-500 hover:text-white bg-[#222] px-2 py-1 rounded">
+                        Hide
+                      </button>
+                      <button onClick={() => deleteMessage(m.id)}
+                        className="text-xs text-red-500/60 hover:text-red-400 bg-[#222] px-2 py-1 rounded">
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Past messages */}
+        {globalMessages.filter(m => !m.is_active).length > 0 && (
+          <div>
+            <h3 className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">Past / Hidden Messages</h3>
+            <div className="space-y-1.5">
+              {globalMessages.filter(m => !m.is_active).map(m => (
+                <div key={m.id} className="flex items-center justify-between bg-[#111] border border-[#222] rounded-lg px-3 py-2 opacity-50">
+                  <p className="text-xs text-gray-400 truncate flex-1">{m.message}</p>
+                  <button onClick={() => deleteMessage(m.id)} className="text-red-500/50 hover:text-red-400 ml-3">&times;</button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
-    )
+    ) : (
+      /* User preferences tab */
+      <div>
+        {/* TTS panel */}
+        <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-sm font-bold text-amber-500">🔊 TTS / Sound</span>
+            <span className="text-[10px] text-gray-500 bg-[#222] px-2 py-0.5 rounded">Your Voice Announcements</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><h3 className="text-xs text-gray-400 font-bold uppercase mb-2">Movement Page</h3><TTSPanel page="movement" /></div>
+            <div><h3 className="text-xs text-gray-400 font-bold uppercase mb-2">Print Room Page</h3><TTSPanel page="printroom" /></div>
+          </div>
+        </div>
+
+        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Per-User Preferences</h3>
+        {loadingUsers ? (
+          <div className="text-center py-10 text-gray-500">Loading users...</div>
+        ) : (
+          <div className="space-y-2">
+            {users.map(u => {
+              const isOpen = expandedId === u.id
+              const initials = (u.display_name || u.username).slice(0, 2).toUpperCase()
+              return (
+                <div key={u.id} className={`bg-[#1a1a1a] border rounded-xl overflow-hidden transition-colors ${isOpen ? 'border-amber-500/40' : 'border-[#2a2a2a]'}`}>
+                  <button className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors"
+                    onClick={() => setExpandedId(isOpen ? null : u.id)}>
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                      style={{ background: u.avatar_color || '#f59e0b' }}>
+                      {initials}
+                    </div>
+                    <div className="flex-1 text-left min-w-0">
+                      <div className="text-sm font-medium text-white">{u.display_name || u.username}</div>
+                      <div className="text-[10px] text-gray-500">@{u.username}</div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                      style={{ background: (ROLE_COLORS[u.role] || '#444') + '30', color: ROLE_COLORS[u.role] || '#aaa' }}>
+                      {ROLE_LABELS[u.role] || u.role}
+                    </span>
+                    <span className="text-gray-500 text-sm ml-2">{isOpen ? '▲' : '▼'}</span>
+                  </button>
+                  {isOpen && (
+                    <div className="border-t border-[#2a2a2a] px-4 py-4">
+                      <NotificationPrefs userId={u.id} compact={false} />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+)
   }
 
-
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><label className="text-xs text-gray-500 uppercase font-bold block mb-1">{label}</label>{children}</div>
 }
 

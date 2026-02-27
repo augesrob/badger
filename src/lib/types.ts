@@ -32,6 +32,14 @@ export interface DoorStatusValue {
   is_active: boolean
 }
 
+export interface DockLockStatusValue {
+  id: number
+  status_name: string
+  status_color: string
+  sort_order: number
+  is_active: boolean
+}
+
 export interface GlobalMessage {
   id: number
   message: string
