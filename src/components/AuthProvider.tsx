@@ -14,6 +14,8 @@ export interface Profile {
   phone: string | null
   carrier: string | null
   sms_enabled: boolean
+  notify_email: boolean
+  notify_email_address: string | null
   avatar_color: string
   avatar_url: string | null
 }
