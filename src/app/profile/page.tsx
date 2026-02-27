@@ -38,6 +38,8 @@ export default function ProfilePage() {
   const [phone, setPhone]             = useState('')
   const [carrier, setCarrier]         = useState('')
   const [smsEnabled, setSmsEnabled]   = useState(false)
+  const [emailEnabled, setEmailEnabled] = useState(false)
+  const [notifyEmail, setNotifyEmail]   = useState('')
   const [avatarColor, setAvatarColor] = useState('#f59e0b')
   const [avatarUrl, setAvatarUrl]     = useState<string | null>(null)
   const [saving, setSaving]           = useState(false)
@@ -56,6 +58,8 @@ export default function ProfilePage() {
       setPhone(profile.phone || '')
       setCarrier(profile.carrier || '')
       setSmsEnabled(profile.sms_enabled)
+      setEmailEnabled(profile.notify_email || false)
+      setNotifyEmail(profile.notify_email_address || '')
       setAvatarColor(profile.avatar_color || '#f59e0b')
       setAvatarUrl(profile.avatar_url || null)
     }
@@ -165,12 +169,14 @@ export default function ProfilePage() {
       phone: phone.trim() || null,
       carrier: carrier || null,
       sms_enabled: smsEnabled,
+      notify_email: emailEnabled,
+      notify_email_address: notifyEmail.trim() || null,
       avatar_color: avatarColor,
     }).eq('id', profile.id)
     if (error) { setSaving(false); toast('Failed to save: ' + error.message); return }
 
     await supabase.from('truck_subscriptions')
-      .update({ notify_sms: smsEnabled })
+      .update({ notify_sms: smsEnabled, notify_email: emailEnabled })
       .eq('user_id', profile.id)
 
     setSaving(false)
@@ -185,7 +191,7 @@ export default function ProfilePage() {
     if (subscriptions.includes(truck)) { toast('Already subscribed'); return }
     setSubLoading(true)
     const { error } = await supabase.from('truck_subscriptions').insert({
-      user_id: profile.id, truck_number: truck, notify_sms: smsEnabled, notify_app: true,
+      user_id: profile.id, truck_number: truck, notify_sms: smsEnabled, notify_email: emailEnabled, notify_app: true,
     })
     setSubLoading(false)
     if (error) { toast('Error: ' + error.message); return }
@@ -388,7 +394,48 @@ export default function ProfilePage() {
         </button>
       </div>
 
-      {/* Truck subscriptions */}
+      {/* Email Notifications */}
+      <div className="bg-card border border-[#333] rounded-2xl p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-sm text-muted uppercase tracking-wider">📧 Email Notifications</h2>
+          <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full font-medium">Backup / Verizon workaround</span>
+        </div>
+        <p className="text-xs text-muted">Get email alerts when your subscribed trucks change status. Use any email address — doesn&apos;t have to be your login email. Works reliably where SMS carrier gateways fail.</p>
+
+        <div>
+          <label className="text-xs text-muted mb-1 block">Notification Email Address</label>
+          <input
+            type="email"
+            value={notifyEmail}
+            onChange={e => setNotifyEmail(e.target.value)}
+            placeholder="any@email.com"
+            className="w-full bg-input border border-[#333] rounded-lg px-4 py-2.5 text-sm focus:border-amber-500 outline-none"
+          />
+          <p className="text-[10px] text-muted mt-1">Can be Gmail, Yahoo, work email — anything. Different from your login email is fine.</p>
+        </div>
+
+        <label className="flex items-center gap-3 cursor-pointer">
+          <div className={`w-11 h-6 rounded-full transition-colors flex items-center ${emailEnabled ? 'bg-amber-500' : 'bg-[#444]'}`}
+            onClick={() => setEmailEnabled(!emailEnabled)}>
+            <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform mx-0.5 ${emailEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+          </div>
+          <span className="text-sm">Enable email notifications</span>
+        </label>
+
+        {emailEnabled && notifyEmail && (
+          <p className="text-xs text-green-400">✓ Alerts will go to: {notifyEmail}</p>
+        )}
+        {emailEnabled && !notifyEmail && (
+          <p className="text-xs text-red-400">⚠ Enter an email address above to receive alerts</p>
+        )}
+
+        <button onClick={saveProfile} disabled={saving}
+          className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50">
+          {saving ? 'Saving...' : 'Save Email Settings'}
+        </button>
+      </div>
+
+      {/* Truck subscriptions */
       <div className="bg-card border border-[#333] rounded-2xl p-6 space-y-4">
         <h2 className="font-bold text-sm text-muted uppercase tracking-wider">🚚 Truck Subscriptions</h2>
         <p className="text-xs text-muted">Get notified when a truck&apos;s status changes in Live Movement.</p>

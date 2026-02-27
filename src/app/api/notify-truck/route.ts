@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
 
     const { data: allSubs, error: subError } = await supabase
       .from('truck_subscriptions')
-      .select('user_id, truck_number, notify_sms, profiles(phone, carrier, sms_enabled)')
+      .select('user_id, truck_number, notify_sms, notify_email, profiles(phone, carrier, sms_enabled, notify_email, notify_email_address)')
       .eq('notify_app', true)
 
     if (subError) console.error('notify-truck: sub query error', subError)
@@ -134,10 +134,41 @@ export async function POST(req: NextRequest) {
       }
     }
 
+
+    // Email notifications — for users with email enabled
+    const emailResults: string[] = []
+    for (const sub of notifiableSubs) {
+      if (!sub.notify_email) continue
+      const p = (sub as { profiles?: { notify_email?: boolean; notify_email_address?: string } }).profiles
+      if (!p?.notify_email || !p?.notify_email_address?.trim()) continue
+      const to = p.notify_email_address.trim()
+      try {
+        await transporter.sendMail({
+          from: `"Badger Alerts" <${process.env.BADGER_EMAIL_USER}>`,
+          to,
+          subject: `🚚 ${truckLabel} Status Update`,
+          text: msg,
+          html: `<div style="font-family:sans-serif;padding:16px;background:#1a1a1a;color:#fff;border-radius:8px;max-width:400px">
+            <h2 style="color:#f59e0b;margin:0 0 8px">🚚 Badger Alert</h2>
+            <p style="margin:0;font-size:16px">${truckLabel}${trailerLabel}</p>
+            <p style="margin:8px 0;font-size:20px;font-weight:bold;color:#fff">${new_status}</p>
+            ${location ? `<p style="margin:4px 0;color:#9ca3af">📍 ${location}</p>` : ''}
+            ${changed_by ? `<p style="margin:4px 0;color:#6b7280;font-size:12px">Changed by ${changed_by}</p>` : ''}
+          </div>`,
+        })
+        console.log(`notify-truck: email sent to ${to}`)
+        emailResults.push(to)
+      } catch (e) {
+        console.error(`notify-truck: email failed to ${to}`, e)
+      }
+    }
+
     return NextResponse.json({
       sent_notifications: appSubs.length,
       sent_sms: smsResults.length,
       sms_recipients: smsResults,
+      sent_email: emailResults.length,
+      email_recipients: emailResults,
     })
   } catch (err) {
     console.error('notify-truck error:', err)
