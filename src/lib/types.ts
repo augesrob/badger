@@ -48,6 +48,7 @@ export interface LoadingDoor {
   id: number
   door_name: string
   door_status: string
+  dock_lock_status: string | null
   is_done_for_night: boolean
   sort_order: number
 }

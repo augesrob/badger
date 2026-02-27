@@ -217,6 +217,12 @@ export default function Movement() {
     await supabase.from('loading_doors').update({ door_status: status }).eq('id', doorId)
   }
 
+  const setDockLock = async (doorId: number, status: string | null) => {
+    await supabase.from('loading_doors').update({ dock_lock_status: status }).eq('id', doorId)
+  }
+
+  const DOCK_LOCK_DOORS = new Set(['13A', '13B', '14A', '14B', '15A', '15B'])
+
   // Door pairs: 13A+13B, 14A+14B, 15A+15B
   const doorPairs = [['13A', '13B'], ['14A', '14B'], ['15A', '15B']]
 
@@ -236,6 +242,18 @@ export default function Movement() {
             className="status-select text-[10px] ml-auto" style={{ background: doorCol }}>
             {(doorStatusValues.length > 0 ? doorStatusValues.map(s => s.status_name) : [...DOOR_STATUSES]).map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+          {DOCK_LOCK_DOORS.has(doorName) && (
+            <select
+              value={door?.dock_lock_status || ''}
+              onChange={e => door && setDockLock(door.id, e.target.value || null)}
+              className="status-select text-[10px]"
+              style={{ background: door?.dock_lock_status === 'working' ? '#16a34a' : door?.dock_lock_status === 'not_working' ? '#dc2626' : '#374151' }}
+            >
+              <option value="">🔒 Dock Lock</option>
+              <option value="working">✅ Working</option>
+              <option value="not_working">❌ Not Working</option>
+            </select>
+          )}
         </div>
 
         {/* Column headers */}
