@@ -848,6 +848,19 @@ export default function RouteSheet() {
   return (
     <RequirePage pageKey="routesheet">
     <div>
+      {/* Browser compatibility warning */}
+      {typeof navigator !== 'undefined' && /Edg\//.test(navigator.userAgent) && (
+        <div className="mb-4 bg-yellow-500/10 border border-yellow-500/40 rounded-xl px-4 py-3 flex items-start gap-3">
+          <span className="text-yellow-400 text-lg mt-0.5">⚠️</span>
+          <div>
+            <p className="text-yellow-400 font-bold text-sm">Microsoft Edge Detected</p>
+            <p className="text-yellow-300/80 text-xs mt-1">Route Sheet works best in <strong>Chrome</strong> or <strong>Firefox</strong>. Some features (PDF generation, drag-to-reorder) may not work correctly in Edge.</p>
+            <a href="https://www.google.com/chrome/" target="_blank" rel="noopener noreferrer"
+              className="inline-block mt-2 text-xs text-blue-400 underline hover:text-blue-300">Download Chrome →</a>
+          </div>
+        </div>
+      )}
+
       {/* Screen-only toolbar */}
       <div className="no-print mb-4">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-3">

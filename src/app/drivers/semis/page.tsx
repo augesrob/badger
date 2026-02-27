@@ -24,7 +24,9 @@ export default function SemiTrailerList() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tractors' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'trailer_list' }, load)
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
+    const poll = setInterval(load, 20_000)
+    const poll = setInterval(() => load(), 20_000)
+    return () => { supabase.removeChannel(channel); clearInterval(poll) }
   }, [load])
 
   // Build rows: one row per tractor-trailer slot pair

@@ -30,13 +30,15 @@ export default function PrintRoom() {
     missing: { truck: string; door: string }[]   // in printroom but not in routesheet
   } | null>(null)
   const [tractorNums, setTractorNums] = useState<Set<string>>(new Set())
+  const [activeSemiSlots, setActiveSemiSlots] = useState<Set<string>>(new Set())
+  const [activeSemiSlots, setActiveSemiSlots] = useState<string[]>([])
 
   const loadData = useCallback(async () => {
     const [doorsRes, entriesRes, stagingRes, tractorsRes] = await Promise.all([
       supabase.from('loading_doors').select('*').order('sort_order'),
       supabase.from('printroom_entries').select('*').order('batch_number').order('row_order'),
       supabase.from('staging_doors').select('*').order('door_number').order('door_side'),
-      supabase.from('tractors').select('truck_number'),
+      supabase.from('tractors').select('truck_number, trailer_1:trailer_list!tractors_trailer_1_id_fkey(trailer_number), trailer_2:trailer_list!tractors_trailer_2_id_fkey(trailer_number), trailer_3:trailer_list!tractors_trailer_3_id_fkey(trailer_number), trailer_4:trailer_list!tractors_trailer_4_id_fkey(trailer_number)'),
     ])
 
     if (doorsRes.data) setDoors(doorsRes.data)
@@ -51,7 +53,27 @@ export default function PrintRoom() {
     if (stagingRes.data) setStagingDoors(stagingRes.data)
     if (tractorsRes.data) {
       const nums = new Set<string>(tractorsRes.data.map((t: { truck_number: number }) => String(t.truck_number)))
+      // Build set of active semi slots: "170-1", "170-2" etc — only where trailer is assigned
+      const slots = new Set<string>()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tractorsRes.data.forEach((t: any) => {
+        const base = String(t.truck_number)
+        if (t.trailer_1) slots.add(`${base}-1`)
+        if (t.trailer_2) slots.add(`${base}-2`)
+        if (t.trailer_3) slots.add(`${base}-3`)
+        if (t.trailer_4) slots.add(`${base}-4`)
+      })
+      setActiveSemiSlots(slots)
       setTractorNums(nums)
+      // Build list of only in-use semi slots e.g. ["170-1","170-2"] — skip empty slots
+      const slots: string[] = []
+      tractorsRes.data.forEach((t: { truck_number: number; trailer_1?: { trailer_number: string } | null; trailer_2?: { trailer_number: string } | null; trailer_3?: { trailer_number: string } | null; trailer_4?: { trailer_number: string } | null }) => {
+        if (t.trailer_1) slots.push(`${t.truck_number}-1`)
+        if (t.trailer_2) slots.push(`${t.truck_number}-2`)
+        if (t.trailer_3) slots.push(`${t.truck_number}-3`)
+        if (t.trailer_4) slots.push(`${t.truck_number}-4`)
+      })
+      setActiveSemiSlots(slots)
     }
     setLoading(false)
   }, [])
@@ -352,6 +374,9 @@ export default function PrintRoom() {
 
   return (
     <RequirePage pageKey="printroom">
+      <datalist id="semi-slots-list">
+        {activeSemiSlots.map(slot => <option key={slot} value={slot} />)}
+      </datalist>
     <div>
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
         <div>
@@ -376,7 +401,17 @@ export default function PrintRoom() {
         <div className="flex-1 min-w-0">
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
             {doors.map(door => {
-              const doorEntries = entries[door.id] || []
+              const doorEntries = (entries[door.id] || []).filter(e => {
+                // Hide entries for unused semi trailer slots (e.g. 170-2 when slot 2 is empty)
+                if (e.truck_number && e.truck_number.includes('-')) {
+                  const base = e.truck_number.split('-')[0]
+                  if (tractorNums.has(base)) {
+                    // It's a semi slot — only show if slot is active
+                    return activeSemiSlots.has(e.truck_number) || activeSemiSlots.size === 0
+                  }
+                }
+                return true
+              })
               const batches: Record<number, PrintroomEntry[]> = {}
               doorEntries.forEach(e => {
                 if (!batches[e.batch_number]) batches[e.batch_number] = []
@@ -415,6 +450,7 @@ export default function PrintRoom() {
                               onBlur={e => saveField(entry.id, 'route_info', e.target.value)}
                               className="bg-[#222] border border-[#333] rounded px-1 py-1.5 text-xs w-full focus:border-amber-500 outline-none text-center" />
                             <input defaultValue={entry.truck_number || ''} placeholder="Trk#"
+                              list="semi-slots-list"
                               onBlur={e => saveField(entry.id, 'truck_number', e.target.value)}
                               className="bg-[#222] border border-[#333] rounded px-1 py-1.5 text-sm w-full font-bold text-amber-500 focus:border-amber-500 outline-none text-center" />
                             <input defaultValue={entry.pods || ''} placeholder="0"

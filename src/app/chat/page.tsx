@@ -25,17 +25,31 @@ interface Room {
   type: string
   role_target: string | null
   allowed_roles: string[] | null
+  read_only_roles: string[] | null
   description: string | null
   unread: number
 }
 
-const ALL_ROLES = ['admin', 'print_room', 'truck_mover', 'trainee', 'driver']
-const ROLE_LABELS: Record<string, string> = {
+// ALL_ROLES is now loaded dynamically from the database
+// Fallback in case DB hasn't loaded yet
+const FALLBACK_ROLES = ['admin', 'print_room', 'truck_mover', 'trainee', 'driver']
+const ROLE_LABELS_MAP: Record<string, string> = {
   admin: '👑 Admin', print_room: '🖨️ Print Room', truck_mover: '🚛 Truck Mover',
   trainee: '📚 Trainee', driver: '🚚 Driver',
 }
-const ROLE_ICONS: Record<string, string> = {
+const ROLE_ICONS_MAP: Record<string, string> = {
   admin: '👑', print_room: '🖨️', truck_mover: '🚛', trainee: '📚', driver: '🚚',
+}
+function getRoleLabel(role: string) { return ROLE_LABELS_MAP[role] || role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) }
+function getRoleIcon(role: string)  { return ROLE_ICONS_MAP[role] || '👤' }
+// Keep as objects for backward compat
+const ROLE_LABELS = new Proxy(ROLE_LABELS_MAP, { get: (t, k) => typeof k === 'string' ? getRoleLabel(k) : (t as Record<string,string>)[k as string] }) as Record<string,string>
+const ROLE_ICONS  = new Proxy(ROLE_ICONS_MAP,  { get: (t, k) => typeof k === 'string' ? getRoleIcon(k)  : (t as Record<string,string>)[k as string] }) as Record<string,string>
+
+function canWriteInRoom(room: Room, role: string): boolean {
+  if (role === 'admin') return true
+  if (!room.read_only_roles) return true
+  return !room.read_only_roles.includes(role)
 }
 
 function canSeeRoom(room: Room, role: string): boolean {
@@ -71,6 +85,7 @@ export default function ChatPage() {
   const isAdmin = profile?.role === 'admin'
 
   const [rooms, setRooms]               = useState<Room[]>([])
+  const [allRoles, setAllRoles]           = useState<string[]>(FALLBACK_ROLES)
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null)
   const [messages, setMessages]         = useState<Message[]>([])
   const [input, setInput]               = useState('')
@@ -94,6 +109,9 @@ export default function ChatPage() {
   // ── Load rooms ──────────────────────────────────────────────────────────
   const loadRooms = useCallback(async (keepActive = false) => {
     if (!profile) return
+    // Load dynamic roles from DB
+    const { data: roleData } = await supabase.from('role_permissions').select('role_name').order('role_name')
+    if (roleData && roleData.length > 0) setAllRoles(roleData.map(r => r.role_name))
     const { data } = await supabase.from('chat_rooms').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('id')
     const visible = (data || []).filter((r: Room) => canSeeRoom(r, profile.role))
     setRooms(prev => {
@@ -350,17 +368,23 @@ export default function ChatPage() {
 
         {/* Input */}
         <div className="px-4 py-3 border-t border-[#333]">
-          <div className="flex gap-2 items-center">
-            <input value={input} onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-              placeholder={`Message ${activeRoom?.name || ''}...`}
-              className="flex-1 bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-2.5 text-sm focus:border-amber-500 outline-none"
-              maxLength={1000} />
-            <button onClick={sendMessage} disabled={!input.trim() || sending}
-              className="bg-amber-500 hover:bg-amber-400 text-black font-bold px-4 py-2.5 rounded-xl text-sm transition-colors disabled:opacity-40">
-              Send
-            </button>
-          </div>
+          {activeRoom && !canWriteInRoom(activeRoom, profile.role) ? (
+            <div className="text-center text-xs text-muted py-2 bg-[#1a1a1a] rounded-xl border border-[#333]">
+              👁 Read-only — you can view but not send messages in this room
+            </div>
+          ) : (
+            <div className="flex gap-2 items-center">
+              <input value={input} onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                placeholder={`Message ${activeRoom?.name || ''}...`}
+                className="flex-1 bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-2.5 text-sm focus:border-amber-500 outline-none"
+                maxLength={1000} />
+              <button onClick={sendMessage} disabled={!input.trim() || sending}
+                className="bg-amber-500 hover:bg-amber-400 text-black font-bold px-4 py-2.5 rounded-xl text-sm transition-colors disabled:opacity-40">
+                Send
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -388,7 +412,10 @@ export default function ChatPage() {
             setShowManage(false)
             await loadRooms(true)
             // Re-subscribe with potentially updated room list
-            const { data } = await supabase.from('chat_rooms').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('id')
+            // Load dynamic roles from DB
+    const { data: roleData } = await supabase.from('role_permissions').select('role_name').order('role_name')
+    if (roleData && roleData.length > 0) setAllRoles(roleData.map(r => r.role_name))
+    const { data } = await supabase.from('chat_rooms').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('id')
             const visible = (data || []).filter((r: Room) => canSeeRoom(r, profile.role))
             subscribeAll(visible.map((r: Room) => r.id))
           }}
@@ -399,14 +426,15 @@ export default function ChatPage() {
 }
 
 // ── Role toggle button ──────────────────────────────────────────────────────
-function RoleToggleBtn({ label, active, disabled, onClick }: {
-  label: string; active: boolean; disabled: boolean; onClick: () => void
+function RoleToggleBtn({ label, active, disabled, onClick, activeColor }: {
+  label: string; active: boolean; disabled?: boolean; onClick: () => void; activeColor?: string
 }) {
+  const ac = activeColor || '#4ade80'
   return (
     <button onClick={onClick} disabled={disabled} style={{
-      background: active ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.1)',
-      border: `1px solid ${active ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.4)'}`,
-      color: active ? '#4ade80' : '#f87171',
+      background: active ? `${ac}25` : 'rgba(239,68,68,0.1)',
+      border: `1px solid ${active ? `${ac}80` : 'rgba(239,68,68,0.4)'}`,
+      color: active ? ac : '#f87171',
       padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 500,
       cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.4 : 1,
       whiteSpace: 'nowrap',
@@ -428,6 +456,9 @@ function ManageRoomsModal({ onClose }: { onClose: () => void }) {
   const dragOver = useRef<number | null>(null)
 
   const reload = useCallback(async () => {
+    // Load dynamic roles from DB
+    const { data: roleData } = await supabase.from('role_permissions').select('role_name').order('role_name')
+    if (roleData && roleData.length > 0) setAllRoles(roleData.map(r => r.role_name))
     const { data } = await supabase.from('chat_rooms').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('id')
     setAllRooms((data || []).map((r: Room) => ({ ...r, unread: 0 })))
     setLoaded(true)
@@ -453,12 +484,12 @@ function ManageRoomsModal({ onClose }: { onClose: () => void }) {
     let next: string[] | null
 
     if (current.allowed_roles === null) {
-      next = ALL_ROLES.filter(r => r !== role && r !== 'admin')
+      next = allRoles.filter(r => r !== role && r !== 'admin')
     } else if (current.allowed_roles.includes(role)) {
       next = current.allowed_roles.filter(r => r !== role)
     } else {
       next = [...current.allowed_roles, role]
-      const nonAdmin = ALL_ROLES.filter(r => r !== 'admin')
+      const nonAdmin = allRoles.filter(r => r !== 'admin')
       if (nonAdmin.every(r => next!.includes(r))) next = null
     }
 
@@ -467,6 +498,23 @@ function ManageRoomsModal({ onClose }: { onClose: () => void }) {
     if (result.error) {
       setSaveError(`Save failed: ${result.error}`)
       setAllRooms(prev => prev.map(r => r.id === roomId ? { ...r, allowed_roles: current.allowed_roles } : r))
+    }
+    setSaving(null)
+  }
+
+  const toggleReadOnly = async (roomId: number, role: string) => {
+    setSaving(roomId)
+    setSaveError(null)
+    const current = allRooms.find(r => r.id === roomId)!
+    const currentRO = current.read_only_roles || []
+    const next = currentRO.includes(role)
+      ? currentRO.filter(r => r !== role)
+      : [...currentRO, role]
+    setAllRooms(prev => prev.map(r => r.id === roomId ? { ...r, read_only_roles: next } : r))
+    const result = await adminRoomApi({ action: 'update_read_only', roomId, read_only_roles: next })
+    if (result.error) {
+      setSaveError(`Save failed: ${result.error}`)
+      setAllRooms(prev => prev.map(r => r.id === roomId ? { ...r, read_only_roles: current.read_only_roles } : r))
     }
     setSaving(null)
   }
@@ -570,22 +618,67 @@ function ManageRoomsModal({ onClose }: { onClose: () => void }) {
                   : `👁 Visible to: ${room.allowed_roles.map(r => ROLE_LABELS[r]).join(', ')}`}
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              {/* Can see */}
+              <div className="text-[10px] text-muted font-bold uppercase tracking-wider mb-1 mt-2">Can See Room</div>
+              <div className="flex flex-wrap gap-2 mb-3">
                 <span style={{
                   background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)',
                   color: '#fbbf24', padding: '6px 12px', borderRadius: 8, fontSize: 11,
                   fontWeight: 500, whiteSpace: 'nowrap',
                 }}>👑 Admin 🔒</span>
-
-                {ALL_ROLES.filter(r => r !== 'admin').map(role => {
+                {allRoles.filter(r => r !== 'admin').map(role => {
                   const active = room.allowed_roles === null || room.allowed_roles.includes(role)
                   return (
-                    <RoleToggleBtn key={role} label={ROLE_LABELS[role]} active={active}
+                    <RoleToggleBtn key={role} label={ROLE_LABELS[role] || role} active={active}
                       disabled={saving === room.id}
                       onClick={() => toggleRole(room.id, role)} />
                   )
                 })}
               </div>
+
+              {/* Read-only */}
+              <div className="text-[10px] text-muted font-bold uppercase tracking-wider mb-1">Read-Only Roles <span className="text-[9px] normal-case font-normal">(can see but not send)</span></div>
+              <div className="flex flex-wrap gap-2">
+                {allRoles.filter(r => r !== 'admin').map(role => {
+                  const canSee = room.allowed_roles === null || room.allowed_roles.includes(role)
+                  if (!canSee) return null
+                  const readOnly = room.read_only_roles?.includes(role) ?? false
+                  return (
+                    <RoleToggleBtn key={role}
+                      label={(ROLE_LABELS[role] || role) + (readOnly ? ' 👁' : ' ✏️')}
+                      active={readOnly}
+                      activeColor="#6366f1"
+                      disabled={saving === room.id}
+                      onClick={() => toggleReadOnly(room.id, role)} />
+                  )
+                })}
+              </div>
+
+              {/* Read-only permissions per role */}
+              {(room.allowed_roles === null || room.allowed_roles.length > 0) && (
+                <div className="mt-3 pt-3 border-t border-[#333]">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted mb-2">🔏 Read-Only Roles <span className="font-normal normal-case">(can view but not post)</span></div>
+                  <div className="flex flex-wrap gap-2">
+                    {allRoles.filter(r => r !== 'admin').map(role => {
+                      const canSee = room.allowed_roles === null || room.allowed_roles.includes(role)
+                      if (!canSee) return null
+                      const isReadOnly = room.read_only_roles?.includes(role) ?? false
+                      return (
+                        <button key={role}
+                          disabled={saving === room.id}
+                          onClick={() => toggleReadOnly(room.id, role)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                            isReadOnly
+                              ? 'bg-blue-500/20 border-blue-500/50 text-blue-300'
+                              : 'bg-[#222] border-[#444] text-gray-500 hover:border-[#666]'
+                          }`}>
+                          {isReadOnly ? '👁 ' : ''}{ROLE_LABELS[role]}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           ))}
 

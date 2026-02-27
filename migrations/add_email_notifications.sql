@@ -6,3 +6,7 @@ ALTER TABLE profiles
 -- Add email notification fields to truck_subscriptions
 ALTER TABLE truck_subscriptions
   ADD COLUMN IF NOT EXISTS notify_email BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Add read_only_roles to chat_rooms for per-room read-only access control
+ALTER TABLE chat_rooms
+  ADD COLUMN IF NOT EXISTS read_only_roles TEXT[] DEFAULT NULL;

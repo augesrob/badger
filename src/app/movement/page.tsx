@@ -87,16 +87,21 @@ export default function Movement() {
 
     const channel = supabase.channel('movement-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'live_movement' }, fetchTrucks)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'status_values' }, fetchTrucks)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, fetchDoors)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'door_status_values' }, fetchDoors)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'printroom_entries' }, fetchPrintroom)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staging_doors' }, fetchStaging)
       .subscribe()
+    // Fallback poll: reload everything every 30s in case realtime misses an event
+    const poll = setInterval(() => loadAll(), 15_000)
 
     const handleResume = () => loadAll()
     window.addEventListener('badger:resume', handleResume)
 
     return () => {
       supabase.removeChannel(channel)
+      clearInterval(poll)
       window.removeEventListener('badger:resume', handleResume)
     }
   }, [loadAll])

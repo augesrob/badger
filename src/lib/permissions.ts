@@ -39,6 +39,7 @@ export const MASTER_PAGES: PageDef[] = [
   { key: 'chat',       label: 'Chat',          icon: '💬', description: 'Access chat rooms',                    group: 'Communication' },
   // Admin group
   { key: 'admin',      label: 'Admin Panel',   icon: '⚙️', description: 'Full admin settings (admin only)',     group: 'Admin' },
+  { key: 'statuses',    label: 'Status Values', icon: '🏷️', description: 'Add/edit truck, door, and dock lock statuses', group: 'Admin' },
   { key: 'profile',    label: 'My Profile',    icon: '👤', description: 'View and edit own profile',            group: 'Account' },
 ]
 
@@ -62,8 +63,10 @@ export const MASTER_FEATURES: FeatureDef[] = [
   { key: 'admin_roles',         label: 'Manage Roles',         icon: '🛡️', description: 'Create and edit role permissions',       group: 'Admin' },
   { key: 'admin_users',         label: 'Manage Users',         icon: '👥', description: 'View and edit user accounts',            group: 'Admin' },
   { key: 'admin_reset',         label: 'Data Reset',           icon: '⚠️', description: 'Perform data resets',                   group: 'Admin' },
+  { key: 'admin_statuses',       label: 'Manage Status Values', icon: '🏷️', description: 'Add/edit truck, door, and dock lock statuses', group: 'Admin' },
   // PTT
   { key: 'ptt',                 label: 'Push-to-Talk',         icon: '🎙️', description: 'Use push-to-talk voice feature',        group: 'Communication' },
+  { key: 'chat_read_only',       label: 'Chat Read-Only',       icon: '👁️', description: 'Can read chat messages but not send',   group: 'Communication' },
 ]
 
 // Default permissions per built-in role (used as fallback & for first-time DB seeding)
