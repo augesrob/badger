@@ -241,10 +241,6 @@ export default function Movement() {
         {/* Door header */}
         <div className="flex items-center gap-2 px-3 py-2 border-b border-[#333]" style={{ background: `${accent}12` }}>
           <span className="text-lg font-extrabold" style={{ color: accent }}>{doorName}</span>
-          <select value={doorSt} onChange={e => door && setDoorStatus(door.id, e.target.value)}
-            className="status-select text-[10px] ml-auto" style={{ background: doorCol }}>
-            {(doorStatusValues.length > 0 ? doorStatusValues.map(s => s.status_name) : [...DOOR_STATUSES]).map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
           {DOCK_LOCK_DOORS.has(doorName) && (() => {
             const matched = dockLockStatusValues.find(s => s.status_name === door?.dock_lock_status)
             const bgColor = matched ? matched.status_color : '#374151'
@@ -262,6 +258,10 @@ export default function Movement() {
               </select>
             )
           })()}
+          <select value={doorSt} onChange={e => door && setDoorStatus(door.id, e.target.value)}
+            className="status-select text-[10px] ml-auto" style={{ background: doorCol }}>
+            {(doorStatusValues.length > 0 ? doorStatusValues.map(s => s.status_name) : [...DOOR_STATUSES]).map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
         </div>
 
         {/* Column headers */}
