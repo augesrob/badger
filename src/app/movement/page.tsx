@@ -214,26 +214,52 @@ export default function Movement() {
   })
 
   const updateStatus = async (truckNumber: string, statusId: number) => {
+    // Optimistic update — change UI instantly
+    const prev = trucks.find(t => t.truck_number === truckNumber)
+    const newStatus = statuses.find(s => s.id === statusId)
+    setTrucks(ts => ts.map(t => t.truck_number === truckNumber
+      ? { ...t, status_id: statusId, status_name: newStatus?.status_name || null, status_color: newStatus?.status_color || '#6b7280', last_updated: new Date().toISOString() }
+      : t
+    ))
+    // Sync to DB in background
     const { error } = await supabase.from('live_movement').update({ status_id: statusId, last_updated: new Date().toISOString() }).eq('truck_number', truckNumber)
-    if (error) { toast('Update failed', 'error'); return }
+    if (error) {
+      toast('Update failed — reverted', 'error')
+      if (prev) setTrucks(ts => ts.map(t => t.truck_number === truckNumber ? { ...t, ...prev } : t))
+      return
+    }
     // Fire truck notifications (non-blocking)
-    const statusName = statuses.find(s => s.id === statusId)?.status_name
-    if (statusName) {
+    if (newStatus?.status_name) {
       fetch('/api/notify-truck', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ truck_number: truckNumber, new_status: statusName }),
+        body: JSON.stringify({ truck_number: truckNumber, new_status: newStatus.status_name }),
       }).catch(() => {})
     }
   }
 
   const setDoorStatus = async (doorId: number, status: string) => {
-    await supabase.from('loading_doors').update({ door_status: status }).eq('id', doorId)
+    // Optimistic update
+    setDoors(ds => ds.map(d => d.id === doorId ? { ...d, door_status: status } : d))
+    const { error } = await supabase.from('loading_doors').update({ door_status: status }).eq('id', doorId)
+    if (error) {
+      toast('Door update failed — reverted', 'error')
+      const { data } = await supabase.from('loading_doors').select('*').eq('id', doorId).single()
+      if (data) setDoors(ds => ds.map(d => d.id === doorId ? data : d))
+    }
   }
 
   const setDockLock = async (doorId: number, status: string | null) => {
-    await supabase.from('loading_doors').update({ dock_lock_status: status }).eq('id', doorId)
+    // Optimistic update
+    setDoors(ds => ds.map(d => d.id === doorId ? { ...d, dock_lock_status: status } : d))
+    const { error } = await supabase.from('loading_doors').update({ dock_lock_status: status }).eq('id', doorId)
+    if (error) {
+      toast('Dock lock update failed — reverted', 'error')
+      const { data } = await supabase.from('loading_doors').select('*').eq('id', doorId).single()
+      if (data) setDoors(ds => ds.map(d => d.id === doorId ? data : d))
+    }
   }
+
 
   const DOCK_LOCK_DOORS = new Set(['13A', '13B', '14A', '14B', '15A', '15B'])
 
