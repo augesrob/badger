@@ -93,8 +93,13 @@ export default function Movement() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'printroom_entries' }, fetchPrintroom)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staging_doors' }, fetchStaging)
       .subscribe()
-    // Fallback poll: reload everything every 30s in case realtime misses an event
-    const poll = setInterval(() => loadAll(), 15_000)
+
+    // Fallback poll every 8s — catches any realtime misses
+    const poll = setInterval(() => loadAll(), 8_000)
+
+    // Reload immediately when tab becomes visible again
+    const handleVisibility = () => { if (document.visibilityState === 'visible') loadAll() }
+    document.addEventListener('visibilitychange', handleVisibility)
 
     const handleResume = () => loadAll()
     window.addEventListener('badger:resume', handleResume)
@@ -102,6 +107,7 @@ export default function Movement() {
     return () => {
       supabase.removeChannel(channel)
       clearInterval(poll)
+      document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('badger:resume', handleResume)
     }
   }, [loadAll])
