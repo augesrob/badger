@@ -18,7 +18,7 @@ jobs:
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
         run: |
-          pg_dump -h aws-0-us-west-1.pooler.supabase.com -p 5432 -U postgres.vjmvuqunedyuovtqtotj:session -d postgres -v > migration.sql
+          pg_dump -h aws-0-us-west-1.pooler.supabase.com -p 6543 -U postgres.vjmvuqunedyuovtqtotj:session -d vjmvuqunedyuovtqtotj -v > migration.sql
 
       - name: Commit and Push
         run: |
