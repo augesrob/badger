@@ -1,0 +1,29 @@
+name: Supabase Backup
+
+on:
+  workflow_dispatch: # Allows you to run it manually
+  schedule:
+    - cron: '0 0 * * *' # Runs every night at midnight
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL Tools
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Dump Database
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+        run: |
+          pg_dump -h aws-0-us-west-1.pooler.supabase.com -p 5432 -U postgres.vjmvuqunedyuovtqtotj -d postgres > migration.sql
+
+      - name: Commit and Push
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add migration.sql
+          git commit -m "Automated backup: $(date)" || exit 0
+          git push
