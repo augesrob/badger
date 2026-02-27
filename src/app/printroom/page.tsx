@@ -397,7 +397,7 @@ export default function PrintRoom() {
                   const base = e.truck_number.split('-')[0]
                   if (tractorNums.has(base)) {
                     // It's a semi slot — only show if slot is active
-                    return activeSemiSlots.has(e.truck_number) || activeSemiSlots.size === 0
+                    return activeSemiSlots.includes(e.truck_number) || activeSemiSlots.length === 0
                   }
                 }
                 return true
