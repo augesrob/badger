@@ -867,6 +867,7 @@ export default function RouteSheet() {
           <div>
             <h1 className="text-xl font-bold">📄 Routes at the Door</h1>
             <p className="text-xs text-muted">Truck # pulled from Print Room • Sync route data via email or CSV upload</p>
+            <p className="text-xs text-amber-500/70 mt-0.5">⚠️ Best used in <strong>Chrome</strong> or <strong>Firefox</strong> — some features may not work in Edge or Safari</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <button onClick={handleDownloadPDF} disabled={downloading}

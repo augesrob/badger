@@ -30,7 +30,6 @@ export default function PrintRoom() {
     missing: { truck: string; door: string }[]   // in printroom but not in routesheet
   } | null>(null)
   const [tractorNums, setTractorNums] = useState<Set<string>>(new Set())
-  const [activeSemiSlots, setActiveSemiSlots] = useState<Set<string>>(new Set())
   const [activeSemiSlots, setActiveSemiSlots] = useState<string[]>([])
 
   const loadData = useCallback(async () => {
@@ -53,27 +52,18 @@ export default function PrintRoom() {
     if (stagingRes.data) setStagingDoors(stagingRes.data)
     if (tractorsRes.data) {
       const nums = new Set<string>(tractorsRes.data.map((t: { truck_number: number }) => String(t.truck_number)))
-      // Build set of active semi slots: "170-1", "170-2" etc — only where trailer is assigned
-      const slots = new Set<string>()
+      // Build list of only in-use semi slots e.g. ["170-1","170-2"] — skip empty slots
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const slots: string[] = []
       tractorsRes.data.forEach((t: any) => {
         const base = String(t.truck_number)
-        if (t.trailer_1) slots.add(`${base}-1`)
-        if (t.trailer_2) slots.add(`${base}-2`)
-        if (t.trailer_3) slots.add(`${base}-3`)
-        if (t.trailer_4) slots.add(`${base}-4`)
+        if (t.trailer_1) slots.push(`${base}-1`)
+        if (t.trailer_2) slots.push(`${base}-2`)
+        if (t.trailer_3) slots.push(`${base}-3`)
+        if (t.trailer_4) slots.push(`${base}-4`)
       })
       setActiveSemiSlots(slots)
       setTractorNums(nums)
-      // Build list of only in-use semi slots e.g. ["170-1","170-2"] — skip empty slots
-      const slots: string[] = []
-      tractorsRes.data.forEach((t: { truck_number: number; trailer_1?: { trailer_number: string } | null; trailer_2?: { trailer_number: string } | null; trailer_3?: { trailer_number: string } | null; trailer_4?: { trailer_number: string } | null }) => {
-        if (t.trailer_1) slots.push(`${t.truck_number}-1`)
-        if (t.trailer_2) slots.push(`${t.truck_number}-2`)
-        if (t.trailer_3) slots.push(`${t.truck_number}-3`)
-        if (t.trailer_4) slots.push(`${t.truck_number}-4`)
-      })
-      setActiveSemiSlots(slots)
     }
     setLoading(false)
   }, [])
