@@ -435,7 +435,7 @@ export default function ProfilePage() {
         </button>
       </div>
 
-      {/* Truck subscriptions */
+      {/* Truck subscriptions */}
       <div className="bg-card border border-[#333] rounded-2xl p-6 space-y-4">
         <h2 className="font-bold text-sm text-muted uppercase tracking-wider">🚚 Truck Subscriptions</h2>
         <p className="text-xs text-muted">Get notified when a truck&apos;s status changes in Live Movement.</p>
