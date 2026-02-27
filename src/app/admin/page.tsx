@@ -52,7 +52,7 @@ export default function Admin() {
   const [newDockLockStatus, setNewDockLockStatus] = useState({ name: '', color: '#22c55e' })
   const [newRoute, setNewRoute] = useState({ name: '', number: '' })
   const [resetLog, setResetLog] = useState<{ id: number; reset_type: string; reset_at: string; reset_by: string }[]>([])
-  const [statusTab, setStatusTab] = useState<'truck' | 'door'>('truck')
+  const [statusTab, setStatusTab] = useState<'truck' | 'door' | 'docklock'>('truck')
 
   // Status editing (shared for truck + door)
   const [editStatusId, setEditStatusId] = useState<number | null>(null)
