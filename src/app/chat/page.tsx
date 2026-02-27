@@ -43,8 +43,8 @@ const ROLE_ICONS_MAP: Record<string, string> = {
 function getRoleLabel(role: string) { return ROLE_LABELS_MAP[role] || role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) }
 function getRoleIcon(role: string)  { return ROLE_ICONS_MAP[role] || '👤' }
 // Keep as objects for backward compat
-const ROLE_LABELS = new Proxy(ROLE_LABELS_MAP, { get: (t, k) => typeof k === 'string' ? getRoleLabel(k) : (t as Record<string,string>)[k as string] }) as Record<string,string>
-const ROLE_ICONS  = new Proxy(ROLE_ICONS_MAP,  { get: (t, k) => typeof k === 'string' ? getRoleIcon(k)  : (t as Record<string,string>)[k as string] }) as Record<string,string>
+const ROLE_LABELS = new Proxy(ROLE_LABELS_MAP, { get: (t, k) => typeof k === 'string' ? getRoleLabel(k) : (t as Record<string,string>)[k as unknown as string] }) as Record<string,string>
+const ROLE_ICONS  = new Proxy(ROLE_ICONS_MAP,  { get: (t, k) => typeof k === 'string' ? getRoleIcon(k)  : (t as Record<string,string>)[k as unknown as string] }) as Record<string,string>
 
 function canWriteInRoom(room: Room, role: string): boolean {
   if (role === 'admin') return true
