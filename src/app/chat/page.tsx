@@ -448,6 +448,7 @@ function RoleToggleBtn({ label, active, disabled, onClick, activeColor }: {
 // ── Admin: Manage Rooms modal ───────────────────────────────────────────────
 function ManageRoomsModal({ onClose }: { onClose: () => void }) {
   const [allRooms, setAllRooms] = useState<Room[]>([])
+  const [allRoles, setAllRoles] = useState<string[]>(FALLBACK_ROLES)
   const [saving, setSaving]     = useState<number | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [newRoom, setNewRoom]   = useState({ name: '', description: '' })
