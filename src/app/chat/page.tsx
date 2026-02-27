@@ -85,6 +85,7 @@ export default function ChatPage() {
   const isAdmin = profile?.role === 'admin'
 
   const [rooms, setRooms]               = useState<Room[]>([])
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [allRoles, setAllRoles]           = useState<string[]>(FALLBACK_ROLES)
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null)
   const [messages, setMessages]         = useState<Message[]>([])

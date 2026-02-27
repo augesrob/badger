@@ -53,8 +53,8 @@ export default function PrintRoom() {
     if (tractorsRes.data) {
       const nums = new Set<string>(tractorsRes.data.map((t: { truck_number: number }) => String(t.truck_number)))
       // Build list of only in-use semi slots e.g. ["170-1","170-2"] — skip empty slots
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const slots: string[] = []
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       tractorsRes.data.forEach((t: any) => {
         const base = String(t.truck_number)
         if (t.trailer_1) slots.push(`${base}-1`)
