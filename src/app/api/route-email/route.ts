@@ -119,7 +119,7 @@ async function checkViaGmailAPI() {
 
     const accessToken = tokenData.access_token
 
-    // Search for unread messages with attachments from today
+    // Search for messages with attachments from FDL (last 2 days, read or unread)
     const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
     const dateStr = `${twoDaysAgo.getFullYear()}/${String(twoDaysAgo.getMonth()+1).padStart(2,'0')}/${String(twoDaysAgo.getDate()).padStart(2,'0')}`
     const query = `has:attachment after:${dateStr} from:fdlwhsestatus@badgerliquor.com`
@@ -142,11 +142,24 @@ async function checkViaGmailAPI() {
       )
       const msg = await msgRes.json()
 
-      // Find CSV attachment
-      const parts = msg.payload?.parts || []
-      for (const part of parts) {
-        const filename = part.filename || ''
-        if (filename.toLowerCase().endsWith('.csv') && part.body?.attachmentId) {
+      // Recursively find all parts (handles nested multipart emails)
+      function getAllParts(payload: any): any[] {
+        if (!payload) return []
+        const parts: any[] = []
+        if (payload.parts) {
+          for (const p of payload.parts) {
+            parts.push(p)
+            parts.push(...getAllParts(p))
+          }
+        }
+        return parts
+      }
+
+      // Find CSV attachment in all parts
+      const allParts = [msg.payload, ...getAllParts(msg.payload)]
+      for (const part of allParts) {
+        const filename = part?.filename || ''
+        if (filename.toLowerCase().endsWith('.csv') && part?.body?.attachmentId) {
           // Download attachment
           const attachRes = await fetch(
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}/attachments/${part.body.attachmentId}`,
