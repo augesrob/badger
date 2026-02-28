@@ -21,6 +21,7 @@ const NAV_ITEMS = [
   { id: 'notifications', label: '🔔 Notifications',   ready: true },
   { id: 'api',         label: '🔌 API',               ready: false },
   { id: 'accounts',    label: '👤 Accounts',          ready: true, href: '/admin/users' },
+  { id: 'debug',       label: '📱 Mobile Debug',      ready: true, href: '/admin/debug' },
 ]
 
 export default function Admin() {
