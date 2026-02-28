@@ -143,11 +143,11 @@ async function checkViaGmailAPI() {
       const msg = await msgRes.json()
 
       // Recursively find all parts (handles nested multipart emails)
-      function getAllParts(payload: any): any[] {
+      function getAllParts(payload: Record<string, unknown>): Record<string, unknown>[] {
         if (!payload) return []
-        const parts: any[] = []
-        if (payload.parts) {
-          for (const p of payload.parts) {
+        const parts: Record<string, unknown>[] = []
+        if (Array.isArray(payload.parts)) {
+          for (const p of payload.parts as Record<string, unknown>[]) {
             parts.push(p)
             parts.push(...getAllParts(p))
           }
@@ -158,11 +158,12 @@ async function checkViaGmailAPI() {
       // Find CSV attachment in all parts
       const allParts = [msg.payload, ...getAllParts(msg.payload)]
       for (const part of allParts) {
-        const filename = part?.filename || ''
-        if (filename.toLowerCase().endsWith('.csv') && part?.body?.attachmentId) {
+        const filename = (part?.filename as string) || ''
+        const body = part?.body as Record<string, unknown>
+        if (filename.toLowerCase().endsWith('.csv') && body?.attachmentId) {
           // Download attachment
           const attachRes = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}/attachments/${part.body.attachmentId}`,
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}/attachments/${body.attachmentId}`,
             { headers: { Authorization: `Bearer ${accessToken}` } }
           )
           const attachData = await attachRes.json()
