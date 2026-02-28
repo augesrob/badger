@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 
 interface DebugLog {
   id: number
@@ -272,7 +271,7 @@ export default function DebugLogsPage() {
                 </tr>
               </thead>
               <tbody>
-                {logs.map((log, i) => (
+                {logs.map((log) => (
                   <tr
                     key={log.id}
                     className={`border-b border-[#1a1a1a] hover:bg-[#111] transition-colors ${LEVEL_ROW[log.level] || ''}`}
