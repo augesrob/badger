@@ -84,6 +84,19 @@ async function handleCheck() {
   })
 }
 
+// Recursively find all parts (handles nested multipart emails)
+function getAllParts(payload: Record<string, unknown>): Record<string, unknown>[] {
+  if (!payload) return []
+  const parts: Record<string, unknown>[] = []
+  if (Array.isArray(payload.parts)) {
+    for (const p of payload.parts as Record<string, unknown>[]) {
+      parts.push(p)
+      parts.push(...getAllParts(p))
+    }
+  }
+  return parts
+}
+
 // Gmail REST API check (fully compatible with Vercel serverless)
 async function checkViaGmailAPI() {
   // Log which env vars are configured (not their values)
@@ -141,19 +154,6 @@ async function checkViaGmailAPI() {
         { headers: { Authorization: `Bearer ${accessToken}` } }
       )
       const msg = await msgRes.json()
-
-      // Recursively find all parts (handles nested multipart emails)
-      function getAllParts(payload: Record<string, unknown>): Record<string, unknown>[] {
-        if (!payload) return []
-        const parts: Record<string, unknown>[] = []
-        if (Array.isArray(payload.parts)) {
-          for (const p of payload.parts as Record<string, unknown>[]) {
-            parts.push(p)
-            parts.push(...getAllParts(p))
-          }
-        }
-        return parts
-      }
 
       // Find CSV attachment in all parts
       const allParts = [msg.payload, ...getAllParts(msg.payload)]
