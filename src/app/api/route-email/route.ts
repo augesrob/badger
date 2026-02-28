@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
   if (action === 'check') return handleCheck()
   if (action === 'status') return handleStatus()
   if (action === 'test') return handleTest()
+  if (action === 'debug') return handleDebug()
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 }
@@ -119,8 +120,9 @@ async function checkViaGmailAPI() {
     const accessToken = tokenData.access_token
 
     // Search for unread messages with attachments from today
-    const today = new Date().toISOString().split('T')[0].replace(/-/g, '/')
-    const query = `is:unread has:attachment after:${today}`
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+    const dateStr = `${twoDaysAgo.getFullYear()}/${String(twoDaysAgo.getMonth()+1).padStart(2,'0')}/${String(twoDaysAgo.getDate()).padStart(2,'0')}`
+    const query = `has:attachment after:${dateStr} from:fdlwhsestatus@badgerliquor.com`
 
     const searchRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=5`,
@@ -156,8 +158,8 @@ async function checkViaGmailAPI() {
             // Decode base64url to string
             const csvContent = Buffer.from(attachData.data, 'base64url').toString('utf-8')
 
-            // Verify it looks like our Routes CSV
-            if (csvContent.includes('TruckNumber') && csvContent.includes('CasesExpected')) {
+            // Verify it looks like our Routes CSV (loose check)
+            if (csvContent.length > 10) {
               // Mark message as read
               await fetch(
                 `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}/modify`,
@@ -239,4 +241,47 @@ async function handleTest() {
 async function handleStatus() {
   const { data } = await supabase.from('route_imports').select('*').eq('id', 1).maybeSingle()
   return NextResponse.json({ data })
+}
+
+// Debug: show raw Gmail search results
+async function handleDebug() {
+  try {
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: GMAIL_CLIENT_ID,
+        client_secret: GMAIL_CLIENT_SECRET,
+        refresh_token: GMAIL_REFRESH_TOKEN,
+        grant_type: 'refresh_token',
+      }),
+    })
+    const tokenData = await tokenRes.json()
+    if (!tokenData.access_token) return NextResponse.json({ error: 'No access token', detail: tokenData })
+
+    const accessToken = tokenData.access_token
+
+    // Search broadly - last 7 days, any attachment
+    const query = `has:attachment from:fdlwhsestatus@badgerliquor.com`
+    const searchRes = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=5`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    )
+    const searchData = await searchRes.json()
+
+    // Also try without from filter
+    const query2 = `has:attachment subject:WH Status`
+    const searchRes2 = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query2)}&maxResults=5`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    )
+    const searchData2 = await searchRes2.json()
+
+    return NextResponse.json({ 
+      query1_results: searchData,
+      query2_results: searchData2,
+    })
+  } catch (err) {
+    return NextResponse.json({ error: String(err) })
+  }
 }
