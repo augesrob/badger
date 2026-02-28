@@ -189,13 +189,18 @@ async function checkViaGmailAPI() {
 
               // Store in database
               const timestamp = new Date().toISOString()
-              await supabase.from('route_imports').upsert({
+              const { error: upsertError } = await supabase.from('route_imports').upsert({
                 id: 1,
                 status: 'received',
                 received_at: timestamp,
                 csv_data: csvContent,
                 updated_at: timestamp,
               })
+
+              if (upsertError) {
+                console.error('DB upsert error:', upsertError)
+                return NextResponse.json({ error: `DB save failed: ${upsertError.message}` }, { status: 500 })
+              }
 
               const routeCount = csvContent.trim().split('\n').length - 1
 
