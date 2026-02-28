@@ -95,7 +95,7 @@ export interface LiveMovement {
   loading_door_id: number | null
   last_updated: string
   // Joined fields
-  status_name?: string
+  status_name?: string | null
   status_color?: string
   door_name?: string
 }
