@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   { id: 'reset',       label: '⚠️ Data Reset',        ready: true },
   { id: 'notifications', label: '🔔 Notifications',   ready: true },
   { id: 'api',         label: '🔌 API',               ready: true,  href: '/admin/api' },
+  { id: 'backup',      label: '💾 Backup',             ready: true,  href: '/admin/backup' },
   { id: 'accounts',    label: '👤 Accounts',          ready: true, href: '/admin/users' },
   { id: 'debug',       label: '📱 Mobile Debug',      ready: true, href: '/admin/debug' },
 ]
