@@ -245,20 +245,32 @@ export default function ChatPage() {
       : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
+  const [showSidebar, setShowSidebar] = useState(false)
+
   if (authLoading) return <div className="text-center py-20 text-muted">Loading...</div>
   if (!profile) return null
 
   return (
     <div className="flex h-[calc(100vh-80px)] gap-0 bg-[#0f0f0f] rounded-2xl overflow-hidden border border-[#333]">
 
-      {/* ── Sidebar ── */}
-      <div className="w-60 flex-shrink-0 border-r border-[#333] flex flex-col bg-[#111]">
+      {/* ── Sidebar — hidden on mobile unless showSidebar ── */}
+      <div className={`
+        flex-shrink-0 border-r border-[#333] flex flex-col bg-[#111] z-30
+        ${showSidebar
+          ? 'fixed inset-0 w-full sm:w-64 sm:relative sm:inset-auto'
+          : 'hidden md:flex w-60'}
+      `}>
         <div className="px-4 py-3 border-b border-[#333] flex items-center justify-between">
           <div className="text-sm font-bold text-amber-500">💬 Chat</div>
-          {isAdmin && (
-            <button onClick={() => setShowManage(true)} title="Manage rooms"
-              className="text-xs text-muted hover:text-amber-500 transition-colors">⚙️</button>
-          )}
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <button onClick={() => setShowManage(true)} title="Manage rooms"
+                className="text-xs text-muted hover:text-amber-500 transition-colors">⚙️</button>
+            )}
+            {/* Close button on mobile */}
+            <button onClick={() => setShowSidebar(false)}
+              className="md:hidden text-muted hover:text-white text-lg leading-none">✕</button>
+          </div>
         </div>
 
         {/* Self avatar */}
@@ -276,7 +288,7 @@ export default function ChatPage() {
           <div className="px-3 pt-3 pb-1 text-[10px] font-bold text-muted uppercase tracking-wider">Rooms</div>
           {rooms.map(room => (
             <button key={room.id}
-              onClick={() => setActiveRoomId(room.id)}
+              onClick={() => { setActiveRoomId(room.id); setShowSidebar(false) }}
               className={`w-full text-left px-3 py-2.5 text-sm transition-colors flex items-center justify-between gap-2 rounded-lg mx-1 mb-0.5 ${
                 room.id === activeRoomId
                   ? 'bg-amber-500/10 text-amber-400 font-medium'
@@ -301,9 +313,12 @@ export default function ChatPage() {
       {/* ── Main chat ── */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="px-6 py-3 border-b border-[#333] flex items-center gap-3">
-          <div className="font-bold">{activeRoom?.name}</div>
-          <div className="text-xs text-muted flex-1">
+        <div className="px-4 py-3 border-b border-[#333] flex items-center gap-3">
+          {/* Hamburger on mobile */}
+          <button onClick={() => setShowSidebar(true)}
+            className="md:hidden text-muted hover:text-amber-500 text-lg flex-shrink-0">☰</button>
+          <div className="font-bold truncate">{activeRoom?.name}</div>
+          <div className="text-xs text-muted flex-1 truncate">
             {activeRoom?.allowed_roles === null
               ? 'Everyone'
               : activeRoom?.allowed_roles?.length === 0
@@ -312,14 +327,14 @@ export default function ChatPage() {
           </div>
           {isAdmin && activeRoom && messages.length > 0 && (
             <button onClick={() => setConfirmClear(true)}
-              className="text-xs text-red-400/60 hover:text-red-400 transition-colors px-2 py-1 rounded border border-red-400/20 hover:border-red-400/50">
-              🗑 Clear Room
+              className="text-xs text-red-400/60 hover:text-red-400 transition-colors px-2 py-1 rounded border border-red-400/20 hover:border-red-400/50 flex-shrink-0">
+              🗑 Clear
             </button>
           )}
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-1">
+        <div className="flex-1 overflow-y-auto px-3 md:px-6 py-4 space-y-1">
           {loadingMsgs && <div className="text-center text-muted text-sm py-8">Loading...</div>}
           {!loadingMsgs && messages.length === 0 && (
             <div className="text-center text-muted text-sm py-8">No messages yet. Say something! 👋</div>

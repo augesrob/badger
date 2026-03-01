@@ -105,6 +105,18 @@ export default function Admin() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
+  useEffect(() => {
+    const channel = supabase.channel('admin-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trucks' }, loadAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tractors' }, loadAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trailer_list' }, loadAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'status_values' }, loadAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'routes' }, loadAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'automation_rules' }, loadAll)
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [])
+
   // === TRUCK CRUD ===
   const saveTruck = async () => {
     const num = parseInt(truckForm.truck_number)
@@ -478,11 +490,18 @@ export default function Admin() {
       <div className="md:hidden w-full">
         <div className="flex overflow-x-auto border-b border-[#333] bg-[#111] px-2 py-1 gap-1">
           {NAV_ITEMS.filter(i => i.ready).map(item => (
+            item.href ? (
+              <a key={item.id} href={item.href}
+                className="whitespace-nowrap px-3 py-2 text-xs font-medium rounded-lg transition-colors flex-shrink-0 text-gray-400 hover:text-white">
+                {item.label}
+              </a>
+            ) : (
             <button key={item.id} onClick={() => setActiveSection(item.id)}
               className={`whitespace-nowrap px-3 py-2 text-xs font-medium rounded-lg transition-colors flex-shrink-0
                 ${activeSection === item.id ? 'bg-amber-500/20 text-amber-500' : 'text-gray-400 hover:text-white'}`}>
               {item.label}
             </button>
+            )
           ))}
         </div>
         <div className="p-4">{renderSection()}</div>

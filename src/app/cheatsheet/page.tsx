@@ -513,7 +513,7 @@ export default function CheatSheet() {
             <h1 className="text-xl font-bold">📋 Cheat Sheet</h1>
             <p className="text-xs text-muted">Pulls route/truck/notes from Route Sheet • editable • auto-saves</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button onClick={loadData} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-500">🔄 Sync from Route Sheet</button>
             <button onClick={clearAll} className="bg-red-900/50 text-red-400 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-900">🗑️ Clear</button>
             <button onClick={() => generateCheatPDF(batches, namesDate, leftNote, bottomNote, true)}

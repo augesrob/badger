@@ -95,7 +95,7 @@ export default function Movement() {
       .subscribe()
 
     // Fallback poll every 30s — optimistic updates handle local changes instantly, this just catches remote changes if realtime drops
-    const poll = setInterval(() => loadAll(), 30_000)
+    const poll = setInterval(() => loadAll(), 2_000)
 
     // Reload immediately when tab becomes visible again
     const handleVisibility = () => { if (document.visibilityState === 'visible') loadAll() }

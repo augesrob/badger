@@ -869,9 +869,9 @@ export default function RouteSheet() {
             <p className="text-xs text-muted">Truck # pulled from Print Room • Sync route data via email or CSV upload</p>
             <p className="text-xs text-amber-500/70 mt-0.5">⚠️ Best used in <strong>Chrome</strong> or <strong>Firefox</strong> — some features may not work in Edge or Safari</p>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
             <button onClick={handleDownloadPDF} disabled={downloading}
-              className="bg-green-700 hover:bg-green-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 flex-shrink-0 disabled:opacity-50">
+              className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-50">
               {downloading ? '⏳ Generating...' : '⬇️ Download PDF'}
             </button>
             <button onClick={() => {
@@ -901,14 +901,14 @@ export default function RouteSheet() {
                 setDownloading(false)
               })
             }} disabled={downloading}
-              className="bg-amber-500 text-black px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-amber-400 flex items-center gap-2 flex-shrink-0 disabled:opacity-50">
+              className="bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-400 flex items-center gap-2 disabled:opacity-50">
               🖨️ Print
             </button>
           </div>
         </div>
 
         {/* Sync status bar */}
-        <div className="flex items-center gap-3 bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2 bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3">
           <div className="flex items-center gap-2 flex-1 min-w-0">
             {syncStatus === 'idle' && emailStatus === 'idle' && (
               <>
@@ -949,7 +949,7 @@ export default function RouteSheet() {
             )}
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
             <button onClick={sendPing}
               disabled={emailStatus === 'sending' || emailStatus === 'waiting'}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
