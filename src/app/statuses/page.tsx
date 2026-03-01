@@ -71,6 +71,15 @@ export default function StatusValuesPage() {
 
   useEffect(() => { if (!authLoading) load() }, [authLoading, load])
 
+  useEffect(() => {
+    const channel = supabase.channel('statuses-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'status_values' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'door_status_values' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dock_lock_status_values' }, load)
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [])
+
   // Redirect if no access
   useEffect(() => {
     if (!authLoading && !isAdmin && !canFeature('admin_statuses')) {

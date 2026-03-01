@@ -105,6 +105,18 @@ export default function Admin() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
+  useEffect(() => {
+    const channel = supabase.channel('admin-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trucks' }, loadAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tractors' }, loadAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trailer_list' }, loadAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'status_values' }, loadAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'routes' }, loadAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'automation_rules' }, loadAll)
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [])
+
   // === TRUCK CRUD ===
   const saveTruck = async () => {
     const num = parseInt(truckForm.truck_number)
