@@ -115,7 +115,7 @@ export default function Admin() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'automation_rules' }, loadAll)
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [])
+  }, [loadAll])
 
   // === TRUCK CRUD ===
   const saveTruck = async () => {

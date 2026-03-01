@@ -123,7 +123,7 @@ export async function GET(req: NextRequest) {
     query = query.limit(limit)
   }
 
-  const { data, error, count } = await query
+  const { data, error } = await query
 
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
