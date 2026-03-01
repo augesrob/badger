@@ -490,11 +490,18 @@ export default function Admin() {
       <div className="md:hidden w-full">
         <div className="flex overflow-x-auto border-b border-[#333] bg-[#111] px-2 py-1 gap-1">
           {NAV_ITEMS.filter(i => i.ready).map(item => (
+            item.href ? (
+              <a key={item.id} href={item.href}
+                className="whitespace-nowrap px-3 py-2 text-xs font-medium rounded-lg transition-colors flex-shrink-0 text-gray-400 hover:text-white">
+                {item.label}
+              </a>
+            ) : (
             <button key={item.id} onClick={() => setActiveSection(item.id)}
               className={`whitespace-nowrap px-3 py-2 text-xs font-medium rounded-lg transition-colors flex-shrink-0
                 ${activeSection === item.id ? 'bg-amber-500/20 text-amber-500' : 'text-gray-400 hover:text-white'}`}>
               {item.label}
             </button>
+            )
           ))}
         </div>
         <div className="p-4">{renderSection()}</div>
