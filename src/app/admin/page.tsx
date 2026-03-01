@@ -19,7 +19,7 @@ const NAV_ITEMS = [
   { id: 'roles',       label: '🛡️ Role Manager',      ready: true },
   { id: 'reset',       label: '⚠️ Data Reset',        ready: true },
   { id: 'notifications', label: '🔔 Notifications',   ready: true },
-  { id: 'api',         label: '🔌 API',               ready: false },
+  { id: 'api',         label: '🔌 API',               ready: true,  href: '/admin/api' },
   { id: 'accounts',    label: '👤 Accounts',          ready: true, href: '/admin/users' },
   { id: 'debug',       label: '📱 Mobile Debug',      ready: true, href: '/admin/debug' },
 ]
