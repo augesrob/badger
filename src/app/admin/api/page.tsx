@@ -114,26 +114,48 @@ export default function AdminApiPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTable, tab, sessionToken])
 
-  const startLive = useCallback(() => {
-    setLiveLogs([])
-    setLiveRunning(true)
-    liveRef.current = supabase.channel('api-live-debug')
+  const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const doSubscribeLive = useCallback(() => {
+    if (liveRef.current) {
+      supabase.removeChannel(liveRef.current)
+      liveRef.current = null
+    }
+    const ch = supabase.channel(`api-live-debug-${Date.now()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'debug_logs' }, (payload) => {
         const row = payload.new as Record<string, unknown>
         setLiveLogs(prev => [...prev.slice(-499), row])
         setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
       })
-      .subscribe()
+    ch.subscribe((status) => {
+      console.log('[LiveMonitor] channel status:', status)
+    })
+    liveRef.current = ch
   }, [])
 
+  const startLive = useCallback(() => {
+    setLiveLogs([])
+    setLiveRunning(true)
+    doSubscribeLive()
+    watchdogRef.current = setInterval(() => {
+      const status = liveRef.current?.status
+      // @ts-expect-error status value check
+      if (status !== 'SUBSCRIBED') {
+        console.warn('[LiveMonitor] watchdog reconnecting, status=', status)
+        doSubscribeLive()
+      }
+    }, 15_000)
+  }, [doSubscribeLive])
+
   const stopLive = useCallback(() => {
+    if (watchdogRef.current) { clearInterval(watchdogRef.current); watchdogRef.current = null }
     if (liveRef.current) { supabase.removeChannel(liveRef.current); liveRef.current = null }
     setLiveRunning(false)
   }, [])
 
   useEffect(() => {
-    if (tab === 'live' && !liveRunning) startLive()
-    if (tab !== 'live' && liveRunning) stopLive()
+    if (tab === 'live') startLive()
+    else stopLive()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab])
 
