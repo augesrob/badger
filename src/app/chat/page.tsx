@@ -146,7 +146,8 @@ export default function ChatPage() {
     if (channelRef.current) supabase.removeChannel(channelRef.current)
     if (visibleRoomIds.length === 0) return
 
-    const ch = supabase.channel('chat-all')
+    // Unique channel name prevents stale channel conflicts on re-subscribe
+    const ch = supabase.channel(`chat-all-${Date.now()}`)
 
     visibleRoomIds.forEach(roomId => {
       ch.on('postgres_changes',
@@ -155,7 +156,7 @@ export default function ChatPage() {
           const currentActive = activeRoomRef.current
 
           if (roomId === currentActive) {
-            // Fetch full message with profile data
+            // Fetch full message with profile join
             const { data } = await supabase
               .from('messages')
               .select('*, profiles(username,display_name,avatar_color,avatar_url,role)')
@@ -163,28 +164,29 @@ export default function ChatPage() {
               .single()
             if (data) {
               setMessages(prev => {
-                // Deduplicate
                 if (prev.find(m => m.id === data.id)) return prev
                 return [...prev, data as Message]
               })
               setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
             }
           } else {
-            // Increment unread badge for other rooms
             setRooms(prev => prev.map(r =>
               r.id === roomId ? { ...r, unread: r.unread + 1 } : r
             ))
           }
         })
-
-      ch.on('postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
-        (payload) => {
-          if (roomId === activeRoomRef.current) {
-            setMessages(prev => prev.filter(m => m.id !== payload.old.id))
-          }
-        })
     })
+
+    // Single DELETE listener without filter — Supabase doesn't reliably send
+    // room_id in delete payloads when using per-row filters
+    ch.on('postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'messages' },
+      (payload) => {
+        // payload.old.id is always present; remove from current view if it's there
+        if (payload.old?.id) {
+          setMessages(prev => prev.filter(m => m.id !== payload.old.id))
+        }
+      })
 
     ch.subscribe((status) => {
       console.log('[chat] realtime status:', status)
@@ -226,8 +228,9 @@ export default function ChatPage() {
 
   const deleteMessage = async (msg: Message) => {
     if (msg.sender_id !== profile?.id && !isAdmin) return
-    await supabase.from('messages').delete().eq('id', msg.id)
+    // Optimistically remove from UI — realtime DELETE event will also fire and is idempotent
     setMessages(prev => prev.filter(m => m.id !== msg.id))
+    await supabase.from('messages').delete().eq('id', msg.id)
   }
 
   const clearRoom = async () => {
