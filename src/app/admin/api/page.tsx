@@ -138,10 +138,10 @@ export default function AdminApiPage() {
     setLiveRunning(true)
     doSubscribeLive()
     watchdogRef.current = setInterval(() => {
-      const status = liveRef.current?.status
-      // @ts-expect-error status value check
-      if (status !== 'SUBSCRIBED') {
-        console.warn('[LiveMonitor] watchdog reconnecting, status=', status)
+      // RealtimeChannel exposes state via socket/topic — reconnect if not joined
+      const ch = liveRef.current as unknown as { state?: string } | null
+      if (!ch || ch.state !== 'joined') {
+        console.warn('[LiveMonitor] watchdog reconnecting, state=', ch?.state)
         doSubscribeLive()
       }
     }, 15_000)
