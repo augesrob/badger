@@ -235,7 +235,13 @@ export default function ChatPage() {
 
   const clearRoom = async () => {
     if (!activeRoomId || !isAdmin) return
-    await supabase.from('messages').delete().eq('room_id', activeRoomId)
+    const { error } = await supabase.from('messages').delete().eq('room_id', activeRoomId)
+    if (error) {
+      console.error('[clearRoom] delete failed:', error)
+      alert(`Clear failed: ${error.message}`)
+      setConfirmClear(false)
+      return
+    }
     setMessages([])
     setConfirmClear(false)
   }
