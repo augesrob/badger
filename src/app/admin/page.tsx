@@ -42,6 +42,7 @@ export default function Admin() {
       toast(`❌ Gmail auth failed: ${reason}`, 'error')
       window.history.replaceState({}, '', '/admin')
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Truck state
