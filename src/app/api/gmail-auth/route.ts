@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { NextRequest, NextResponse } from 'next/server'import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,7 +11,7 @@ const APP_URL             = process.env.NEXT_PUBLIC_APP_URL || 'https://badger.a
 const REDIRECT_URI        = `${APP_URL}/api/gmail-auth/callback`
 
 // GET /api/gmail-auth — returns the OAuth URL to kick off the flow
-export async function GET(_req: NextRequest) {
+export async function GET() {
   if (!GMAIL_CLIENT_ID) {
     return NextResponse.json({ error: 'GMAIL_CLIENT_ID not configured' }, { status: 500 })
   }
