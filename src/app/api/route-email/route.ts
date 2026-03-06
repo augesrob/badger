@@ -73,7 +73,9 @@ async function getFreshAccessToken(): Promise<{ token: string; error?: never } |
   if (!data.access_token) {
     // Refresh token may be revoked — clear it so the UI shows "needs auth"
     if (data.error === 'invalid_grant') {
-      await supabase.from('gmail_tokens').update({ access_token: null, token_expiry: null }).eq('id', 1)
+      try {
+        await supabase.from('gmail_tokens').update({ access_token: null, token_expiry: null }).eq('id', 1)
+      } catch { /* gmail_tokens table may not exist yet, ignore */ }
       return { error: 'Gmail refresh token expired or revoked. Re-authorize in Admin → Route Sheet.' }
     }
     return { error: `Token refresh failed: ${data.error_description || data.error || 'unknown'}` }

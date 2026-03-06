@@ -226,16 +226,27 @@ async function downloadRouteSheetPDF(
 
 const STORAGE_KEY = 'badger-routesheet-v1'
 
+function todayDateStr() {
+  return new Date().toLocaleDateString('en-CA') // YYYY-MM-DD
+}
+
 function saveToStorage(blocks: DoorBlock[], topRight: string, syncStatus: string) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ blocks, topRight, syncStatus }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ blocks, topRight, syncStatus, savedDate: todayDateStr() }))
   } catch { /* ignore */ }
 }
 
 function loadFromStorage(): { blocks: DoorBlock[]; topRight: string; syncStatus: string } | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    // Auto-expire synced data from a previous day — force fresh printroom load
+    if (parsed.syncStatus === 'synced' && parsed.savedDate && parsed.savedDate !== todayDateStr()) {
+      localStorage.removeItem(STORAGE_KEY)
+      return null
+    }
+    return parsed
   } catch { /* ignore */ }
   return null
 }
