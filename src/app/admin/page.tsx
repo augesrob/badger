@@ -29,6 +29,21 @@ export default function Admin() {
   const toast = useToast()
   const [activeSection, setActiveSection] = useState('trucks')
 
+  // Show Gmail auth result toast after OAuth redirect
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const gmailAuth = params.get('gmail_auth')
+    if (gmailAuth === 'success') {
+      toast('✅ Gmail authorized successfully!', 'success')
+      window.history.replaceState({}, '', '/admin')
+    } else if (gmailAuth === 'error') {
+      const reason = params.get('reason') || 'unknown'
+      toast(`❌ Gmail auth failed: ${reason}`, 'error')
+      window.history.replaceState({}, '', '/admin')
+    }
+  }, [])
+
   // Truck state
   const [trucks, setTrucks] = useState<(Truck & { trailers: Trailer[] })[]>([])
   const [showTruckModal, setShowTruckModal] = useState(false)

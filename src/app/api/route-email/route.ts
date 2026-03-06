@@ -12,24 +12,102 @@ const EMAIL_USER = process.env.BADGER_EMAIL_USER || ''
 const EMAIL_PASS = process.env.BADGER_EMAIL_PASS || ''
 const TARGET_EMAIL = 'fdlwhsestatus@badgerliquor.com'
 
-// Gmail API config (OAuth2)
-const GMAIL_CLIENT_ID = process.env.GMAIL_CLIENT_ID || ''
+// Gmail OAuth config
+const GMAIL_CLIENT_ID     = process.env.GMAIL_CLIENT_ID     || ''
 const GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || ''
-const GMAIL_REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN || ''
+// GMAIL_REFRESH_TOKEN env var is the fallback if no DB token exists yet
+const GMAIL_REFRESH_TOKEN_FALLBACK = process.env.GMAIL_REFRESH_TOKEN || ''
+
+// ── Token helpers ─────────────────────────────────────────────────────────────
+
+/** Read the refresh token from Supabase gmail_tokens table (falls back to env var) */
+async function getStoredRefreshToken(): Promise<string | null> {
+  try {
+    const { data } = await supabase
+      .from('gmail_tokens')
+      .select('refresh_token')
+      .eq('id', 1)
+      .maybeSingle()
+    return data?.refresh_token || GMAIL_REFRESH_TOKEN_FALLBACK || null
+  } catch {
+    return GMAIL_REFRESH_TOKEN_FALLBACK || null
+  }
+}
+
+/** Exchange refresh token for a fresh access token, cache it in DB */
+async function getFreshAccessToken(): Promise<{ token: string; error?: never } | { token?: never; error: string }> {
+  const refreshToken = await getStoredRefreshToken()
+  if (!refreshToken) return { error: 'No refresh token stored. Re-authorize Gmail in Admin → Route Sheet.' }
+  if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET) return { error: 'GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET not set in Vercel env.' }
+
+  // Check if cached access token is still valid (>2 min left)
+  try {
+    const { data: row } = await supabase
+      .from('gmail_tokens')
+      .select('access_token, token_expiry')
+      .eq('id', 1)
+      .maybeSingle()
+
+    if (row?.access_token && row?.token_expiry) {
+      const expiryMs = new Date(row.token_expiry).getTime()
+      if (expiryMs - Date.now() > 2 * 60 * 1000) {
+        return { token: row.access_token }
+      }
+    }
+  } catch { /* fall through to refresh */ }
+
+  // Refresh
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id:     GMAIL_CLIENT_ID,
+      client_secret: GMAIL_CLIENT_SECRET,
+      refresh_token: refreshToken,
+      grant_type:    'refresh_token',
+    }),
+  })
+
+  const data = await res.json()
+
+  if (!data.access_token) {
+    // Refresh token may be revoked — clear it so the UI shows "needs auth"
+    if (data.error === 'invalid_grant') {
+      await supabase.from('gmail_tokens').update({ access_token: null, token_expiry: null }).eq('id', 1)
+      return { error: 'Gmail refresh token expired or revoked. Re-authorize in Admin → Route Sheet.' }
+    }
+    return { error: `Token refresh failed: ${data.error_description || data.error || 'unknown'}` }
+  }
+
+  // Cache the new access token
+  const expiry = new Date(Date.now() + (data.expires_in - 60) * 1000).toISOString()
+  try {
+    await supabase.from('gmail_tokens').upsert({
+      id: 1,
+      refresh_token: refreshToken,
+      access_token: data.access_token,
+      token_expiry: expiry,
+      updated_at: new Date().toISOString(),
+    })
+  } catch { /* non-fatal */ }
+
+  return { token: data.access_token }
+}
+
+// ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   const { action } = await req.json()
 
-  if (action === 'send') return handleSend()
-  if (action === 'check') return handleCheck()
+  if (action === 'send')   return handleSend()
+  if (action === 'check')  return handleCheck()
   if (action === 'status') return handleStatus()
-  if (action === 'test') return handleTest()
-  if (action === 'debug') return handleDebug()
+  if (action === 'auth_status') return handleAuthStatus()
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 }
 
-// Send the ping email via SMTP (works fine on Vercel)
+// Send the ping email via SMTP
 async function handleSend() {
   if (!EMAIL_USER || !EMAIL_PASS) {
     return NextResponse.json({ error: 'Email not configured. Set BADGER_EMAIL_USER and BADGER_EMAIL_PASS in Vercel env vars.' }, { status: 500 })
@@ -52,7 +130,6 @@ async function handleSend() {
       text: `Automated route status request from Badger Truck Management.\nTimestamp: ${timestamp}`,
     })
 
-    // Store request record
     await supabase.from('route_imports').upsert({
       id: 1,
       status: 'sent',
@@ -69,73 +146,60 @@ async function handleSend() {
   }
 }
 
-// Check Gmail inbox via REST API for reply with CSV
+// Check Gmail inbox via REST API
 async function handleCheck() {
-  // Try Gmail REST API first, fall back to basic check
-  if (GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN) {
-    return checkViaGmailAPI()
-  }
-
-  // Fallback: If no OAuth configured, try simple SMTP check (limited)
-  return NextResponse.json({
-    success: true,
-    found: false,
-    message: 'Gmail API not configured. Set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN in Vercel. Or use manual CSV upload.',
-  })
-}
-
-// Recursively find all parts (handles nested multipart emails)
-function getAllParts(payload: Record<string, unknown>): Record<string, unknown>[] {
-  if (!payload) return []
-  const parts: Record<string, unknown>[] = []
-  if (Array.isArray(payload.parts)) {
-    for (const p of payload.parts as Record<string, unknown>[]) {
-      parts.push(p)
-      parts.push(...getAllParts(p))
-    }
-  }
-  return parts
-}
-
-// Gmail REST API check (fully compatible with Vercel serverless)
-async function checkViaGmailAPI() {
-  // Log which env vars are configured (not their values)
-  console.log('Gmail OAuth check — env vars present:', {
-    client_id: !!GMAIL_CLIENT_ID,
-    client_secret: !!GMAIL_CLIENT_SECRET,
-    refresh_token: !!GMAIL_REFRESH_TOKEN,
-    client_id_len: GMAIL_CLIENT_ID.length,
-    refresh_token_len: GMAIL_REFRESH_TOKEN.length,
-  })
-  try {
-    // Get access token from refresh token
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: GMAIL_CLIENT_ID,
-        client_secret: GMAIL_CLIENT_SECRET,
-        refresh_token: GMAIL_REFRESH_TOKEN,
-        grant_type: 'refresh_token',
-      }),
+  if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET) {
+    return NextResponse.json({
+      success: true,
+      found: false,
+      message: 'Gmail API not configured.',
     })
+  }
+  return checkViaGmailAPI()
+}
 
-    const tokenData = await tokenRes.json()
-    if (!tokenData.access_token) {
-      const reason = tokenData.error_description || tokenData.error || 'unknown'
-      console.error('Gmail token error:', JSON.stringify(tokenData))
-      return NextResponse.json({ 
-        error: `Failed to get Gmail access token: ${reason}`,
-        detail: tokenData,
-      }, { status: 500 })
+// Return auth status — is the token configured and valid?
+async function handleAuthStatus() {
+  try {
+    const { data: row } = await supabase
+      .from('gmail_tokens')
+      .select('refresh_token, token_expiry, authorized_at, authorized_by')
+      .eq('id', 1)
+      .maybeSingle()
+
+    const hasRefreshToken = !!(row?.refresh_token || GMAIL_REFRESH_TOKEN_FALLBACK)
+    const lastAuth = row?.authorized_at || null
+    const authorizedBy = row?.authorized_by || null
+
+    // Quick token test to confirm refresh token is still valid
+    let tokenValid = false
+    if (hasRefreshToken) {
+      const result = await getFreshAccessToken()
+      tokenValid = !!result.token
     }
 
-    const accessToken = tokenData.access_token
+    return NextResponse.json({
+      configured: hasRefreshToken,
+      valid: tokenValid,
+      authorized_at: lastAuth,
+      authorized_by: authorizedBy,
+    })
+  } catch (err) {
+    return NextResponse.json({ configured: false, valid: false, error: String(err) })
+  }
+}
 
-    // Search for messages with attachments from FDL (last 2 days, read or unread)
-    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
-    const dateStr = `${twoDaysAgo.getFullYear()}/${String(twoDaysAgo.getMonth()+1).padStart(2,'0')}/${String(twoDaysAgo.getDate()).padStart(2,'0')}`
-    const query = `has:attachment after:${dateStr} from:fdlwhsestatus@badgerliquor.com`
+async function checkViaGmailAPI() {
+  const tokenResult = await getFreshAccessToken()
+  if (tokenResult.error) {
+    return NextResponse.json({ error: tokenResult.error, needsReauth: true }, { status: 401 })
+  }
+
+  const accessToken = tokenResult.token!
+
+  try {
+    const today = new Date().toISOString().split('T')[0].replace(/-/g, '/')
+    const query = `is:unread has:attachment after:${today}`
 
     const searchRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=5`,
@@ -147,7 +211,6 @@ async function checkViaGmailAPI() {
       return NextResponse.json({ success: true, found: false })
     }
 
-    // Check each message for CSV attachment
     for (const msgRef of searchData.messages) {
       const msgRes = await fetch(
         `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}`,
@@ -155,41 +218,31 @@ async function checkViaGmailAPI() {
       )
       const msg = await msgRes.json()
 
-      // Find CSV attachment in all parts
-      const allParts = [msg.payload, ...getAllParts(msg.payload)]
-      for (const part of allParts) {
-        const filename = (part?.filename as string) || ''
-        const body = part?.body as Record<string, unknown>
-        if (filename.toLowerCase().endsWith('.csv') && body?.attachmentId) {
-          // Download attachment
+      const parts = msg.payload?.parts || []
+      for (const part of parts) {
+        const filename = part.filename || ''
+        if (filename.toLowerCase().endsWith('.csv') && part.body?.attachmentId) {
           const attachRes = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}/attachments/${body.attachmentId}`,
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}/attachments/${part.body.attachmentId}`,
             { headers: { Authorization: `Bearer ${accessToken}` } }
           )
           const attachData = await attachRes.json()
 
           if (attachData.data) {
-            // Decode base64url to string
             const csvContent = Buffer.from(attachData.data, 'base64url').toString('utf-8')
 
-            // Verify it looks like our Routes CSV (loose check)
-            if (csvContent.length > 10) {
-              // Mark message as read
+            if (csvContent.includes('TruckNumber') && csvContent.includes('CasesExpected')) {
               await fetch(
                 `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}/modify`,
                 {
                   method: 'POST',
-                  headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                  },
+                  headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
                   body: JSON.stringify({ removeLabelIds: ['UNREAD'] }),
                 }
               )
 
-              // Store in database
               const timestamp = new Date().toISOString()
-              const { error: upsertError } = await supabase.from('route_imports').upsert({
+              await supabase.from('route_imports').upsert({
                 id: 1,
                 status: 'received',
                 received_at: timestamp,
@@ -197,14 +250,7 @@ async function checkViaGmailAPI() {
                 updated_at: timestamp,
               })
 
-              if (upsertError) {
-                console.error('DB upsert error:', upsertError)
-                return NextResponse.json({ error: `DB save failed: ${upsertError.message}` }, { status: 500 })
-              }
-
-              const routeCount = csvContent.trim().split('\n').length - 1
-
-              return NextResponse.json({ success: true, found: true, routes: routeCount })
+              return NextResponse.json({ success: true, found: true, routes: csvContent.trim().split('\n').length - 1 })
             }
           }
         }
@@ -218,89 +264,8 @@ async function checkViaGmailAPI() {
   }
 }
 
-// Test Gmail OAuth credentials
-async function handleTest() {
-  const configured = {
-    smtp: !!(EMAIL_USER && EMAIL_PASS),
-    oauth: !!(GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN),
-    email_user: EMAIL_USER ? EMAIL_USER.substring(0, 5) + '...' : '(not set)',
-    gmail_client_id_prefix: GMAIL_CLIENT_ID ? GMAIL_CLIENT_ID.substring(0, 20) + '...' : '(not set)',
-  }
-
-  if (!configured.oauth) {
-    return NextResponse.json({ 
-      configured,
-      error: 'Gmail OAuth not configured. Need GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN in Vercel env vars.' 
-    })
-  }
-
-  try {
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: GMAIL_CLIENT_ID,
-        client_secret: GMAIL_CLIENT_SECRET,
-        refresh_token: GMAIL_REFRESH_TOKEN,
-        grant_type: 'refresh_token',
-      }),
-    })
-    const tokenData = await tokenRes.json()
-    if (tokenData.access_token) {
-      return NextResponse.json({ configured, success: true, message: 'Gmail OAuth working ✅', token_type: tokenData.token_type, expires_in: tokenData.expires_in })
-    } else {
-      return NextResponse.json({ configured, success: false, error: tokenData.error, error_description: tokenData.error_description, detail: tokenData })
-    }
-  } catch (err) {
-    return NextResponse.json({ configured, success: false, error: String(err) })
-  }
-}
-
 // Get current import status
 async function handleStatus() {
   const { data } = await supabase.from('route_imports').select('*').eq('id', 1).maybeSingle()
   return NextResponse.json({ data })
-}
-
-// Debug: show raw Gmail search results
-async function handleDebug() {
-  try {
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: GMAIL_CLIENT_ID,
-        client_secret: GMAIL_CLIENT_SECRET,
-        refresh_token: GMAIL_REFRESH_TOKEN,
-        grant_type: 'refresh_token',
-      }),
-    })
-    const tokenData = await tokenRes.json()
-    if (!tokenData.access_token) return NextResponse.json({ error: 'No access token', detail: tokenData })
-
-    const accessToken = tokenData.access_token
-
-    // Search broadly - last 7 days, any attachment
-    const query = `has:attachment from:fdlwhsestatus@badgerliquor.com`
-    const searchRes = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=5`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    )
-    const searchData = await searchRes.json()
-
-    // Also try without from filter
-    const query2 = `has:attachment subject:WH Status`
-    const searchRes2 = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query2)}&maxResults=5`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    )
-    const searchData2 = await searchRes2.json()
-
-    return NextResponse.json({ 
-      query1_results: searchData,
-      query2_results: searchData2,
-    })
-  } catch (err) {
-    return NextResponse.json({ error: String(err) })
-  }
 }
