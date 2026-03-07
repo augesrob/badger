@@ -54,14 +54,9 @@ export default function DownloadPage() {
 
         {error && (
           <div className="flex flex-col items-center gap-3 py-16 text-center px-6">
-            <div className="text-3xl">🔒</div>
+            <div className="text-3xl">⚠️</div>
             <p className="text-muted text-sm">Could not load release info.</p>
             <p className="text-muted/60 text-xs">{error}</p>
-            <a href="https://github.com/augesrob/badger-android/releases"
-              target="_blank" rel="noopener noreferrer"
-              className="mt-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold rounded-xl transition-colors">
-              View on GitHub →
-            </a>
           </div>
         )}
 
@@ -97,17 +92,10 @@ export default function DownloadPage() {
                   {sizeMb && <span className="font-normal opacity-70">({sizeMb} MB)</span>}
                 </a>
               ) : (
-                <a href={release.html_url} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-xl transition-colors text-sm">
-                  View Release on GitHub →
-                </a>
+                <p className="text-center text-sm text-muted py-2">No APK available for this release yet.</p>
               )}
 
-              <a href="https://github.com/augesrob/badger-android/releases"
-                target="_blank" rel="noopener noreferrer"
-                className="text-center text-xs text-muted hover:text-amber-500 transition-colors">
-                View all releases on GitHub
-              </a>
+
             </div>
           </>
         )}
