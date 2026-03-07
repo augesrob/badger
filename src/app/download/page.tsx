@@ -16,7 +16,7 @@ export default function DownloadPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('https://api.github.com/repos/augesrob/badger-android/releases/latest')
+    fetch('/api/release')
       .then(r => {
         if (!r.ok) throw new Error(r.status === 404 ? 'No releases found' : `GitHub API error ${r.status}`)
         return r.json()
