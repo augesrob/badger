@@ -104,9 +104,9 @@ For local development, copy `.env.local.example` to `.env.local` and fill in rea
 
 **Example `.env.local` (development only — never commit this file):**
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://abcdefghijklmnop.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-GITHUB_TOKEN=github_pat_11ABCDEF...
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+GITHUB_TOKEN=github_pat_your_token_here
 ```
 
 > ⚠️ There may be additional secrets for Gmail OAuth2 and email sending (route sheet emails). These are also set in Vercel environment variables. Check the Vercel project dashboard for the full current list.
