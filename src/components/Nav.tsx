@@ -129,6 +129,7 @@ export default function Nav() {
             </div>
           )}
 
+          {navLink('/download', '📲 Get App')}
           {can('fleet')     && navLink('/fleet',     '🚛 Fleet')}
           {can('chat')      && navLink('/chat',      '💬 Chat')}
           {can('admin')     && navLink('/admin',     '⚙️ Admin')}
