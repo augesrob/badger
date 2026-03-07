@@ -1088,10 +1088,131 @@ export default function Admin() {
   }
 
   function ResetSection() {
+    const [autoConfig, setAutoConfig] = useState<{
+      enabled: boolean; hour: number; minute: number; days: number[]
+    } | null>(null)
+    const [autoSaving, setAutoSaving] = useState(false)
+
+    const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+    useEffect(() => {
+      supabase.from('auto_reset_config').select('*').eq('id', 1).single()
+        .then(({ data }) => {
+          if (data) setAutoConfig({ enabled: data.enabled, hour: data.hour, minute: data.minute, days: data.days })
+        })
+    }, [])
+
+    const saveAutoConfig = async (patch: Partial<typeof autoConfig>) => {
+      if (!autoConfig) return
+      const updated = { ...autoConfig, ...patch }
+      setAutoConfig(updated)
+      setAutoSaving(true)
+      await supabase.from('auto_reset_config').update({
+        enabled: updated.enabled,
+        hour:    updated.hour,
+        minute:  updated.minute,
+        days:    updated.days,
+        updated_at: new Date().toISOString(),
+      }).eq('id', 1)
+      setAutoSaving(false)
+    }
+
+    const toggleDay = (d: number) => {
+      if (!autoConfig) return
+      const days = autoConfig.days.includes(d)
+        ? autoConfig.days.filter(x => x !== d)
+        : [...autoConfig.days, d].sort()
+      saveAutoConfig({ days })
+    }
+
+    // Format scheduled time for display
+    const scheduleLabel = autoConfig ? (() => {
+      const h = autoConfig.hour
+      const m = autoConfig.minute
+      const ampm = h >= 12 ? 'PM' : 'AM'
+      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+      const mm = String(m).padStart(2, '0')
+      return `${h12}:${mm} ${ampm} CST`
+    })() : ''
+
     return (
       <div>
         <h2 className="text-xl font-bold text-red-400 mb-2">⚠️ Data Reset</h2>
         <p className="text-sm text-gray-500 mb-4">Truck &amp; Tractor databases are <strong className="text-green-500">always protected</strong>.</p>
+
+        {/* ── Auto Reset Schedule ── */}
+        <div className="bg-[#1a1a1a] border border-amber-500/30 rounded-xl p-4 mb-6">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-amber-500">🕐 Auto Reset All</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Automatically runs Reset All on a schedule. Truck &amp; tractor data is always protected.</p>
+            </div>
+            {/* Enabled toggle */}
+            <button
+              onClick={() => saveAutoConfig({ enabled: !autoConfig?.enabled })}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${autoConfig?.enabled ? 'bg-amber-500' : 'bg-[#333]'}`}>
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoConfig?.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+
+          {autoConfig && (
+            <div className="flex flex-col gap-3">
+              {/* Time picker */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <label className="text-xs text-gray-400 w-10">Time</label>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={autoConfig.hour}
+                    onChange={e => saveAutoConfig({ hour: Number(e.target.value) })}
+                    className="bg-[#222] border border-[#333] rounded-lg px-2 py-1.5 text-sm text-white focus:border-amber-500 outline-none">
+                    {Array.from({ length: 24 }, (_, i) => {
+                      const ampm = i >= 12 ? 'PM' : 'AM'
+                      const h = i === 0 ? 12 : i > 12 ? i - 12 : i
+                      return <option key={i} value={i}>{String(h).padStart(2,'0')} {ampm}</option>
+                    })}
+                  </select>
+                  <span className="text-gray-500">:</span>
+                  <select
+                    value={autoConfig.minute}
+                    onChange={e => saveAutoConfig({ minute: Number(e.target.value) })}
+                    className="bg-[#222] border border-[#333] rounded-lg px-2 py-1.5 text-sm text-white focus:border-amber-500 outline-none">
+                    {[0, 15, 30, 45].map(m => (
+                      <option key={m} value={m}>{String(m).padStart(2,'0')}</option>
+                    ))}
+                  </select>
+                  <span className="text-xs text-gray-500 ml-1">CST</span>
+                </div>
+                {autoSaving && <span className="text-xs text-amber-500 animate-pulse">Saving…</span>}
+              </div>
+
+              {/* Day selector */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-xs text-gray-400 w-10">Days</label>
+                <div className="flex gap-1.5 flex-wrap">
+                  {DAY_LABELS.map((label, i) => (
+                    <button key={i} onClick={() => toggleDay(i)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors ${
+                        autoConfig.days.includes(i)
+                          ? 'bg-amber-500/20 border-amber-500/60 text-amber-400'
+                          : 'bg-[#222] border-[#333] text-gray-500 hover:border-gray-500'
+                      }`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Summary */}
+              <div className={`text-xs px-3 py-2 rounded-lg border ${autoConfig.enabled ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-[#222] border-[#333] text-gray-500'}`}>
+                {autoConfig.enabled
+                  ? `⏰ Next auto-reset will fire at ${scheduleLabel} on selected days`
+                  : '⏸ Auto-reset is disabled — toggle on to activate'}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Manual Reset Buttons ── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
           {[
             { type: 'printroom', icon: '🖨️', label: 'Reset Print Room', desc: 'Clears entries and resets door statuses.' },
@@ -1107,11 +1228,19 @@ export default function Admin() {
             <div className="text-red-400 font-bold mb-1">💣 RESET ALL</div><div className="text-xs text-gray-400">Requires typing RESET.</div>
           </button>
         </div>
+
+        {/* ── Reset Log ── */}
         {resetLog.length > 0 && (
           <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
             <h3 className="text-sm font-bold text-gray-400 mb-2">Recent Resets</h3>
             {resetLog.map(l => (
-              <div key={l.id} className="text-xs text-gray-500 flex gap-2 py-0.5"><span className="font-bold text-gray-400">{l.reset_type}</span><span>—</span><span>{new Date(l.reset_at).toLocaleString()}</span></div>
+              <div key={l.id} className="text-xs text-gray-500 flex gap-2 py-0.5">
+                <span className={`font-bold ${l.reset_by === 'auto' ? 'text-amber-400' : 'text-gray-400'}`}>
+                  {l.reset_by === 'auto' ? '🕐' : '👤'} {l.reset_type}
+                </span>
+                <span>—</span>
+                <span>{new Date(l.reset_at).toLocaleString()}</span>
+              </div>
             ))}
           </div>
         )}
