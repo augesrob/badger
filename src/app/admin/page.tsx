@@ -293,7 +293,27 @@ export default function Admin() {
   const resetData = async (type: string) => {
     if (type === 'all') { const input = prompt('Type RESET to confirm:'); if (input !== 'RESET') return }
     else { if (!confirm(`Reset ${type}?`)) return }
-    if (type === 'printroom' || type === 'all') { await supabase.from('printroom_entries').delete().neq('id', 0); await supabase.from('loading_doors').update({ is_done_for_night: false, door_status: 'Loading' }).neq('id', 0) }
+    if (type === 'printroom' || type === 'all') {
+      await supabase.from('printroom_entries').delete().neq('id', 0)
+      await supabase.from('loading_doors').update({ is_done_for_night: false, door_status: 'Loading' }).neq('id', 0)
+      // Seed preset rows: Batch 1 → 2 empty rows, Batch 2 → 6 empty rows per door
+      const { data: allDoors } = await supabase.from('loading_doors').select('id').order('sort_order')
+      if (allDoors && allDoors.length > 0) {
+        const seedRows = allDoors.flatMap((d: { id: number }) => [
+          // Batch 1 — 2 rows
+          { loading_door_id: d.id, batch_number: 1, row_order: 1 },
+          { loading_door_id: d.id, batch_number: 1, row_order: 2 },
+          // Batch 2 — 6 rows
+          { loading_door_id: d.id, batch_number: 2, row_order: 1 },
+          { loading_door_id: d.id, batch_number: 2, row_order: 2 },
+          { loading_door_id: d.id, batch_number: 2, row_order: 3 },
+          { loading_door_id: d.id, batch_number: 2, row_order: 4 },
+          { loading_door_id: d.id, batch_number: 2, row_order: 5 },
+          { loading_door_id: d.id, batch_number: 2, row_order: 6 },
+        ])
+        await supabase.from('printroom_entries').insert(seedRows)
+      }
+    }
     if (type === 'preshift' || type === 'all') { await supabase.from('staging_doors').update({ in_front: null, in_back: null }).neq('id', 0) }
     if (type === 'movement' || type === 'all') { await supabase.from('live_movement').delete().neq('id', 0) }
     if (type === 'documents' || type === 'all') {
