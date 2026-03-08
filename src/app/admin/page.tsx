@@ -8,6 +8,7 @@ import { runPreshiftAutomation, runAutomation } from '@/lib/automation'
 import Link from 'next/link'
 import RoleManager from '@/components/RoleManager'
 import NotificationPrefs from '@/components/NotificationPrefs'
+import AutoResetConfig from './AutoResetConfig'
 
 const NAV_ITEMS = [
   { id: 'trucks',      label: '🚚 Truck Database',   ready: true },
@@ -1072,6 +1073,11 @@ export default function Admin() {
       <div>
         <h2 className="text-xl font-bold text-red-400 mb-2">⚠️ Data Reset</h2>
         <p className="text-sm text-gray-500 mb-4">Truck &amp; Tractor databases are <strong className="text-green-500">always protected</strong>.</p>
+
+        {/* Auto-reset scheduler */}
+        <AutoResetConfig />
+
+        {/* Manual reset buttons */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
           {[
             { type: 'printroom', icon: '🖨️', label: 'Reset Print Room', desc: 'Clears entries and resets door statuses.' },
@@ -1087,11 +1093,19 @@ export default function Admin() {
             <div className="text-red-400 font-bold mb-1">💣 RESET ALL</div><div className="text-xs text-gray-400">Requires typing RESET.</div>
           </button>
         </div>
+
+        {/* Reset log */}
         {resetLog.length > 0 && (
           <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
             <h3 className="text-sm font-bold text-gray-400 mb-2">Recent Resets</h3>
             {resetLog.map(l => (
-              <div key={l.id} className="text-xs text-gray-500 flex gap-2 py-0.5"><span className="font-bold text-gray-400">{l.reset_type}</span><span>—</span><span>{new Date(l.reset_at).toLocaleString()}</span></div>
+              <div key={l.id} className="text-xs text-gray-500 flex gap-2 py-0.5">
+                <span className={`font-bold ${l.reset_by === 'auto' ? 'text-amber-400' : 'text-gray-400'}`}>
+                  {l.reset_by === 'auto' ? '🕐' : '👤'} {l.reset_type}
+                </span>
+                <span>—</span>
+                <span>{new Date(l.reset_at).toLocaleString()}</span>
+              </div>
             ))}
           </div>
         )}
