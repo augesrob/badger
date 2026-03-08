@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { Truck, Trailer, StatusValue, DoorStatusValue, DockLockStatusValue, GlobalMessage, Route, TrailerItem, Tractor, AutomationRule } from '@/lib/types'
@@ -20,10 +20,10 @@ const NAV_ITEMS = [
   { id: 'roles',       label: '🛡️ Role Manager',      ready: true },
   { id: 'reset',       label: '⚠️ Data Reset',        ready: true },
   { id: 'notifications', label: '🔔 Notifications',   ready: true },
-  { id: 'api',         label: '🔌 API',               ready: true,  href: '/admin/api' },
-  { id: 'backup',      label: '💾 Backup',             ready: true,  href: '/admin/backup' },
-  { id: 'accounts',    label: '👤 Accounts',          ready: true, href: '/admin/users' },
-  { id: 'debug',       label: '📱 Mobile Debug',      ready: true, href: '/admin/debug' },
+  { id: 'api',         label: '🔌 API',               ready: true },
+  { id: 'backup',      label: '💾 Backup',             ready: true },
+  { id: 'accounts',    label: '👤 Accounts',          ready: true },
+  { id: 'debug',       label: '📱 Mobile Debug',      ready: true },
 ]
 
 export default function Admin() {
@@ -802,6 +802,10 @@ export default function Admin() {
       case 'roles': return <RoleManager />
       case 'reset': return <ResetSection />
       case 'notifications': return <NotificationsSection />
+      case 'api': return <ApiSection />
+      case 'backup': return <BackupSection />
+      case 'accounts': return <AccountsSection />
+      case 'debug': return <DebugSection />
       default: return <PlannedSection title={NAV_ITEMS.find(n => n.id === activeSection)?.label || ''} />
     }
   }
@@ -1381,6 +1385,705 @@ function PlannedSection({ title }: { title: string }) {
       <div className="text-4xl mb-4">🚧</div>
       <h2 className="text-xl font-bold text-gray-400 mb-2">{title}</h2>
       <span className="mt-2 text-xs bg-[#222] text-gray-500 px-3 py-1 rounded-full">Coming Soon</span>
+    </div>
+  )
+}
+
+// ── API Section ─────────────────────────────────────────────────────────────
+const API_TABLES = [
+  { name: 'debug_logs',               icon: '📱', group: 'Monitoring',  desc: 'Android app logs' },
+  { name: 'live_movement',            icon: '🚚', group: 'Operations',  desc: 'Current truck locations and statuses' },
+  { name: 'printroom_entries',        icon: '🖨️', group: 'Operations',  desc: 'Print room door assignments' },
+  { name: 'loading_doors',            icon: '🚪', group: 'Operations',  desc: 'Loading door status and dock lock state' },
+  { name: 'staging_doors',            icon: '📋', group: 'Operations',  desc: 'PreShift staging door assignments' },
+  { name: 'trucks',                   icon: '🚛', group: 'Fleet',       desc: 'Truck database' },
+  { name: 'tractors',                 icon: '🚛', group: 'Fleet',       desc: 'Tractor/semi assignments' },
+  { name: 'trailer_list',             icon: '📦', group: 'Fleet',       desc: 'Trailer inventory list' },
+  { name: 'status_values',            icon: '🏷️', group: 'Config',      desc: 'Truck status options' },
+  { name: 'door_status_values',       icon: '🏷️', group: 'Config',      desc: 'Loading door status options' },
+  { name: 'dock_lock_status_values',  icon: '🔒', group: 'Config',      desc: 'Dock lock status options' },
+  { name: 'automation_rules',         icon: '⚡', group: 'Config',      desc: 'IF/THEN automation rules' },
+  { name: 'routes',                   icon: '🗺️', group: 'Config',      desc: 'Route definitions' },
+  { name: 'profiles',                 icon: '👤', group: 'Users',       desc: 'User profiles, roles, avatar colors' },
+  { name: 'role_permissions',         icon: '🛡️', group: 'Users',       desc: 'Role definitions and page access' },
+  { name: 'notifications',            icon: '🔔', group: 'Users',       desc: 'Push notification log' },
+  { name: 'notification_preferences', icon: '🔔', group: 'Users',       desc: 'Per-user notification preferences' },
+  { name: 'global_messages',          icon: '📢', group: 'Users',       desc: 'Admin broadcast banners' },
+  { name: 'truck_subscriptions',      icon: '📲', group: 'Users',       desc: 'User truck subscriptions' },
+  { name: 'chat_rooms',               icon: '💬', group: 'Chat',        desc: 'Chat room definitions' },
+  { name: 'messages',                 icon: '💬', group: 'Chat',        desc: 'Chat messages' },
+  { name: 'ptt_messages',             icon: '🎙️', group: 'Chat',        desc: 'PTT voice message log' },
+  { name: 'reset_log',                icon: '⚠️', group: 'System',      desc: 'History of manual data resets' },
+  { name: 'route_imports',            icon: '📄', group: 'System',      desc: 'Route CSV import history' },
+]
+const API_GROUPS = ['Monitoring', 'Operations', 'Fleet', 'Config', 'Users', 'Chat', 'System']
+const API_LVL_COLOR: Record<string, string> = { INFO: 'text-blue-400', ERROR: 'text-red-400', WARN: 'text-yellow-400', DEBUG: 'text-purple-400', OK: 'text-green-400' }
+const API_LVL_BG:    Record<string, string> = { ERROR: 'bg-red-950/30 border-l-2 border-red-500/50', WARN: 'bg-yellow-950/20 border-l-2 border-yellow-500/30' }
+
+function ApiSection() {
+  const [tab, setTab]                   = useState<'explorer' | 'docs' | 'live'>('explorer')
+  const [selTable, setSelTable]         = useState('debug_logs')
+  const [tableData, setTableData]       = useState<Record<string, unknown>[]>([])
+  const [counts, setCounts]             = useState<Record<string, number | string>>({})
+  const [loadingData, setLoadingData]   = useState(false)
+  const [filterText, setFilterText]     = useState('')
+  const [limitVal, setLimitVal]         = useState('100')
+  const [jsonMode, setJsonMode]         = useState(false)
+  const [copied, setCopied]             = useState(false)
+  const [token, setToken]               = useState('')
+  const [liveLevel, setLiveLevel]       = useState('')
+  const [liveTag, setLiveTag]           = useState('')
+  const [liveDev, setLiveDev]           = useState('')
+  const [liveLogs, setLiveLogs]         = useState<Record<string, unknown>[]>([])
+  const [liveOn, setLiveOn]             = useState(false)
+  const liveRef    = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const logEndRef  = useRef<HTMLDivElement>(null)
+  const watchRef   = useRef<ReturnType<typeof setInterval> | null>(null)
+  const BASE_URL   = typeof window !== 'undefined' ? window.location.origin : ''
+  const apiBase    = `${BASE_URL}/api/badger`
+  const grouped    = API_GROUPS.map(g => ({ group: g, tables: API_TABLES.filter(t => t.group === g) }))
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => { if (session?.access_token) setToken(session.access_token) })
+  }, [])
+  useEffect(() => {
+    if (!token) return
+    fetch(apiBase, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { if (d.counts) setCounts(d.counts) }).catch(() => {})
+  }, [token, apiBase])
+
+  const loadTable = useCallback(async (tbl: string) => {
+    if (!token) return
+    setLoadingData(true); setTableData([])
+    const p = new URLSearchParams({ table: tbl, limit: limitVal })
+    if (filterText) p.set('filter', filterText)
+    const d = await fetch(`${apiBase}?${p}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json())
+    setTableData(d.data || []); setLoadingData(false)
+  }, [token, limitVal, filterText, apiBase])
+
+  useEffect(() => { if (tab === 'explorer' && token) loadTable(selTable) }, [selTable, tab, token]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const subscribeLive = useCallback(() => {
+    if (liveRef.current) { supabase.removeChannel(liveRef.current); liveRef.current = null }
+    const ch = supabase.channel(`api-live-${Date.now()}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'debug_logs' }, payload => {
+        setLiveLogs(prev => [...prev.slice(-499), payload.new as Record<string, unknown>])
+        setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+      })
+    ch.subscribe(); liveRef.current = ch
+  }, [])
+
+  const startLive = useCallback(() => {
+    setLiveLogs([]); setLiveOn(true); subscribeLive()
+    watchRef.current = setInterval(() => {
+      const ch = liveRef.current as unknown as { state?: string } | null
+      if (!ch || ch.state !== 'joined') subscribeLive()
+    }, 15000)
+  }, [subscribeLive])
+
+  const stopLive = useCallback(() => {
+    if (watchRef.current) { clearInterval(watchRef.current); watchRef.current = null }
+    if (liveRef.current) { supabase.removeChannel(liveRef.current); liveRef.current = null }
+    setLiveOn(false)
+  }, [])
+
+  useEffect(() => { if (tab === 'live') startLive(); else stopLive() }, [tab]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => stopLive(), [stopLive])
+
+  const filtLive = liveLogs.filter(l => {
+    if (liveLevel && l.level !== liveLevel) return false
+    if (liveTag && !String(l.tag || '').toLowerCase().includes(liveTag.toLowerCase())) return false
+    if (liveDev && !String(l.device_name || l.device_id || '').toLowerCase().includes(liveDev.toLowerCase())) return false
+    return true
+  })
+
+  return (
+    <div className="max-w-[1100px]">
+      <div className="flex items-center justify-between mb-5">
+        <div><h1 className="text-xl font-bold">🔌 Badger API</h1><p className="text-xs text-gray-500 mt-1">Explore database tables, monitor live device logs</p></div>
+        <div className="flex gap-1 bg-[#111] rounded-lg p-1">
+          {(['explorer','live','docs'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors capitalize ${tab === t ? 'bg-amber-500 text-black' : 'text-gray-400 hover:text-white'}`}>
+              {t === 'explorer' ? '🔍 Explorer' : t === 'live' ? '📡 Live' : '📖 Docs'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === 'explorer' && (
+        <div className="flex gap-4 items-start">
+          <div className="w-52 flex-shrink-0 space-y-3">
+            {grouped.map(({ group, tables }) => (
+              <div key={group}>
+                <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider px-1 mb-1">{group}</div>
+                {tables.map(t => (
+                  <button key={t.name} onClick={() => setSelTable(t.name)}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-between gap-1 ${selTable === t.name ? 'bg-amber-500/15 text-amber-400 font-medium' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+                    <span className="truncate">{t.icon} {t.name}</span>
+                    {counts[t.name] !== undefined && <span className="text-[10px] text-gray-600 flex-shrink-0">{counts[t.name]}</span>}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <span className="text-sm font-bold text-amber-500">{selTable}</span>
+              <span className="text-xs text-gray-500 flex-1">{API_TABLES.find(t => t.name === selTable)?.desc}</span>
+              <input value={filterText} onChange={e => setFilterText(e.target.value)} placeholder="level=eq.ERROR"
+                className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-xs w-40 focus:border-amber-500 outline-none font-mono" />
+              <select value={limitVal} onChange={e => setLimitVal(e.target.value)} className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-xs outline-none">
+                {['25','50','100','250','500'].map(v => <option key={v} value={v}>{v} rows</option>)}
+              </select>
+              <button onClick={() => loadTable(selTable)} disabled={loadingData} className="bg-amber-500 text-black px-3 py-1 rounded text-xs font-bold hover:bg-amber-400 disabled:opacity-50">{loadingData ? '...' : '▶ Run'}</button>
+              <button onClick={() => setJsonMode(m => !m)} className={`px-3 py-1 rounded text-xs font-bold border transition-colors ${jsonMode ? 'bg-purple-500/20 border-purple-500/50 text-purple-400' : 'border-[#333] text-gray-500 hover:text-white'}`}>{'{}'}</button>
+              <button onClick={() => { navigator.clipboard.writeText(JSON.stringify(tableData, null, 2)); setCopied(true); setTimeout(() => setCopied(false), 1500) }} className="px-3 py-1 rounded text-xs font-bold border border-[#333] text-gray-500 hover:text-white">{copied ? '✔' : '📋'}</button>
+            </div>
+            <div className="bg-[#111] rounded-lg px-3 py-2 mb-3 font-mono text-[11px] text-gray-500 flex items-center gap-2 overflow-x-auto">
+              <span className="text-green-500 flex-shrink-0">GET</span>
+              <span>{apiBase}?table={selTable}&limit={limitVal}{filterText ? `&filter=${filterText}` : ''}</span>
+            </div>
+            {loadingData ? <div className="text-center py-20 text-gray-500 text-sm">Loading {selTable}...</div>
+              : tableData.length === 0 ? <div className="text-center py-20 text-gray-500 text-sm">No rows returned</div>
+              : jsonMode ? <pre className="bg-[#111] border border-[#333] rounded-xl p-4 text-[11px] text-green-400 overflow-auto max-h-[600px] font-mono">{JSON.stringify(tableData, null, 2)}</pre>
+              : (
+                <div className="bg-[#1a1a1a] border border-[#333] rounded-xl overflow-hidden">
+                  <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 z-10 bg-[#111] border-b border-[#333]">
+                        <tr>{Object.keys(tableData[0]).map(col => <th key={col} className="px-3 py-2 text-left font-bold text-amber-500 whitespace-nowrap">{col}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {tableData.map((row, i) => (
+                          <tr key={i} className={`border-b border-white/5 hover:bg-white/[0.02] ${selTable === 'debug_logs' ? (API_LVL_BG[String(row.level)] || '') : ''}`}>
+                            {Object.entries(row).map(([col, val]) => {
+                              let disp: React.ReactNode = val === null ? <span className="text-gray-600">null</span>
+                                : val === true ? <span className="text-green-400">true</span>
+                                : val === false ? <span className="text-red-400">false</span>
+                                : typeof val === 'object' ? <span className="text-blue-400">{JSON.stringify(val)}</span>
+                                : String(val)
+                              if (col === 'level' && typeof val === 'string') disp = <span className={`font-bold ${API_LVL_COLOR[val] || 'text-gray-400'}`}>{val}</span>
+                              if (['created_at','updated_at','reset_at'].includes(col) && val) disp = <span className="text-gray-500">{new Date(String(val)).toLocaleString()}</span>
+                              if ((col === 'status_color' || col === 'avatar_color') && typeof val === 'string') disp = <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full" style={{ background: val }} />{val}</span>
+                              return <td key={col} className="px-3 py-1.5 align-top max-w-[300px]"><div className="truncate">{disp}</div></td>
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="px-3 py-2 border-t border-[#333] text-[10px] text-gray-500">{tableData.length} rows</div>
+                </div>
+              )}
+          </div>
+        </div>
+      )}
+
+      {tab === 'live' && (
+        <div>
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
+            <span className={`w-2 h-2 rounded-full ${liveOn ? 'bg-green-500 animate-pulse' : 'bg-gray-600'}`} />
+            <span className="text-sm font-bold">{liveOn ? 'Live — watching debug_logs' : 'Stopped'}</span>
+            <button onClick={liveOn ? stopLive : startLive} className={`px-4 py-1.5 rounded-lg text-xs font-bold ${liveOn ? 'bg-red-900/50 text-red-400' : 'bg-green-700 text-white'}`}>{liveOn ? '⏹ Stop' : '▶ Start'}</button>
+            <button onClick={() => setLiveLogs([])} className="px-4 py-1.5 rounded-lg text-xs font-bold border border-[#333] text-gray-500 hover:text-white">🗑 Clear</button>
+            <span className="text-xs text-gray-600 ml-auto">{liveLogs.length} events</span>
+            <select value={liveLevel} onChange={e => setLiveLevel(e.target.value)} className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-xs outline-none">
+              <option value="">All levels</option>{['DEBUG','INFO','WARN','ERROR','OK'].map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+            <input value={liveTag} onChange={e => setLiveTag(e.target.value)} placeholder="Tag..." className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-xs w-28 outline-none" />
+            <input value={liveDev} onChange={e => setLiveDev(e.target.value)} placeholder="Device..." className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-xs w-28 outline-none" />
+          </div>
+          <div className="bg-[#0a0a0a] border border-[#333] rounded-xl overflow-hidden">
+            <div className="h-[600px] overflow-y-auto font-mono text-[11px] p-3 space-y-0.5">
+              {filtLive.length === 0 && <div className="text-center text-gray-600 py-20">{liveOn ? 'Waiting for device events...' : 'Start live monitor to capture logs'}</div>}
+              {filtLive.map((log, i) => (
+                <div key={i} className={`flex gap-2 px-2 py-1 rounded ${API_LVL_BG[String(log.level)] || 'hover:bg-white/[0.02]'}`}>
+                  <span className="text-gray-600 w-20 truncate">{new Date(String(log.created_at)).toLocaleTimeString()}</span>
+                  <span className={`font-bold w-12 ${API_LVL_COLOR[String(log.level)] || 'text-gray-400'}`}>{String(log.level)}</span>
+                  <span className="text-amber-500/70 w-28 truncate">{String(log.tag || '')}</span>
+                  <span className="text-gray-300 flex-1 break-all">{String(log.message || '')}</span>
+                  <span className="text-gray-600 truncate max-w-[120px]">{String(log.device_name || log.device_id || '')}</span>
+                </div>
+              ))}
+              <div ref={logEndRef} />
+            </div>
+            <div className="border-t border-[#333] px-3 py-2 text-[10px] text-gray-600 flex gap-4">
+              {['DEBUG','INFO','WARN','ERROR','OK'].map(l => <span key={l} className={API_LVL_COLOR[l]}>{l}: {liveLogs.filter(x => x.level === l).length}</span>)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'docs' && (
+        <div className="space-y-5 max-w-3xl">
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-5">
+            <h2 className="text-lg font-bold mb-2">📖 Badger API</h2>
+            <p className="text-sm text-gray-400 mb-3">Read-only REST API for all Badger data. Requires admin auth.</p>
+            <div className="bg-[#111] rounded-lg px-4 py-3 font-mono text-sm text-green-400">{apiBase}</div>
+          </div>
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-5">
+            <h3 className="font-bold text-amber-500 mb-3">🔑 Auth</h3>
+            <pre className="bg-[#111] rounded p-3 text-xs text-green-400 overflow-x-auto">{`Authorization: Bearer <session-token>\nx-badger-api-key: <BADGER_API_KEY>`}</pre>
+          </div>
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-5">
+            <h3 className="font-bold text-amber-500 mb-3">⚙️ Params: table, limit, filter, select, all</h3>
+            <pre className="bg-[#111] rounded p-3 text-xs text-green-400 overflow-x-auto">{`${apiBase}?table=debug_logs&limit=50&filter=level=eq.ERROR`}</pre>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Backup Section ───────────────────────────────────────────────────────────
+function BackupSection() {
+  const [webhookUrl, setWebhookUrl]   = useState('')
+  const [savedWebhook, setSavedWebhook] = useState('')
+  const [lastBackup, setLastBackup]   = useState<Record<string, unknown> | null>(null)
+  const [running, setRunning]         = useState(false)
+  const [result, setResult]           = useState<Record<string, unknown> | null>(null)
+  const [error, setError]             = useState<string | null>(null)
+  const [showHook, setShowHook]       = useState(false)
+
+  const fetchStatus = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    const res = await fetch('/api/admin/backup', { headers: { Authorization: `Bearer ${session.access_token}` } })
+    if (res.ok) setLastBackup(await res.json())
+  }, [])
+
+  useEffect(() => {
+    const saved = localStorage.getItem('badger_discord_webhook')
+    if (saved) { setSavedWebhook(saved); setWebhookUrl(saved) }
+    fetchStatus()
+  }, [fetchStatus])
+
+  const saveHook = () => { localStorage.setItem('badger_discord_webhook', webhookUrl); setSavedWebhook(webhookUrl) }
+
+  const runBackup = async () => {
+    const url = savedWebhook || webhookUrl
+    if (!url) { setError('Enter a Discord webhook URL first'); return }
+    setRunning(true); setResult(null); setError(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
+      const res = await fetch('/api/admin/backup', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ webhook_url: url }) })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Backup failed')
+      setResult(data); fetchStatus()
+    } catch (e) { setError(String(e)) }
+    setRunning(false)
+  }
+
+  const fmt = (ts: string) => new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+  const ago = (ts: string) => { const h = Math.floor((Date.now() - new Date(ts).getTime()) / 3600000); const m = Math.floor(((Date.now() - new Date(ts).getTime()) % 3600000) / 60000); return h > 24 ? `${Math.floor(h/24)}d ago` : h > 0 ? `${h}h ${m}m ago` : `${m}m ago` }
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div><h1 className="text-xl font-bold">💾 Database Backup</h1><p className="text-xs text-gray-500 mt-1">Exports all tables as JSON and sends to Discord.</p></div>
+
+      <div className={`rounded-2xl border p-5 ${lastBackup?.last_backup_at ? lastBackup.last_backup_status === 'success' ? 'bg-green-950/20 border-green-500/30' : 'bg-yellow-950/20 border-yellow-500/30' : 'bg-[#111] border-[#333]'}`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">{lastBackup?.last_backup_at ? lastBackup.last_backup_status === 'success' ? '✅' : '⚠️' : '📭'}</span>
+            <div>
+              <div className="font-semibold text-sm">{lastBackup?.last_backup_at ? 'Last Backup' : 'No backups yet'}</div>
+              {lastBackup?.last_backup_at && <div className="text-xs text-gray-500 mt-0.5">{fmt(String(lastBackup.last_backup_at))} · {ago(String(lastBackup.last_backup_at))}</div>}
+            </div>
+          </div>
+          {lastBackup?.last_backup_at && (
+            <div className="text-right text-xs text-gray-500 space-y-0.5">
+              <div>{String(lastBackup.last_backup_tables)} tables</div>
+              <div>{Number(lastBackup.last_backup_rows).toLocaleString()} rows</div>
+              <div>{String(lastBackup.last_backup_size_kb)} KB</div>
+            </div>
+          )}
+        </div>
+        {lastBackup?.last_backup_filename && <div className="mt-3 font-mono text-[11px] text-gray-500 bg-black/30 rounded px-3 py-1.5">{String(lastBackup.last_backup_filename)}</div>}
+      </div>
+
+      <div className="bg-[#111] border border-[#333] rounded-2xl p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <div><div className="font-semibold text-sm">Discord Webhook</div><div className="text-xs text-gray-500">{savedWebhook ? '✅ Saved' : 'Not configured'}</div></div>
+          <button onClick={() => setShowHook(v => !v)} className="text-xs text-amber-400 hover:text-amber-300">{showHook ? 'Hide' : 'Edit'}</button>
+        </div>
+        {showHook && (
+          <div className="space-y-2">
+            <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="https://discord.com/api/webhooks/..."
+              className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-amber-500 outline-none font-mono" />
+            <button onClick={saveHook} disabled={!webhookUrl} className="px-4 py-1.5 bg-amber-500/20 border border-amber-500/40 rounded-lg text-sm text-amber-400 disabled:opacity-40">💾 Save Webhook</button>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-[#111] border border-[#333] rounded-2xl p-5 space-y-4">
+        <div><div className="font-semibold text-sm">Manual Backup</div><div className="text-xs text-gray-500">All tables exported — new tables included automatically</div></div>
+        <button onClick={runBackup} disabled={running || !savedWebhook}
+          className="w-full py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 rounded-xl font-bold text-black text-sm flex items-center justify-center gap-2">
+          {running ? <><span className="animate-spin">⏳</span>Running...</> : <>💾 Run Backup Now</>}
+        </button>
+        {!savedWebhook && <p className="text-xs text-gray-500 text-center">Configure Discord webhook above first</p>}
+        {result && <div className="bg-green-950/30 border border-green-500/30 rounded-xl p-4"><div className="text-green-400 font-bold text-sm">✅ Backup sent to Discord</div><div className="font-mono text-[11px] text-gray-500 mt-1">{String(result.filename)}</div></div>}
+        {error && <div className="bg-red-950/30 border border-red-500/30 rounded-xl p-4"><div className="text-red-400 font-bold text-sm">❌ {error}</div></div>}
+      </div>
+
+      <div className="bg-[#111] border border-[#333] rounded-2xl p-5 space-y-2">
+        <div className="font-semibold text-sm">📋 How to Restore</div>
+        <ol className="text-xs text-gray-500 space-y-1.5 list-decimal list-inside">
+          <li>Download the <code className="bg-black/40 px-1 rounded">.json</code> file from Discord</li>
+          <li>Send it to Claude and say <span className="text-amber-400/80 italic">&quot;Convert this Badger backup to SQL INSERT statements&quot;</span></li>
+          <li>Run the generated SQL in your Supabase SQL editor</li>
+        </ol>
+      </div>
+    </div>
+  )
+}
+
+// ── Accounts Section ─────────────────────────────────────────────────────────
+type AcctRole = 'admin' | 'print_room' | 'truck_mover' | 'trainee' | 'driver'
+interface AcctUser { id: string; username: string; display_name: string | null; role: AcctRole; avatar_color: string; avatar_url: string | null; phone: string | null; sms_enabled: boolean; created_at: string; email?: string }
+interface AcctEditForm { displayName: string; username: string; email: string; phone: string; role: AcctRole; smsEnabled: boolean; newPassword: string; showPassword: boolean }
+const ACCT_ROLES: { value: AcctRole; label: string; color: string }[] = [
+  { value: 'admin',       label: '🔧 Admin',       color: '#f59e0b' },
+  { value: 'print_room',  label: '🖨️ Print Room', color: '#3b82f6' },
+  { value: 'truck_mover', label: '🚛 Truck Mover', color: '#8b5cf6' },
+  { value: 'trainee',     label: '📚 Trainee',     color: '#22c55e' },
+  { value: 'driver',      label: '🚚 Driver',      color: '#6b7280' },
+]
+const ACCT_CREATE_DEFAULT = { email: '', password: '', username: '', displayName: '', role: 'driver' as AcctRole }
+
+function AccountsSection() {
+  const [users, setUsers]           = useState<AcctUser[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [search, setSearch]         = useState('')
+  const [editUser, setEditUser]     = useState<AcctUser | null>(null)
+  const [editForm, setEditForm]     = useState<AcctEditForm | null>(null)
+  const [saving, setSaving]         = useState(false)
+  const [resetting, setResetting]   = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
+  const [createForm, setCreateForm] = useState(ACCT_CREATE_DEFAULT)
+  const [creating, setCreating]     = useState(false)
+  const [showCreatePw, setShowCreatePw] = useState(false)
+  const [myId, setMyId]             = useState<string | null>(null)
+
+  const fetchUsers = useCallback(async () => {
+    setLoading(true)
+    const { data: v, error: ve } = await supabase.from('profiles_with_email').select('*').order('created_at', { ascending: false })
+    if (!ve && v) { setUsers(v as AcctUser[]) }
+    else { const { data: f } = await supabase.from('profiles').select('*').order('created_at', { ascending: false }); setUsers((f || []) as AcctUser[]) }
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => { if (session?.user) setMyId(session.user.id) })
+    fetchUsers()
+  }, [fetchUsers])
+
+  const openEdit = (u: AcctUser) => { setEditUser(u); setEditForm({ displayName: u.display_name || '', username: u.username, email: u.email || '', phone: u.phone || '', role: u.role, smsEnabled: u.sms_enabled, newPassword: '', showPassword: false }) }
+
+  const saveEdit = async () => {
+    if (!editUser || !editForm || !myId) return
+    setSaving(true)
+    const upd: Record<string, unknown> = { displayName: editForm.displayName, username: editForm.username, role: editForm.role, phone: editForm.phone, smsEnabled: editForm.smsEnabled }
+    if (editForm.email !== editUser.email) upd.email = editForm.email
+    if (editForm.newPassword) upd.newPassword = editForm.newPassword
+    const res = await fetch('/api/admin/update-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requesterId: myId, targetId: editUser.id, updates: upd }) })
+    const data = await res.json(); setSaving(false)
+    if (!data.error) { setEditUser(null); setEditForm(null); fetchUsers() }
+  }
+
+  const sendReset = async () => {
+    if (!editUser || !editForm?.email || !myId) return
+    setResetting(true)
+    await fetch('/api/admin/reset-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requesterId: myId, targetEmail: editForm.email || editUser.email }) })
+    setResetting(false)
+  }
+
+  const deleteUser = async (u: AcctUser) => {
+    if (!confirm(`Delete @${u.username}?`)) return
+    await fetch('/api/admin/update-user', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requesterId: myId, targetId: u.id }) })
+    fetchUsers()
+  }
+
+  const createUser = async () => {
+    if (!createForm.email || !createForm.password || !createForm.username || createForm.password.length < 6) return
+    setCreating(true)
+    const res = await fetch('/api/admin/create-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...createForm, requesterId: myId }) })
+    const data = await res.json(); setCreating(false)
+    if (!data.error) { setShowCreate(false); setCreateForm(ACCT_CREATE_DEFAULT); fetchUsers() }
+  }
+
+  const filtered = users.filter(u => [u.username, u.display_name || '', u.email || ''].some(s => s.toLowerCase().includes(search.toLowerCase())))
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div><h1 className="text-xl font-bold">👤 User Management</h1><p className="text-xs text-gray-500 mt-1">{users.length} registered users</p></div>
+        <div className="flex items-center gap-3">
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2 text-sm focus:border-amber-500 outline-none w-52" />
+          <button onClick={() => setShowCreate(true)} className="bg-amber-500 hover:bg-amber-400 text-black font-bold px-4 py-2 rounded-xl text-sm whitespace-nowrap">+ Create Account</button>
+        </div>
+      </div>
+
+      <div className="bg-[#1a1a1a] border border-[#333] rounded-2xl overflow-hidden">
+        {loading ? <div className="text-center py-12 text-gray-500 text-sm">Loading...</div>
+          : filtered.length === 0 ? <div className="text-center py-12 text-gray-500 text-sm">No users found</div>
+          : filtered.map(u => {
+            const ri = ACCT_ROLES.find(r => r.value === u.role)
+            return (
+              <div key={u.id} className="flex items-center px-6 py-4 border-b border-[#222] hover:bg-[#111] gap-4 flex-wrap">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  {u.avatar_url ? <img src={u.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
+                    : <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0" style={{ background: u.avatar_color || '#f59e0b' }}>{(u.display_name || u.username).slice(0,2).toUpperCase()}</div>}
+                  <div className="min-w-0">
+                    <div className="font-medium text-sm truncate">{u.display_name || u.username}</div>
+                    <div className="text-xs text-gray-500">@{u.username}{u.email ? ` · ${u.email}` : ''}</div>
+                    {u.id === myId && <div className="text-[10px] text-amber-500">YOU</div>}
+                  </div>
+                </div>
+                <span className="text-xs font-medium px-2 py-1 rounded-full border" style={{ color: ri?.color, borderColor: (ri?.color || '#888') + '44', background: (ri?.color || '#888') + '11' }}>{ri?.label}</span>
+                <div className="flex gap-2">
+                  <button onClick={() => openEdit(u)} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', color: '#fbbf24' }}>✏️ Edit</button>
+                  {u.id !== myId && <button onClick={() => deleteUser(u)} className="px-2 py-1.5 rounded-lg text-xs" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>🗑️</button>}
+                </div>
+              </div>
+            )
+          })}
+      </div>
+
+      {editUser && editForm && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => { setEditUser(null); setEditForm(null) }}>
+          <div className="bg-[#111] border border-[#333] rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-[#333]">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{ background: editUser.avatar_color || '#f59e0b' }}>{(editUser.display_name || editUser.username).slice(0,2).toUpperCase()}</div>
+              <div><div className="font-bold">{editUser.display_name || editUser.username}</div><div className="text-xs text-gray-500">@{editUser.username}</div></div>
+              <button onClick={() => { setEditUser(null); setEditForm(null) }} className="ml-auto text-gray-500 hover:text-white text-xl">✕</button>
+            </div>
+            <div className="p-6 space-y-5">
+              <section>
+                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Identity</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs text-gray-500 mb-1 block">Display Name</label><input value={editForm.displayName} onChange={e => setEditForm({ ...editForm, displayName: e.target.value })} className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2 text-sm focus:border-amber-500 outline-none" /></div>
+                  <div><label className="text-xs text-gray-500 mb-1 block">@Username</label><input value={editForm.username} onChange={e => setEditForm({ ...editForm, username: e.target.value.toLowerCase().replace(/\s/g,'') })} className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2 text-sm focus:border-amber-500 outline-none font-mono" /></div>
+                </div>
+              </section>
+              <section>
+                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Role</div>
+                <div className="grid grid-cols-3 gap-2">
+                  {ACCT_ROLES.map(r => <button key={r.value} onClick={() => setEditForm({ ...editForm, role: r.value })} disabled={editUser.id === myId} style={{ border: `1px solid ${editForm.role === r.value ? r.color : '#333'}`, background: editForm.role === r.value ? r.color+'22' : 'transparent', color: editForm.role === r.value ? r.color : '#888', padding: '8px 6px', borderRadius: 8, fontSize: 11, fontWeight: 600 }}>{r.label}</button>)}
+                </div>
+              </section>
+              <section>
+                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Contact</div>
+                <div className="space-y-3">
+                  <div><label className="text-xs text-gray-500 mb-1 block">Email</label><input type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2 text-sm focus:border-amber-500 outline-none" /></div>
+                  <div><label className="text-xs text-gray-500 mb-1 block">Phone</label><input value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2 text-sm focus:border-amber-500 outline-none font-mono" /></div>
+                </div>
+              </section>
+              <section>
+                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Password</div>
+                <div className="space-y-2">
+                  <div className="relative">
+                    <input type={editForm.showPassword ? 'text' : 'password'} value={editForm.newPassword} onChange={e => setEditForm({ ...editForm, newPassword: e.target.value })} placeholder="New password (blank to keep)" className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2 pr-10 text-sm focus:border-amber-500 outline-none" />
+                    <button type="button" onClick={() => setEditForm({ ...editForm, showPassword: !editForm.showPassword })} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs">{editForm.showPassword ? '🙈' : '👁️'}</button>
+                  </div>
+                  <button onClick={sendReset} disabled={resetting || !editForm.email} className="w-full bg-[#1a1a1a] border border-[#333] hover:border-amber-500/50 text-sm py-2 rounded-lg text-gray-500 hover:text-white disabled:opacity-40">{resetting ? 'Sending...' : '📧 Send Password Reset Email'}</button>
+                </div>
+              </section>
+            </div>
+            <div className="px-6 py-4 border-t border-[#333] flex gap-3">
+              <button onClick={saveEdit} disabled={saving} className="flex-1 bg-amber-500 hover:bg-amber-400 text-black font-bold py-2.5 rounded-xl text-sm disabled:opacity-50">{saving ? 'Saving...' : 'Save Changes'}</button>
+              <button onClick={() => { setEditUser(null); setEditForm(null) }} className="bg-[#333] hover:bg-[#444] text-white px-5 py-2.5 rounded-xl text-sm">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => { setShowCreate(false); setCreateForm(ACCT_CREATE_DEFAULT) }}>
+          <div className="bg-[#111] border border-[#333] rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-bold">🆕 Create Account</h2>
+              <button onClick={() => { setShowCreate(false); setCreateForm(ACCT_CREATE_DEFAULT) }} className="text-gray-500 hover:text-white text-xl">✕</button>
+            </div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-xs text-gray-500 mb-1 block">Username *</label><input value={createForm.username} onChange={e => setCreateForm({ ...createForm, username: e.target.value.toLowerCase().replace(/\s/g,'') })} placeholder="johnd" className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2 text-sm focus:border-amber-500 outline-none font-mono" /></div>
+                <div><label className="text-xs text-gray-500 mb-1 block">Display Name</label><input value={createForm.displayName} onChange={e => setCreateForm({ ...createForm, displayName: e.target.value })} placeholder="John D." className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2 text-sm focus:border-amber-500 outline-none" /></div>
+              </div>
+              <div><label className="text-xs text-gray-500 mb-1 block">Email *</label><input type="email" value={createForm.email} onChange={e => setCreateForm({ ...createForm, email: e.target.value })} className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2 text-sm focus:border-amber-500 outline-none" /></div>
+              <div><label className="text-xs text-gray-500 mb-1 block">Password *</label>
+                <div className="relative"><input type={showCreatePw ? 'text' : 'password'} value={createForm.password} onChange={e => setCreateForm({ ...createForm, password: e.target.value })} placeholder="Min 6 chars" className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2 pr-10 text-sm focus:border-amber-500 outline-none" /><button type="button" onClick={() => setShowCreatePw(s=>!s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs">{showCreatePw ? '🙈' : '👁️'}</button></div>
+              </div>
+              <div><label className="text-xs text-gray-500 mb-2 block">Role</label><div className="grid grid-cols-3 gap-2">{ACCT_ROLES.map(r => <button key={r.value} onClick={() => setCreateForm({ ...createForm, role: r.value })} style={{ border: `1px solid ${createForm.role===r.value?r.color:'#333'}`, background: createForm.role===r.value?r.color+'22':'transparent', color: createForm.role===r.value?r.color:'#888', padding:'8px 6px', borderRadius:8, fontSize:11, fontWeight:600 }}>{r.label}</button>)}</div></div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={createUser} disabled={creating} className="flex-1 bg-amber-500 hover:bg-amber-400 text-black font-bold py-2.5 rounded-xl text-sm disabled:opacity-50">{creating ? 'Creating...' : 'Create Account'}</button>
+              <button onClick={() => { setShowCreate(false); setCreateForm(ACCT_CREATE_DEFAULT) }} className="bg-[#333] hover:bg-[#444] text-white px-5 py-2.5 rounded-xl text-sm">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Debug Section ─────────────────────────────────────────────────────────────
+interface DbgLog { id: number; device_id: string; device_name: string | null; level: string; tag: string | null; message: string; created_at: string }
+const DBG_COLOR: Record<string, string> = { INFO: 'text-blue-400', OK: 'text-green-400', ERROR: 'text-red-400', WARN: 'text-yellow-400', DEBUG: 'text-purple-400' }
+const DBG_DOT:   Record<string, string> = { INFO: 'bg-blue-400',   OK: 'bg-green-400',   ERROR: 'bg-red-400',   WARN: 'bg-yellow-400',  DEBUG: 'bg-purple-400' }
+const DBG_ROW:   Record<string, string> = { ERROR: 'bg-red-950/30 border-l-2 border-red-500/50', WARN: 'bg-yellow-950/20 border-l-2 border-yellow-500/30' }
+
+function DebugSection() {
+  const [logs, setLogs]                 = useState<DbgLog[]>([])
+  const [loading, setLoading]           = useState(true)
+  const [devFilter, setDevFilter]       = useState('')
+  const [lvlFilter, setLvlFilter]       = useState('')
+  const [tagFilter, setTagFilter]       = useState('')
+  const [autoRefresh, setAutoRefresh]   = useState(true)
+  const [devices, setDevices]           = useState<{ device_id: string; device_name: string | null }[]>([])
+  const [nicks, setNicks]               = useState<Record<string, string>>({})
+  const [lastRef, setLastRef]           = useState<Date | null>(null)
+  const [editNick, setEditNick]         = useState<string | null>(null)
+  const [nickIn, setNickIn]             = useState('')
+  const [deleting, setDeleting]         = useState(false)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const fetchNicks = useCallback(async () => {
+    const { data } = await supabase.from('device_nicknames').select('device_id, nickname')
+    if (data) { const m: Record<string,string> = {}; data.forEach((n: { device_id: string; nickname: string }) => { m[n.device_id] = n.nickname }); setNicks(m) }
+  }, [])
+
+  const fetchLogs = useCallback(async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q: any = supabase.from('debug_logs').select('*').order('created_at', { ascending: false }).limit(300)
+    if (devFilter) q = q.eq('device_id', devFilter)
+    if (lvlFilter) q = q.eq('level', lvlFilter)
+    if (tagFilter) q = q.ilike('tag', `%${tagFilter}%`)
+    const { data } = await q; if (data) setLogs(data); setLoading(false); setLastRef(new Date())
+  }, [devFilter, lvlFilter, tagFilter])
+
+  const fetchDevices = useCallback(async () => {
+    const { data } = await supabase.from('debug_logs').select('device_id, device_name').order('created_at', { ascending: false }).limit(500)
+    if (data) { const u = Array.from(new Map(data.map((d: { device_id: string; device_name: string | null }) => [d.device_id, d])).values()); setDevices(u as { device_id: string; device_name: string | null }[]) }
+  }, [])
+
+  useEffect(() => { fetchLogs(); fetchDevices(); fetchNicks() }, [fetchLogs, fetchDevices, fetchNicks])
+
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current)
+    if (autoRefresh) timerRef.current = setInterval(() => { fetchLogs(); fetchDevices() }, 4000)
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [autoRefresh, fetchLogs, fetchDevices])
+
+  const deleteViaApi = async (body: object): Promise<boolean> => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) return false
+    const res = await fetch('/api/admin/delete-debug-logs', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify(body) })
+    return res.ok
+  }
+
+  const clearAll = async () => { if (!confirm('Clear ALL debug logs?')) return; setDeleting(true); const ok = await deleteViaApi({ mode: 'all' }); if (ok) { setLogs([]); setDevices([]) }; setDeleting(false) }
+  const clearDev = async (id: string) => { if (!confirm('Clear logs for this device?')) return; setDeleting(true); const ok = await deleteViaApi({ mode: 'device', device_id: id }); if (ok) { if (devFilter === id) setDevFilter(''); fetchLogs(); fetchDevices() }; setDeleting(false) }
+
+  const saveNick = async (id: string) => {
+    const t = nickIn.trim()
+    if (!t) { await supabase.from('device_nicknames').delete().eq('device_id', id); setNicks(p => { const n={...p}; delete n[id]; return n }) }
+    else { await supabase.from('device_nicknames').upsert({ device_id: id, nickname: t, updated_at: new Date().toISOString() }); setNicks(p => ({...p, [id]: t})) }
+    setEditNick(null); setNickIn('')
+  }
+
+  const getLabel = (id: string, name: string | null) => nicks[id] || name || id.slice(0,14)+'…'
+  const fmtT = (ts: string) => new Date(ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const fmtD = (ts: string) => { const d = new Date(ts); return d.toDateString() === new Date().toDateString() ? 'Today' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }
+  const errCnt = logs.filter(l => l.level === 'ERROR').length
+  const wrnCnt = logs.filter(l => l.level === 'WARN').length
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div><h1 className="text-xl font-bold">📱 Mobile Debug Logs</h1><p className="text-xs text-gray-500 mt-1">Real-time logs from Android devices{lastRef && <span className="ml-2 opacity-60">· {lastRef.toLocaleTimeString('en-US',{hour12:false})}</span>}</p></div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {errCnt > 0 && <span className="bg-red-500/20 border border-red-500/40 text-red-400 text-xs px-2.5 py-1 rounded-full font-bold">⚠️ {errCnt} error{errCnt!==1?'s':''}</span>}
+          {wrnCnt > 0 && <span className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-xs px-2.5 py-1 rounded-full">{wrnCnt} warn{wrnCnt!==1?'s':''}</span>}
+          <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none ml-2">
+            <div onClick={() => setAutoRefresh(v=>!v)} className={`w-8 h-4 rounded-full relative cursor-pointer ${autoRefresh ? 'bg-amber-500' : 'bg-[#333]'}`}>
+              <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${autoRefresh ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            </div>Live
+          </label>
+          <button onClick={fetchLogs} className="px-3 py-1.5 bg-[#1a1a1a] border border-[#333] hover:border-amber-500/50 rounded-lg text-sm">🔄</button>
+          <button onClick={clearAll} disabled={deleting} className="px-3 py-1.5 bg-red-900/20 border border-red-500/30 rounded-lg text-sm text-red-400 disabled:opacity-50">{deleting ? '...' : '🗑️ Clear All'}</button>
+        </div>
+      </div>
+
+      {devices.length > 0 && (
+        <div className="flex gap-3 flex-wrap">
+          {devices.map(d => {
+            const devErr = logs.filter(l => l.device_id === d.device_id && l.level === 'ERROR').length
+            const isSel = devFilter === d.device_id
+            return (
+              <div key={d.device_id} className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm ${isSel ? 'bg-amber-500/20 border-amber-500/60' : 'bg-[#111] border-[#333] hover:border-[#555]'}`}>
+                <button onClick={() => setDevFilter(isSel ? '' : d.device_id)} className="flex items-center gap-2">
+                  <span>📱</span>
+                  <div>
+                    <div className={`text-xs font-medium leading-none ${nicks[d.device_id] ? 'text-amber-400' : isSel ? 'text-amber-300' : 'text-gray-500'}`}>{getLabel(d.device_id, d.device_name)}</div>
+                    <div className="text-[10px] opacity-50 mt-0.5">{d.device_id.slice(0,12)}…</div>
+                  </div>
+                  {devErr > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">{devErr}</span>}
+                </button>
+                {editNick === d.device_id ? (
+                  <div className="flex items-center gap-1 ml-1">
+                    <input autoFocus value={nickIn} onChange={e => setNickIn(e.target.value)} onKeyDown={e => { if (e.key==='Enter') saveNick(d.device_id); if (e.key==='Escape') setEditNick(null) }} placeholder="Nickname..." className="bg-[#222] border border-amber-500/50 rounded px-2 py-0.5 text-xs w-28 outline-none text-white" />
+                    <button onClick={() => saveNick(d.device_id)} className="text-green-400 text-xs">✔</button>
+                    <button onClick={() => setEditNick(null)} className="text-gray-500 text-xs">✕</button>
+                  </div>
+                ) : (
+                  <button onClick={() => { setEditNick(d.device_id); setNickIn(nicks[d.device_id]||'') }} className="text-[10px] text-gray-600 hover:text-amber-400" title="Nickname">✏️</button>
+                )}
+                <button onClick={() => clearDev(d.device_id)} disabled={deleting} className="text-[10px] text-red-500/40 hover:text-red-400 disabled:opacity-30" title="Delete device logs">🗑️</button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 flex-wrap bg-[#111] border border-[#333] rounded-xl px-4 py-3">
+        <select value={lvlFilter} onChange={e => setLvlFilter(e.target.value)} className="bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-1.5 text-sm text-gray-200 focus:border-amber-500 outline-none">
+          <option value="">All Levels</option>{['INFO','OK','WARN','ERROR','DEBUG'].map(l=><option key={l} value={l}>{l}</option>)}
+        </select>
+        <input value={tagFilter} onChange={e => setTagFilter(e.target.value)} placeholder="Filter by tag..." className="bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-1.5 text-sm text-gray-200 focus:border-amber-500 outline-none w-40" />
+        {(lvlFilter||tagFilter||devFilter) && <button onClick={() => {setLvlFilter('');setTagFilter('');setDevFilter('')}} className="text-xs text-gray-500 hover:text-white">✕ Clear</button>}
+        <span className="text-xs text-gray-500 ml-auto">{logs.length} entries</span>
+      </div>
+
+      <div className="bg-[#0a0a0a] border border-[#222] rounded-2xl overflow-hidden">
+        {loading ? <div className="flex items-center justify-center h-48 text-gray-500 text-sm">Loading logs...</div>
+          : logs.length === 0 ? <div className="flex flex-col items-center justify-center h-48 text-gray-500 gap-3"><span className="text-4xl">📭</span><span className="text-sm">No logs yet — open the app on a device</span></div>
+          : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs font-mono">
+                <thead className="bg-[#111] border-b border-[#222]">
+                  <tr className="text-[10px] text-gray-500 uppercase tracking-wider">
+                    <th className="px-4 py-2.5 text-left w-20">Time</th><th className="px-4 py-2.5 text-left w-14">Date</th>
+                    <th className="px-4 py-2.5 text-left w-14">Level</th><th className="px-4 py-2.5 text-left w-36">Device</th>
+                    <th className="px-4 py-2.5 text-left w-28">Tag</th><th className="px-4 py-2.5 text-left">Message</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.map(log => (
+                    <tr key={log.id} className={`border-b border-[#1a1a1a] hover:bg-[#111] ${DBG_ROW[log.level]||''}`}>
+                      <td className="px-4 py-2 text-[#555] whitespace-nowrap">{fmtT(log.created_at)}</td>
+                      <td className="px-4 py-2 text-[#444] whitespace-nowrap">{fmtD(log.created_at)}</td>
+                      <td className="px-4 py-2"><span className={`flex items-center gap-1.5 font-bold text-[10px] ${DBG_COLOR[log.level]||'text-gray-400'}`}><span className={`w-1.5 h-1.5 rounded-full ${DBG_DOT[log.level]||'bg-gray-400'}`}/>{log.level}</span></td>
+                      <td className="px-4 py-2"><div className="truncate max-w-[144px]">{nicks[log.device_id]?<span className="text-amber-400/80">{nicks[log.device_id]}</span>:<span className="text-[#888]">{log.device_name||log.device_id.slice(0,14)+'…'}</span>}</div></td>
+                      <td className="px-4 py-2 text-purple-400/80">{log.tag||'—'}</td>
+                      <td className="px-4 py-2 text-[#ccc] break-all max-w-[400px]">{log.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </div>
     </div>
   )
 }
