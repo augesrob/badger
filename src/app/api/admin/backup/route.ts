@@ -26,19 +26,14 @@ export async function POST(req: NextRequest) {
 
   try {
     // ── 1. Discover all public tables dynamically ──────────────────────────
-    const pgRes = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/pg/query`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
-      },
-      body: JSON.stringify({ query: "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename" }),
-    })
-    const pgData = await pgRes.json() as { tablename: string }[]
-    const tables: string[] = pgData
+    const { data: tableRows, error: tableErr } = await supabaseAdmin.rpc('list_public_tables')
+    if (tableErr || !Array.isArray(tableRows)) {
+      return NextResponse.json({ error: 'Could not discover tables: ' + tableErr?.message }, { status: 500 })
+    }
+    const tables: string[] = (tableRows as { tablename: string }[])
       .map(r => r.tablename)
       .filter(t => !SKIP_TABLES.includes(t))
+      .sort()
 
     // ── 2. Fetch all data from each table ──────────────────────────────────
     const backup: Record<string, unknown[]> = {}
