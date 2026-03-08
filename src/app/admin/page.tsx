@@ -1622,7 +1622,7 @@ function ApiSection() {
 function BackupSection() {
   const [webhookUrl, setWebhookUrl]   = useState('')
   const [savedWebhook, setSavedWebhook] = useState('')
-  const [lastBackup, setLastBackup]   = useState<Record<string, unknown> | null>(null)
+  const [lastBackup, setLastBackup]   = useState<Record<string, string | number | boolean | null> | null>(null)
   const [running, setRunning]         = useState(false)
   const [result, setResult]           = useState<Record<string, unknown> | null>(null)
   const [error, setError]             = useState<string | null>(null)
