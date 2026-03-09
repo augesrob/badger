@@ -211,12 +211,20 @@ export default function PrintRoom() {
   }
 
   const addEndMarker = async (doorId: number, batch: number) => {
-    const doorEntries = entries[doorId]?.filter(e => e.batch_number === batch) || []
-    const nextOrder = doorEntries.length > 0 ? Math.max(...doorEntries.map(e => e.row_order)) + 1 : 1
-    await supabase.from('printroom_entries').insert({
+    // Fetch current DB state for this door/batch to get accurate row_order
+    const { data: freshEntries } = await supabase
+      .from('printroom_entries')
+      .select('row_order')
+      .eq('loading_door_id', doorId)
+      .eq('batch_number', batch)
+      .order('row_order', { ascending: false })
+      .limit(1)
+    const nextOrder = freshEntries && freshEntries.length > 0 ? freshEntries[0].row_order + 1 : 1
+    const { error } = await supabase.from('printroom_entries').insert({
       loading_door_id: doorId, batch_number: batch, row_order: nextOrder,
       truck_number: 'end', is_end_marker: true,
     })
+    if (error) { toast('Failed to add END marker', 'error'); return }
     // Run automation - this triggers "last END → Done for Night"
     await runAutomation({
       truck_number: 'end',
@@ -391,17 +399,7 @@ export default function PrintRoom() {
         <div className="flex-1 min-w-0">
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
             {doors.map(door => {
-              const doorEntries = (entries[door.id] || []).filter(e => {
-                // Hide entries for unused semi trailer slots (e.g. 170-2 when slot 2 is empty)
-                if (e.truck_number && e.truck_number.includes('-')) {
-                  const base = e.truck_number.split('-')[0]
-                  if (tractorNums.has(base)) {
-                    // It's a semi slot — only show if slot is active
-                    return activeSemiSlots.includes(e.truck_number) || activeSemiSlots.length === 0
-                  }
-                }
-                return true
-              })
+              const doorEntries = (entries[door.id] || [])
               const batches: Record<number, PrintroomEntry[]> = {}
               doorEntries.forEach(e => {
                 if (!batches[e.batch_number]) batches[e.batch_number] = []
