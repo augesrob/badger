@@ -6,7 +6,6 @@ import { LoadingDoor, LiveMovement, StatusValue, PrintroomEntry, StagingDoor, Tr
 import { getTTSSettings, useMovementTTS } from '@/lib/tts'
 import { TTSMiniToggle } from '@/components/TTSPanel'
 import RequirePage from '@/components/RequirePage'
-import DoorStatusPopup from './DoorStatusPopup'
 
 export default function Movement() {
   const toast = useToast()
@@ -365,13 +364,37 @@ export default function Movement() {
   return (
     <RequirePage pageKey="movement">
     <div>
-      <DoorStatusPopup
-        doors={doors}
-        doorStatusValues={doorStatusValues}
-        onSetDoorStatus={setDoorStatus}
-        lastUpdate={lastUpdate}
-        ttsToggle={<TTSMiniToggle page="movement" />}
-      />
+      {/* STICKY Door Status Bar */}
+      <div className="sticky top-[49px] z-40 bg-[#0f0f0f] border-b border-[#333] -mx-4 px-4 py-2 mb-3">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+          <button
+            onClick={() => window.open('/door-status', 'door-status', 'width=420,height=340,resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no,status=no')}
+            className="flex-shrink-0 flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/40 text-amber-400 rounded-lg px-3 py-1.5 text-xs font-bold hover:bg-amber-500/20 transition-colors"
+            title="Open door status in separate window"
+          >
+            🚪 ↗
+          </button>
+          {doors.map(d => {
+            const st = d.door_status || 'Loading'
+            const col = doorStatusColor(st, doorStatusValues)
+            return (
+              <div key={d.id} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 flex-shrink-0 border"
+                style={{ borderColor: col, background: `${col}15` }}>
+                <span className="text-xs font-extrabold text-white">{d.door_name}</span>
+                <select value={st} onChange={e => setDoorStatus(d.id, e.target.value)}
+                  className="status-select text-[10px] py-0.5 px-1" style={{ background: col }}>
+                  {(doorStatusValues.length > 0 ? doorStatusValues.map(s => s.status_name) : [...DOOR_STATUSES]).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            )
+          })}
+          <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+            <TTSMiniToggle page="movement" />
+            <span className="text-xs text-green-500 animate-pulse">● LIVE</span>
+            <span className="text-[10px] text-gray-500">{lastUpdate}</span>
+          </div>
+        </div>
+      </div>
 
       <h1 className="text-xl font-bold mb-2">🚚 Live Movement</h1>
 
