@@ -394,9 +394,9 @@ export default function PrintRoom() {
         </button>
       </div>
 
-      <div className="flex gap-4 items-start">
+      <div className="flex gap-4 items-start overflow-hidden">
         {/* LEFT: Loading Doors */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 130px)' }}>
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
             {doors.map(door => {
               const doorEntries = (entries[door.id] || [])
@@ -483,7 +483,7 @@ export default function PrintRoom() {
         </div>
 
         {/* RIGHT: PreShift Sidebar - just truck numbers, 28→18 */}
-        <div className="hidden lg:block w-[200px] flex-shrink-0 sticky top-16">
+        <div className="hidden lg:block w-[200px] flex-shrink-0" style={{ maxHeight: 'calc(100vh - 130px)', overflowY: 'auto', position: 'sticky', top: 16 }}>
           <h3 className="text-sm font-bold text-amber-500 uppercase tracking-wider mb-2">📋 Door Placement</h3>
           <div className="bg-[#1a1a1a] border border-[#333] rounded-xl overflow-hidden">
             <div className="grid grid-cols-2 gap-0 bg-[#111] border-b-2 border-amber-500">
