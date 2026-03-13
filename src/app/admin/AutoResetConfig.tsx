@@ -13,8 +13,6 @@ const RESET_TYPES = [
 export default function AutoResetConfig() {
   const [config, setConfig] = useState<{
     enabled: boolean
-    hour: number
-    minute: number
     days: number[]
     reset_types: string[]
   } | null>(null)
@@ -26,8 +24,6 @@ export default function AutoResetConfig() {
         if (data) {
           setConfig({
             enabled:     data.enabled     ?? false,
-            hour:        data.hour        ?? 6,
-            minute:      data.minute      ?? 0,
             days:        data.days        ?? [1, 2, 3, 4, 5, 6],
             reset_types: data.reset_types ?? ['printroom', 'preshift', 'movement'],
           })
@@ -35,15 +31,13 @@ export default function AutoResetConfig() {
       })
   }, [])
 
-  const save = async (patch: Partial<typeof config>) => {
+  const save = async (patch: Partial<{ enabled: boolean; days: number[]; reset_types: string[] }>) => {
     if (!config) return
     const updated = { ...config, ...patch }
     setConfig(updated)
     setSaving(true)
     await supabase.from('auto_reset_config').update({
       enabled:     updated.enabled,
-      hour:        updated.hour,
-      minute:      updated.minute,
       days:        updated.days,
       reset_types: updated.reset_types,
       updated_at:  new Date().toISOString(),
@@ -67,14 +61,6 @@ export default function AutoResetConfig() {
     save({ reset_types: types })
   }
 
-  const scheduleLabel = config ? (() => {
-    const h   = config.hour
-    const m   = config.minute
-    const ampm = h >= 12 ? 'PM' : 'AM'
-    const h12  = h === 0 ? 12 : h > 12 ? h - 12 : h
-    return `${h12}:${String(m).padStart(2, '0')} ${ampm} CST/CDT`
-  })() : ''
-
   if (!config) return (
     <div className="bg-[#1a1a1a] border border-amber-500/30 rounded-xl p-4 mb-6 animate-pulse">
       <div className="h-4 bg-[#333] rounded w-48" />
@@ -89,7 +75,7 @@ export default function AutoResetConfig() {
         <div>
           <h3 className="text-sm font-bold text-amber-500">⏰ Auto-Reset Schedule</h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Runs via Vercel cron (checks hourly). No Supabase jobs — fully website-controlled.
+            Runs daily at <span className="text-amber-400 font-bold">12:00 PM CST (Noon)</span> on selected days. Select what to reset below.
           </p>
         </div>
         <button
@@ -101,36 +87,6 @@ export default function AutoResetConfig() {
       </div>
 
       <div className={config.enabled ? '' : 'opacity-50 pointer-events-none'}>
-
-        {/* Time picker */}
-        <div className="flex items-center gap-3 flex-wrap mb-3">
-          <label className="text-xs text-gray-400 w-10">Time</label>
-          <div className="flex items-center gap-1.5">
-            <select
-              value={config.hour}
-              onChange={e => save({ hour: Number(e.target.value) })}
-              className="bg-[#222] border border-[#333] rounded-lg px-2 py-1.5 text-sm text-white focus:border-amber-500 outline-none"
-            >
-              {Array.from({ length: 24 }, (_, i) => {
-                const ampm = i >= 12 ? 'PM' : 'AM'
-                const h = i === 0 ? 12 : i > 12 ? i - 12 : i
-                return <option key={i} value={i}>{String(h).padStart(2, '0')} {ampm}</option>
-              })}
-            </select>
-            <span className="text-gray-500">:</span>
-            <select
-              value={config.minute}
-              onChange={e => save({ minute: Number(e.target.value) })}
-              className="bg-[#222] border border-[#333] rounded-lg px-2 py-1.5 text-sm text-white focus:border-amber-500 outline-none"
-            >
-              {[0, 15, 30, 45].map(m => (
-                <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
-              ))}
-            </select>
-            <span className="text-xs text-gray-500 ml-1">CST/CDT</span>
-          </div>
-          {saving && <span className="text-xs text-amber-500 animate-pulse">Saving…</span>}
-        </div>
 
         {/* Day selector */}
         <div className="flex items-center gap-2 flex-wrap mb-3">
@@ -150,6 +106,7 @@ export default function AutoResetConfig() {
               </button>
             ))}
           </div>
+          {saving && <span className="text-xs text-amber-500 animate-pulse ml-2">Saving…</span>}
         </div>
 
         {/* What to reset */}
@@ -181,7 +138,7 @@ export default function AutoResetConfig() {
           : 'bg-[#222] border-[#333] text-gray-500'
       }`}>
         {config.enabled
-          ? `⏰ Resets ${config.reset_types.join(' + ')} at ${scheduleLabel} on ${
+          ? `⏰ Resets ${config.reset_types.join(' + ')} at 12:00 PM CST on ${
               config.days.length === 7 ? 'every day' : config.days.map(d => DAY_LABELS[d]).join(', ')
             }`
           : '⏸ Auto-reset is disabled — toggle on to activate'}
