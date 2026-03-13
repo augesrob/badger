@@ -27,40 +27,40 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ skipped: true, reason: 'Auto-reset disabled' })
     }
 
-    // Determine current time in America/Chicago (handles CST/CDT automatically)
+    // Parse current time in America/Chicago — handles CST/CDT automatically
     const now = new Date()
     const chicagoTime = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/Chicago',
       hour: 'numeric',
       minute: 'numeric',
-      weekday: 'narrow',
       hour12: false,
     }).formatToParts(now)
 
     const chicagoHour   = parseInt(chicagoTime.find(p => p.type === 'hour')!.value, 10)
     const chicagoMinute = parseInt(chicagoTime.find(p => p.type === 'minute')!.value, 10)
-    // weekday narrow: M T W T F S S  — map to 0=Sun...6=Sat
-    const narrowDay = chicagoTime.find(p => p.type === 'weekday')!.value
-    const dowMap: Record<string, number> = { S: -1, M: 1, T: -1, W: 3, F: 5 }
-    // Use a more reliable day-of-week approach
+
+    // Day of week in Chicago timezone (0=Sun … 6=Sat)
     const chicagoDow = new Date(
       now.toLocaleString('en-US', { timeZone: 'America/Chicago' })
     ).getDay()
 
     const days: number[] = cfg.days ?? [0, 1, 2, 3, 4, 5, 6]
     if (!days.includes(chicagoDow)) {
-      return NextResponse.json({ skipped: true, reason: `Not a reset day (Chicago day=${chicagoDow}, configured=${days})` })
+      return NextResponse.json({
+        skipped: true,
+        reason: `Not a reset day (Chicago day=${chicagoDow}, configured=${days})`,
+      })
     }
 
     if (chicagoHour !== cfg.hour) {
       return NextResponse.json({
         skipped: true,
-        reason: `Not reset hour (Chicago now ${chicagoHour}:${String(chicagoMinute).padStart(2,'0')}, reset at ${cfg.hour}:${String(cfg.minute ?? 0).padStart(2,'0')})`,
+        reason: `Not reset hour (Chicago now ${chicagoHour}:${String(chicagoMinute).padStart(2, '0')}, reset at ${cfg.hour}:${String(cfg.minute ?? 0).padStart(2, '0')})`,
       })
     }
 
-    // Allow ±5 min window around configured minute
-    const targetMin = cfg.minute ?? 0
+    // Allow ±5 min window around configured minute to handle cron jitter
+    const targetMin: number = cfg.minute ?? 0
     if (Math.abs(chicagoMinute - targetMin) > 5) {
       return NextResponse.json({
         skipped: true,
