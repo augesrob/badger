@@ -20,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <ToastProvider>
               <KeepAlive />
               <Nav />
-              <main className="max-w-[1400px] mx-auto p-4">
+              <main className="max-w-[1400px] mx-auto p-4 badger-main">
                 {children}
               </main>
             </ToastProvider>

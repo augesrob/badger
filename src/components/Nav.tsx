@@ -10,6 +10,9 @@ import { useState, useRef, useEffect } from 'react'
 export default function Nav() {
   const pathname = usePathname()
   const router   = useRouter()
+
+  // Hide nav entirely on popup pages
+  if (pathname === '/door-status') return null
   const { theme, toggle } = useTheme()
   const { profile, signOut, can, loading } = useAuth()
   const [printOpen,   setPrintOpen]   = useState(false)

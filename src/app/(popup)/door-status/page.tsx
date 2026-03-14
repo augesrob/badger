@@ -12,6 +12,24 @@ export default function DoorStatusWindow() {
   const [doors, setDoors] = useState<LoadingDoor[]>([])
   const [doorStatusValues, setDoorStatusValues] = useState<DoorStatusValue[]>([])
 
+  // Strip all chrome — zero out the main wrapper and body
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    document.body.style.margin = '0'
+    document.body.style.padding = '0'
+    const main = document.querySelector('main.badger-main') as HTMLElement | null
+    if (main) {
+      main.style.maxWidth = '100vw'
+      main.style.width = '100vw'
+      main.style.margin = '0'
+      main.style.padding = '0'
+    }
+    return () => {
+      document.body.style.overflow = ''
+      if (main) { main.style.maxWidth = ''; main.style.width = ''; main.style.margin = ''; main.style.padding = '' }
+    }
+  }, [])
+
   // Auth guard
   useEffect(() => {
     if (authLoading) return
