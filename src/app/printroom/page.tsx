@@ -5,6 +5,7 @@ import { useToast } from '@/components/Toast'
 import { LoadingDoor, PrintroomEntry, StagingDoor } from '@/lib/types'
 import { runAutomation, runPreshiftAutomation } from '@/lib/automation'
 import RequirePage from '@/components/RequirePage'
+import { useNoPageScroll } from '@/lib/useNoPageScroll'
 
 export default function PrintRoom() {
   const toast = useToast()
@@ -368,6 +369,8 @@ export default function PrintRoom() {
   }, [entries, doors, tractorNums])
   // ────────────────────────────────────────────────────────────────────────────
 
+  useNoPageScroll()
+
   if (loading) return <div className="text-center py-20 text-gray-500">Loading...</div>
 
   return (
@@ -396,7 +399,7 @@ export default function PrintRoom() {
 
       <div className="flex gap-4 items-start overflow-hidden">
         {/* LEFT: Loading Doors */}
-        <div className="flex-1 min-w-0 overflow-y-auto" style={{ height: 'calc(100dvh - 49px - 16px - 72px - 16px)', minHeight: 0 }}>
+        <div className="flex-1 min-w-0 overflow-y-auto" style={{ height: 'calc(100dvh - 167px)', minHeight: 0 }}>
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
             {doors.map(door => {
               const doorEntries = (entries[door.id] || [])
@@ -483,7 +486,7 @@ export default function PrintRoom() {
         </div>
 
         {/* RIGHT: PreShift Sidebar - just truck numbers, 28→18 */}
-        <div className="hidden lg:block w-[200px] flex-shrink-0 overflow-y-auto" style={{ height: 'calc(100dvh - 49px - 16px - 72px - 16px)', minHeight: 0, position: 'sticky', top: 16 }}>
+        <div className="hidden lg:block w-[200px] flex-shrink-0 overflow-y-auto" style={{ height: 'calc(100dvh - 167px)', minHeight: 0, position: 'sticky', top: 16 }}>
           <h3 className="text-sm font-bold text-amber-500 uppercase tracking-wider mb-2">📋 Door Placement</h3>
           <div className="bg-[#1a1a1a] border border-[#333] rounded-xl overflow-hidden">
             <div className="grid grid-cols-2 gap-0 bg-[#111] border-b-2 border-amber-500">

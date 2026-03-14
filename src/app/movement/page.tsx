@@ -6,6 +6,7 @@ import { LoadingDoor, LiveMovement, StatusValue, PrintroomEntry, StagingDoor, Tr
 import { getTTSSettings, useMovementTTS } from '@/lib/tts'
 import { TTSMiniToggle } from '@/components/TTSPanel'
 import RequirePage from '@/components/RequirePage'
+import { useNoPageScroll } from '@/lib/useNoPageScroll'
 
 export default function Movement() {
   const toast = useToast()
@@ -122,6 +123,8 @@ export default function Movement() {
       window.removeEventListener('badger:tts-changed', handler)
     }
   }, [])
+
+  useNoPageScroll()
 
   // TTS: announce door/truck status changes
   const truckTTSData = trucks.map(t => ({
