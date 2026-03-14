@@ -10,9 +10,6 @@ import { useState, useRef, useEffect } from 'react'
 export default function Nav() {
   const pathname = usePathname()
   const router   = useRouter()
-
-  // Hide nav entirely on popup pages
-  if (pathname === '/door-status') return null
   const { theme, toggle } = useTheme()
   const { profile, signOut, can, loading } = useAuth()
   const [printOpen,   setPrintOpen]   = useState(false)
@@ -21,6 +18,9 @@ export default function Nav() {
   const printRef   = useRef<HTMLDivElement>(null)
   const driversRef = useRef<HTMLDivElement>(null)
   const profileRef = useRef<HTMLDivElement>(null)
+
+  // Hide nav entirely on popup pages — MUST be after all hooks
+  if (pathname === '/door-status') return null
 
   // Close dropdowns on outside click
   useEffect(() => {
