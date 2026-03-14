@@ -19,9 +19,6 @@ export default function Nav() {
   const driversRef = useRef<HTMLDivElement>(null)
   const profileRef = useRef<HTMLDivElement>(null)
 
-  // Hide nav entirely on popup pages — MUST be after all hooks
-  if (pathname === '/door-status') return null
-
   // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -48,6 +45,9 @@ export default function Nav() {
   const printActive   = ['/printroom','/routesheet','/cheatsheet'].includes(pathname)
   const driversActive = pathname.startsWith('/drivers')
   const avatarInitials = (profile?.display_name || profile?.username || '?').slice(0, 2).toUpperCase()
+
+  // Hide nav on popup pages — after ALL hooks
+  if (pathname === '/door-status') return null
 
   return (
     <>
