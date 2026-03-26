@@ -27,19 +27,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ skipped: true, reason: 'Auto-reset disabled' })
     }
 
-    // Parse current time in America/Chicago — handles CST/CDT automatically
+    // Check day of week in America/Chicago timezone
     const now = new Date()
-    const chicagoTime = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Chicago',
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: false,
-    }).formatToParts(now)
-
-    const chicagoHour   = parseInt(chicagoTime.find(p => p.type === 'hour')!.value, 10)
-    const chicagoMinute = parseInt(chicagoTime.find(p => p.type === 'minute')!.value, 10)
-
-    // Day of week in Chicago timezone (0=Sun … 6=Sat)
     const chicagoDow = new Date(
       now.toLocaleString('en-US', { timeZone: 'America/Chicago' })
     ).getDay()
@@ -49,22 +38,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         skipped: true,
         reason: `Not a reset day (Chicago day=${chicagoDow}, configured=${days})`,
-      })
-    }
-
-    if (chicagoHour !== cfg.hour) {
-      return NextResponse.json({
-        skipped: true,
-        reason: `Not reset hour (Chicago now ${chicagoHour}:${String(chicagoMinute).padStart(2, '0')}, reset at ${cfg.hour}:${String(cfg.minute ?? 0).padStart(2, '0')})`,
-      })
-    }
-
-    // Allow ±5 min window around configured minute to handle cron jitter
-    const targetMin: number = cfg.minute ?? 0
-    if (Math.abs(chicagoMinute - targetMin) > 5) {
-      return NextResponse.json({
-        skipped: true,
-        reason: `Not reset minute (Chicago now :${chicagoMinute}, target :${targetMin})`,
       })
     }
 

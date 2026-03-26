@@ -457,8 +457,8 @@ export default function CheatSheet() {
                 <input value={ent.truck} onChange={e => updateEntry(bi, door, ri, 'truck', e.target.value)}
                   className="cs2-input cs2-truck-input" placeholder="—" />
               </div>
-              <input value={ent.notes} onChange={e => updateEntry(bi, door, ri, 'notes', e.target.value)}
-                className="cs2-input cs2-notes-input" placeholder="notes..." />
+              <textarea value={ent.notes} onChange={e => updateEntry(bi, door, ri, 'notes', e.target.value)}
+                className="cs2-input cs2-notes-input" placeholder="notes..." rows={2} />
             </div>
           ))}
         </div>

@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { id: 'routes',      label: '🗺️ Routes',            ready: true },
   { id: 'roles',       label: '🛡️ Role Manager',      ready: true },
   { id: 'reset',       label: '⚠️ Data Reset',        ready: true },
+  { id: 'movement_log', label: '📋 Change Log',       ready: true },
   { id: 'notifications', label: '🔔 Notifications',   ready: true },
   { id: 'api',         label: '🔌 API',               ready: true },
   { id: 'backup',      label: '💾 Backup',             ready: true },
@@ -296,6 +297,7 @@ export default function Admin() {
     if (type === 'printroom' || type === 'all') { await supabase.from('printroom_entries').delete().neq('id', 0); await supabase.from('loading_doors').update({ is_done_for_night: false, door_status: 'Loading' }).neq('id', 0) }
     if (type === 'preshift' || type === 'all') { await supabase.from('staging_doors').update({ in_front: null, in_back: null }).neq('id', 0) }
     if (type === 'movement' || type === 'all') { await supabase.from('live_movement').delete().neq('id', 0) }
+    if (type === 'all') { await supabase.from('movement_log').delete().neq('id', 0) }
     if (type === 'documents' || type === 'all') {
       localStorage.removeItem('badger-routesheet-v1')
       localStorage.removeItem('badger-cheatsheet-v1')
@@ -775,7 +777,105 @@ export default function Admin() {
     )
   }
 
-  function renderSection() {
+  function ChangeLogSection() {
+    const [logs, setLogs] = useState<{ id: number; changed_at: string; changed_by: string | null; truck_number: string | null; field_changed: string; old_value: string | null; new_value: string | null; door_name: string | null }[]>([])
+    const [loading, setLoading] = useState(true)
+    const [filterField, setFilterField] = useState('')
+    const [filterUser, setFilterUser] = useState('')
+    const [filterTruck, setFilterTruck] = useState('')
+
+    useEffect(() => {
+      setLoading(true)
+      supabase.from('movement_log').select('*').order('changed_at', { ascending: false }).limit(200)
+        .then(({ data }) => { setLogs(data || []); setLoading(false) })
+    }, [])
+
+    const FIELD_LABELS: Record<string, string> = {
+      truck_status: '🚚 Truck Status',
+      door_status: '🚪 Door Status',
+      dock_lock: '🔒 Dock Lock',
+    }
+
+    const filtered = logs.filter(l => {
+      if (filterField && l.field_changed !== filterField) return false
+      if (filterUser && !(l.changed_by || '').toLowerCase().includes(filterUser.toLowerCase())) return false
+      if (filterTruck && !(l.truck_number || l.door_name || '').toLowerCase().includes(filterTruck.toLowerCase())) return false
+      return true
+    })
+
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-xl font-bold">📋 Movement Change Log</h2>
+            <p className="text-xs text-gray-500 mt-1">Every truck status, door status, and dock lock change on the Movement page.</p>
+          </div>
+          <button onClick={() => {
+            setLoading(true)
+            supabase.from('movement_log').select('*').order('changed_at', { ascending: false }).limit(200)
+              .then(({ data }) => { setLogs(data || []); setLoading(false) })
+          }} className="text-xs text-amber-500 hover:text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-lg">🔄 Refresh</button>
+        </div>
+
+        {/* Filters */}
+        <div className="flex gap-2 flex-wrap mb-4">
+          <select value={filterField} onChange={e => setFilterField(e.target.value)} className="input-field text-sm w-auto">
+            <option value="">All Types</option>
+            <option value="truck_status">🚚 Truck Status</option>
+            <option value="door_status">🚪 Door Status</option>
+            <option value="dock_lock">🔒 Dock Lock</option>
+          </select>
+          <input value={filterUser} onChange={e => setFilterUser(e.target.value)} placeholder="Filter by user..." className="input-field text-sm w-40" />
+          <input value={filterTruck} onChange={e => setFilterTruck(e.target.value)} placeholder="Truck # or door..." className="input-field text-sm w-40" />
+          {(filterField || filterUser || filterTruck) && (
+            <button onClick={() => { setFilterField(''); setFilterUser(''); setFilterTruck('') }} className="text-xs text-gray-500 hover:text-white">✕ Clear</button>
+          )}
+          <span className="text-xs text-gray-500 ml-auto self-center">{filtered.length} entries</span>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-20 text-gray-500">Loading...</div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-20 text-gray-500">No log entries yet. Changes on the Movement page will appear here.</div>
+        ) : (
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-amber-500 uppercase border-b border-[#333] bg-[#111]">
+                    <th className="py-2.5 px-3 text-left">Time</th>
+                    <th className="px-3 text-left">Who</th>
+                    <th className="px-3 text-left">Type</th>
+                    <th className="px-3 text-left">Target</th>
+                    <th className="px-3 text-left">From</th>
+                    <th className="px-3 text-left">To</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(l => (
+                    <tr key={l.id} className="border-b border-white/5 hover:bg-white/[0.02]">
+                      <td className="py-2 px-3 text-xs text-gray-400 whitespace-nowrap">
+                        {new Date(l.changed_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
+                      </td>
+                      <td className="px-3 text-xs font-medium text-white">{l.changed_by || '—'}</td>
+                      <td className="px-3 text-xs">{FIELD_LABELS[l.field_changed] || l.field_changed}</td>
+                      <td className="px-3 text-xs font-bold text-amber-500">
+                        {l.truck_number ? `Truck ${l.truck_number}` : l.door_name ? `Door ${l.door_name}` : '—'}
+                      </td>
+                      <td className="px-3 text-xs text-gray-500">{l.old_value || <span className="text-gray-600 italic">none</span>}</td>
+                      <td className="px-3 text-xs text-green-400 font-medium">{l.new_value || <span className="text-gray-600 italic">none</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+
     switch (activeSection) {
       case 'trucks': return <TruckSection />
       case 'tractors': return <TractorSection />
@@ -785,6 +885,7 @@ export default function Admin() {
       case 'routes': return <RouteSection />
       case 'roles': return <RoleManager />
       case 'reset': return <ResetSection />
+      case 'movement_log': return <ChangeLogSection />
       case 'notifications': return <NotificationsSection />
       case 'api': return <ApiSection />
       case 'backup': return <BackupSection />

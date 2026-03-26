@@ -21,6 +21,18 @@ export default function Movement() {
   const [search, setSearch] = useState('')
   const [lastUpdate, setLastUpdate] = useState('')
   const [ttsSettings, setTtsSettings] = useState(() => getTTSSettings('movement'))
+  const currentUserRef = useRef<string>('unknown')
+
+  // Track who's logged in for change log
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+      supabase.from('profiles').select('display_name, username').eq('id', user.id).single()
+        .then(({ data }) => {
+          if (data) currentUserRef.current = data.display_name || data.username || user.email || 'unknown'
+        })
+    })
+  }, [])
 
   const loadAll = useCallback(async () => {
     const [doorsRes, trucksRes, statusRes, doorStatusRes, dockLockStatusRes, prRes, stagingRes, tractorRes] = await Promise.all([
@@ -228,6 +240,14 @@ export default function Movement() {
       if (prev) setTrucks(ts => ts.map(t => t.truck_number === truckNumber ? { ...t, ...prev } : t))
       return
     }
+    // Log the change
+    supabase.from('movement_log').insert({
+      changed_by: currentUserRef.current,
+      truck_number: truckNumber,
+      field_changed: 'truck_status',
+      old_value: prev?.status_name || null,
+      new_value: newStatus?.status_name || null,
+    }).then(() => {})
     // Fire truck notifications (non-blocking)
     if (newStatus?.status_name) {
       fetch('/api/notify-truck', {
@@ -239,6 +259,8 @@ export default function Movement() {
   }
 
   const setDoorStatus = async (doorId: number, status: string) => {
+    const door = doors.find(d => d.id === doorId)
+    const oldStatus = door?.door_status || null
     // Optimistic update
     setDoors(ds => ds.map(d => d.id === doorId ? { ...d, door_status: status } : d))
     const { error } = await supabase.from('loading_doors').update({ door_status: status }).eq('id', doorId)
@@ -246,10 +268,22 @@ export default function Movement() {
       toast('Door update failed — reverted', 'error')
       const { data } = await supabase.from('loading_doors').select('*').eq('id', doorId).single()
       if (data) setDoors(ds => ds.map(d => d.id === doorId ? data : d))
+      return
     }
+    // Log the change
+    supabase.from('movement_log').insert({
+      changed_by: currentUserRef.current,
+      truck_number: null,
+      field_changed: 'door_status',
+      old_value: oldStatus,
+      new_value: status,
+      door_name: door?.door_name || null,
+    }).then(() => {})
   }
 
   const setDockLock = async (doorId: number, status: string | null) => {
+    const door = doors.find(d => d.id === doorId)
+    const oldStatus = door?.dock_lock_status || null
     // Optimistic update
     setDoors(ds => ds.map(d => d.id === doorId ? { ...d, dock_lock_status: status } : d))
     const { error } = await supabase.from('loading_doors').update({ dock_lock_status: status }).eq('id', doorId)
@@ -257,7 +291,17 @@ export default function Movement() {
       toast('Dock lock update failed — reverted', 'error')
       const { data } = await supabase.from('loading_doors').select('*').eq('id', doorId).single()
       if (data) setDoors(ds => ds.map(d => d.id === doorId ? data : d))
+      return
     }
+    // Log the change
+    supabase.from('movement_log').insert({
+      changed_by: currentUserRef.current,
+      truck_number: null,
+      field_changed: 'dock_lock',
+      old_value: oldStatus,
+      new_value: status,
+      door_name: door?.door_name || null,
+    }).then(() => {})
   }
 
 
