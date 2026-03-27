@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { LoadingDoor, LiveMovement, StatusValue, PrintroomEntry, StagingDoor, Tractor, TrailerItem, DoorStatusValue, DockLockStatusValue, DOOR_STATUSES, doorStatusColor } from '@/lib/types'
