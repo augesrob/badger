@@ -106,9 +106,6 @@ export default function Movement() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staging_doors' }, fetchStaging)
       .subscribe()
 
-    // Fallback poll every 30s — realtime handles live updates, this only catches changes if realtime drops
-    const poll = setInterval(() => loadAll(), 30_000)
-
     // Reload immediately when tab becomes visible again
     const handleVisibility = () => { if (document.visibilityState === 'visible') loadAll() }
     document.addEventListener('visibilitychange', handleVisibility)
@@ -118,7 +115,6 @@ export default function Movement() {
 
     return () => {
       supabase.removeChannel(channel)
-      clearInterval(poll)
       document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('badger:resume', handleResume)
     }

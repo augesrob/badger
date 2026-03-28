@@ -2018,7 +2018,7 @@ function DebugSection() {
   const [devFilter, setDevFilter]       = useState('')
   const [lvlFilter, setLvlFilter]       = useState('')
   const [tagFilter, setTagFilter]       = useState('')
-  const [autoRefresh, setAutoRefresh]   = useState(true)
+  const [autoRefresh, setAutoRefresh]   = useState(false)
   const [devices, setDevices]           = useState<{ device_id: string; device_name: string | null }[]>([])
   const [nicks, setNicks]               = useState<Record<string, string>>({})
   const [lastRef, setLastRef]           = useState<Date | null>(null)
@@ -2050,7 +2050,7 @@ function DebugSection() {
 
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current)
-    if (autoRefresh) timerRef.current = setInterval(() => { fetchLogs(); fetchDevices() }, 4000)
+    if (autoRefresh) timerRef.current = setInterval(() => { fetchLogs(); fetchDevices() }, 10000)
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [autoRefresh, fetchLogs, fetchDevices])
 

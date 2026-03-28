@@ -53,8 +53,7 @@ export default function DoorStatusWindow() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, fetchAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'door_status_values' }, fetchAll)
       .subscribe()
-    const poll = setInterval(fetchAll, 5000)
-    return () => { supabase.removeChannel(channel); clearInterval(poll) }
+    return () => { supabase.removeChannel(channel) }
   }, [fetchAll, profile, can])
 
   const setDoorStatus = async (doorId: number, status: string) => {
