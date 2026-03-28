@@ -2046,11 +2046,18 @@ function DebugSection() {
     if (data) { const u = Array.from(new Map(data.map((d: { device_id: string; device_name: string | null }) => [d.device_id, d])).values()); setDevices(u as { device_id: string; device_name: string | null }[]) }
   }, [])
 
-  useEffect(() => { fetchLogs(); fetchDevices(); fetchNicks() }, [fetchLogs, fetchDevices, fetchNicks])
+  // Only fetch on mount for nicknames (tiny table, needed for device labels)
+  // Logs/devices only load when auto-refresh is toggled on
+  useEffect(() => { fetchNicks() }, [fetchNicks])
 
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current)
-    if (autoRefresh) timerRef.current = setInterval(() => { fetchLogs(); fetchDevices() }, 10000)
+    if (autoRefresh) {
+      fetchLogs(); fetchDevices() // immediate fetch when toggled on
+      timerRef.current = setInterval(() => { fetchLogs(); fetchDevices() }, 10000)
+    } else {
+      setLoading(false) // stop spinner if toggled off before load
+    }
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [autoRefresh, fetchLogs, fetchDevices])
 
@@ -2136,7 +2143,7 @@ function DebugSection() {
 
       <div className="bg-[#0a0a0a] border border-[#222] rounded-2xl overflow-hidden">
         {loading ? <div className="flex items-center justify-center h-48 text-gray-500 text-sm">Loading logs...</div>
-          : logs.length === 0 ? <div className="flex flex-col items-center justify-center h-48 text-gray-500 gap-3"><span className="text-4xl">📭</span><span className="text-sm">No logs yet — open the app on a device</span></div>
+          : logs.length === 0 ? <div className="flex flex-col items-center justify-center h-48 text-gray-500 gap-3"><span className="text-4xl">📭</span><span className="text-sm">{autoRefresh ? 'No logs yet — open the app on a device' : 'Toggle Live on to load debug logs'}</span></div>
           : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs font-mono">
