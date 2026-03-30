@@ -216,17 +216,32 @@ export default function PrintRoom() {
     // Fetch current DB state for this door/batch to get accurate row_order
     const { data: freshEntries } = await supabase
       .from('printroom_entries')
-      .select('row_order')
+      .select('row_order, truck_number')
       .eq('loading_door_id', doorId)
       .eq('batch_number', batch)
       .order('row_order', { ascending: false })
-      .limit(1)
     const nextOrder = freshEntries && freshEntries.length > 0 ? freshEntries[0].row_order + 1 : 1
     const { error } = await supabase.from('printroom_entries').insert({
       loading_door_id: doorId, batch_number: batch, row_order: nextOrder,
       truck_number: 'end', is_end_marker: true,
     })
     if (error) { toast('Failed to add END marker', 'error'); return }
+
+    // Set all real trucks in this door/batch to END status in live_movement
+    const { data: endStatus } = await supabase
+      .from('status_values').select('id').eq('status_name', 'END').maybeSingle()
+    if (endStatus && freshEntries) {
+      const truckNums = freshEntries
+        .map(e => e.truck_number)
+        .filter((t): t is string => !!t && t !== 'end')
+      if (truckNums.length > 0) {
+        await supabase
+          .from('live_movement')
+          .update({ status_id: endStatus.id, last_updated: new Date().toISOString() })
+          .in('truck_number', truckNums)
+      }
+    }
+
     // Run automation - this triggers "last END → Done for Night"
     await runAutomation({
       truck_number: 'end',
