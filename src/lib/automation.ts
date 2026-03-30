@@ -9,6 +9,15 @@ interface PrintroomContext {
   row_order: number
 }
 
+// Statuses that should NOT be overwritten by automation
+// (truck has progressed beyond what automation would set)
+const PROTECTED_STATUSES = new Set([
+  'In Door',
+  'Put Away',
+  'On Route',
+  'Done for Night',
+])
+
 // Run all active rules after a printroom entry changes
 export async function runAutomation(entry: PrintroomContext) {
   const { data: rules } = await supabase
@@ -25,6 +34,7 @@ export async function runAutomation(entry: PrintroomContext) {
 }
 
 // Run preshift automation: when a truck is placed in front or back
+// Only sets status if truck doesn't already have a more advanced status
 export async function runPreshiftAutomation() {
   const { data: rules } = await supabase
     .from('automation_rules')
@@ -35,20 +45,38 @@ export async function runPreshiftAutomation() {
 
   if (!rules || rules.length === 0) return
 
-  // Get all staging doors
-  const { data: stagingDoors } = await supabase
-    .from('staging_doors')
-    .select('*')
-
+  const { data: stagingDoors } = await supabase.from('staging_doors').select('*')
   if (!stagingDoors) return
+
+  // Get all current movement statuses in one query (avoid N+1)
+  const { data: allMovement } = await supabase
+    .from('live_movement')
+    .select('truck_number, status_id, status_values(status_name)')
+
+  // Build lookup: truck_number → current status name
+  const currentStatuses: Record<string, string> = {}
+  if (allMovement) {
+    for (const m of allMovement) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const statusName = (m as any).status_values?.status_name || ''
+      currentStatuses[m.truck_number] = statusName
+    }
+  }
 
   for (const rule of rules as AutomationRule[]) {
     for (const sd of stagingDoors) {
       if (rule.trigger_type === 'preshift_in_front' && sd.in_front) {
-        await executeActionForTruck(rule, sd.in_front)
+        const currentStatus = currentStatuses[sd.in_front] || ''
+        // Don't overwrite if truck already has a protected/advanced status
+        if (!PROTECTED_STATUSES.has(currentStatus)) {
+          await executeActionForTruck(rule, sd.in_front)
+        }
       }
       if (rule.trigger_type === 'preshift_in_back' && sd.in_back) {
-        await executeActionForTruck(rule, sd.in_back)
+        const currentStatus = currentStatuses[sd.in_back] || ''
+        if (!PROTECTED_STATUSES.has(currentStatus)) {
+          await executeActionForTruck(rule, sd.in_back)
+        }
       }
     }
   }
@@ -74,6 +102,7 @@ async function processRule(rule: AutomationRule, entry: PrintroomContext) {
 
     case 'is_last_truck_with_status': {
       if (rule.trigger_value?.toUpperCase() === 'END' && entry.is_end_marker) {
+        // Check no entries exist AFTER this one in the same door/batch
         const { data: laterEntries } = await supabase
           .from('printroom_entries')
           .select('id')
@@ -82,6 +111,7 @@ async function processRule(rule: AutomationRule, entry: PrintroomContext) {
           .eq('batch_number', entry.batch_number)
           .limit(1)
 
+        // Check no higher batch exists for this door
         const { data: higherBatch } = await supabase
           .from('printroom_entries')
           .select('id')
