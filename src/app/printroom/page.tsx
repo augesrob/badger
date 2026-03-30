@@ -213,43 +213,59 @@ export default function PrintRoom() {
   }
 
   const addEndMarker = async (doorId: number, batch: number) => {
-    // Fetch current DB state for this door/batch to get accurate row_order
-    const { data: freshEntries } = await supabase
+    // Fetch ALL entries for this door across all batches to check for real trucks
+    const { data: allDoorEntries } = await supabase
       .from('printroom_entries')
-      .select('row_order, truck_number')
+      .select('row_order, truck_number, batch_number, is_end_marker')
       .eq('loading_door_id', doorId)
-      .eq('batch_number', batch)
+      .order('batch_number', { ascending: false })
       .order('row_order', { ascending: false })
-    const nextOrder = freshEntries && freshEntries.length > 0 ? freshEntries[0].row_order + 1 : 1
+
+    // Entries in this specific batch for row_order calc
+    const batchEntries = (allDoorEntries || []).filter(e => e.batch_number === batch)
+    const nextOrder = batchEntries.length > 0 ? batchEntries[0].row_order + 1 : 1
+
     const { error } = await supabase.from('printroom_entries').insert({
       loading_door_id: doorId, batch_number: batch, row_order: nextOrder,
       truck_number: 'end', is_end_marker: true,
     })
     if (error) { toast('Failed to add END marker', 'error'); return }
 
-    // Set all real trucks in this door/batch to END status in live_movement
-    const { data: endStatus } = await supabase
-      .from('status_values').select('id').eq('status_name', 'END').maybeSingle()
-    if (endStatus && freshEntries) {
-      const truckNums = freshEntries
-        .map(e => e.truck_number)
-        .filter((t): t is string => !!t && t !== 'end')
-      if (truckNums.length > 0) {
-        await supabase
-          .from('live_movement')
-          .update({ status_id: endStatus.id, last_updated: new Date().toISOString() })
-          .in('truck_number', truckNums)
-      }
-    }
+    // Check if any real trucks exist in this door (across ALL batches)
+    const realTrucksInDoor = (allDoorEntries || [])
+      .filter(e => e.truck_number && e.truck_number !== 'end' && !e.is_end_marker)
 
-    // Run automation - this triggers "last END → Done for Night"
-    await runAutomation({
-      truck_number: 'end',
-      loading_door_id: doorId,
-      is_end_marker: true,
-      batch_number: batch,
-      row_order: nextOrder,
-    })
+    if (realTrucksInDoor.length === 0) {
+      // Empty door — no trucks at all. Mark directly as Done for Night.
+      await supabase
+        .from('loading_doors')
+        .update({ door_status: 'Done for Night' })
+        .eq('id', doorId)
+    } else {
+      // Has real trucks — set all trucks in this batch to END status
+      const { data: endStatus } = await supabase
+        .from('status_values').select('id').eq('status_name', 'END').maybeSingle()
+      if (endStatus) {
+        const batchTruckNums = batchEntries
+          .map(e => e.truck_number)
+          .filter((t): t is string => !!t && t !== 'end')
+        if (batchTruckNums.length > 0) {
+          await supabase
+            .from('live_movement')
+            .update({ status_id: endStatus.id, last_updated: new Date().toISOString() })
+            .in('truck_number', batchTruckNums)
+        }
+      }
+
+      // Run automation — triggers "last END → Done for Night" if this is the final batch
+      await runAutomation({
+        truck_number: 'end',
+        loading_door_id: doorId,
+        is_end_marker: true,
+        batch_number: batch,
+        row_order: nextOrder,
+      })
+    }
   }
 
   const deleteEntry = async (id: number, truckNumber: string | null, doorId?: number, batchNumber?: number, rowOrder?: number) => {
