@@ -156,12 +156,12 @@ export default function PrintRoom() {
           await supabase.from('live_movement').delete().eq('truck_number', oldTruckNumber)
         }
       }
-      // Add new truck to movement with preshift location
+      // Add new truck to movement with preshift location (or ensure it exists)
       if (value && value !== 'end') {
-        const { data: existing } = await supabase.from('live_movement').select('id').eq('truck_number', String(value)).maybeSingle()
+        const truckStr = String(value)
+        const { data: existing } = await supabase.from('live_movement').select('id').eq('truck_number', truckStr).maybeSingle()
         if (!existing) {
-          // Check if this is a semi tractor (matches pattern like 170-1, or is in tractors table)
-          const truckStr = String(value)
+          // Determine default status — semis/tractors get Transfer, box trucks get On Route
           const isSemi = /^\d+-\d+$/.test(truckStr)
           let isTractorNumber = false
           if (!isSemi) {
@@ -176,28 +176,29 @@ export default function PrintRoom() {
           // Look up preshift location
           let preshiftLoc: string | null = null
           for (const sd of stagingDoors) {
-            if (sd.in_front === String(value)) { preshiftLoc = sd.door_label; break }
-            if (sd.in_back === String(value)) { preshiftLoc = sd.door_label; break }
+            if (sd.in_front === truckStr) { preshiftLoc = sd.door_label; break }
+            if (sd.in_back === truckStr) { preshiftLoc = sd.door_label; break }
           }
           await supabase.from('live_movement').insert({
-            truck_number: String(value),
+            truck_number: truckStr,
             status_id: defaultStatus?.id || null,
             current_location: preshiftLoc,
           })
         }
 
-        // Run automation rules on this truck
+        // Always run automation rules after truck_number is saved
+        // (fires for both new and existing trucks — catches GAP/CPU/999/preshift rules)
         const { data: entry } = await supabase.from('printroom_entries').select('*').eq('id', id).maybeSingle()
         if (entry) {
           await runAutomation({
-            truck_number: String(value),
+            truck_number: truckStr,
             loading_door_id: entry.loading_door_id,
             is_end_marker: entry.is_end_marker || false,
             batch_number: entry.batch_number,
             row_order: entry.row_order,
           })
         }
-        // Also run preshift rules (in case truck is already on preshift board)
+        // Run preshift rules — sets Ready/In Back based on staging position
         await runPreshiftAutomation()
       }
     }
@@ -236,12 +237,34 @@ export default function PrintRoom() {
     })
   }
 
-  const deleteEntry = async (id: number, truckNumber: string | null) => {
+  const deleteEntry = async (id: number, truckNumber: string | null, doorId?: number, batchNumber?: number, rowOrder?: number) => {
     if (!confirm('Delete this entry?')) return
     await supabase.from('printroom_entries').delete().eq('id', id)
+    // Remove from movement if no longer in printroom
     if (truckNumber && truckNumber !== 'end') {
       const { count } = await supabase.from('printroom_entries').select('id', { count: 'exact' }).eq('truck_number', truckNumber)
       if (count === 0) await supabase.from('live_movement').delete().eq('truck_number', truckNumber)
+    }
+    // Re-run END marker check — deletion may expose a final END that should trigger Done for Night
+    if (doorId && batchNumber !== undefined && rowOrder !== undefined) {
+      const { data: endMarkers } = await supabase
+        .from('printroom_entries')
+        .select('row_order, batch_number')
+        .eq('loading_door_id', doorId)
+        .eq('is_end_marker', true)
+        .order('batch_number', { ascending: false })
+        .order('row_order', { ascending: false })
+        .limit(1)
+      if (endMarkers && endMarkers.length > 0) {
+        const lastEnd = endMarkers[0]
+        await runAutomation({
+          truck_number: 'end',
+          loading_door_id: doorId,
+          is_end_marker: true,
+          batch_number: lastEnd.batch_number,
+          row_order: lastEnd.row_order,
+        })
+      }
     }
   }
 
@@ -433,7 +456,7 @@ export default function PrintRoom() {
                         {batchEntries.map(entry => entry.is_end_marker ? (
                           <div key={entry.id} className="bg-red-900/20 border-l-[3px] border-red-500 px-3 py-1 my-1 rounded text-red-400 font-bold text-sm flex justify-between items-center">
                             🛑 END
-                            <button onClick={() => deleteEntry(entry.id, entry.truck_number)} className="text-red-500 hover:text-red-300">✕</button>
+                            <button onClick={() => deleteEntry(entry.id, entry.truck_number, door.id, entry.batch_number, entry.row_order)} className="text-red-500 hover:text-red-300">✕</button>
                           </div>
                         ) : (
                           <div key={entry.id} className={`grid grid-cols-[40px_70px_40px_40px_1fr_24px] gap-1 items-center px-1 py-[3px] border-b border-white/5 hover:bg-white/[0.02] transition-colors ${highlightIds.has(entry.id) ? 'bg-red-500/20 ring-1 ring-red-500/50 rounded' : ''}`}>
@@ -453,7 +476,7 @@ export default function PrintRoom() {
                             <input defaultValue={entry.notes || ''} placeholder="Notes..."
                               onBlur={e => saveField(entry.id, 'notes', e.target.value)}
                               className="bg-[#222] border border-[#333] rounded px-1 py-1.5 text-xs text-gray-400 w-full focus:border-amber-500 outline-none" />
-                            <button onClick={() => deleteEntry(entry.id, entry.truck_number)}
+                            <button onClick={() => deleteEntry(entry.id, entry.truck_number, door.id, entry.batch_number, entry.row_order)}
                               className="text-red-500/30 hover:text-red-500 text-sm">✕</button>
                           </div>
                         ))}
