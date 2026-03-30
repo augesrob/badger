@@ -171,14 +171,15 @@ export default function PrintRoom() {
               if (tractor) isTractorNumber = true
             }
           }
-          const defaultStatusName = (isSemi || isTractorNumber) ? 'Transfer' : 'On Route'
-          const { data: defaultStatus } = await supabase.from('status_values').select('id').eq('status_name', defaultStatusName).maybeSingle()
-          // Look up preshift location
+          // Check preshift position first — use that status if found, otherwise use default
           let preshiftLoc: string | null = null
+          let preshiftStatus: string | null = null
           for (const sd of stagingDoors) {
-            if (sd.in_front === truckStr) { preshiftLoc = sd.door_label; break }
-            if (sd.in_back === truckStr) { preshiftLoc = sd.door_label; break }
+            if (sd.in_front === truckStr) { preshiftLoc = sd.door_label; preshiftStatus = 'Ready'; break }
+            if (sd.in_back === truckStr) { preshiftLoc = sd.door_label; preshiftStatus = 'In Back'; break }
           }
+          const defaultStatusName = preshiftStatus ?? ((isSemi || isTractorNumber) ? 'Transfer' : 'On Route')
+          const { data: defaultStatus } = await supabase.from('status_values').select('id').eq('status_name', defaultStatusName).maybeSingle()
           await supabase.from('live_movement').insert({
             truck_number: truckStr,
             status_id: defaultStatus?.id || null,
