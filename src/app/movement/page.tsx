@@ -438,7 +438,7 @@ export default function Movement() {
       <div className="sticky top-[49px] z-40 bg-[#0f0f0f] border-b border-[#333] -mx-4 px-4 py-2 mb-3">
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
           <button
-            onClick={() => window.open('/door-status', 'door-status', 'width=420,height=340,resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no,status=no')}
+            onClick={() => window.open('/door-status', 'door-status', 'popup,width=420,height=340')}
             className="flex-shrink-0 flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/40 text-amber-400 rounded-lg px-3 py-1.5 text-xs font-bold hover:bg-amber-500/20 transition-colors"
             title="Open door status in separate window"
           >

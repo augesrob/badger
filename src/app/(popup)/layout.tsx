@@ -6,6 +6,10 @@ import { ToastProvider } from '@/components/Toast'
 
 export const metadata: Metadata = {
   title: 'Door Status — Badger',
+  other: {
+    // Disable Vercel toolbar on popup windows
+    'vercel-toolbar': 'false',
+  },
 }
 
 // Bare popup layout — NO Nav, NO padding, NO KeepAlive
