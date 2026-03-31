@@ -97,56 +97,62 @@ export default function Movement() {
       if (data) setStagingDoors(data)
     }
 
-    let channel = supabase.channel('movement-realtime')
+    const makeChannel = () => supabase.channel(`movement-realtime-${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'live_movement' }, fetchTrucks)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'status_values' }, fetchTrucks)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, fetchDoors)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'door_status_values' }, fetchDoors)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'printroom_entries' }, fetchPrintroom)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staging_doors' }, fetchStaging)
-      .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') {
-          // Re-subscribe after a short delay
-          setTimeout(() => {
-            supabase.removeChannel(channel)
-            channel = supabase.channel('movement-realtime')
-              .on('postgres_changes', { event: '*', schema: 'public', table: 'live_movement' }, fetchTrucks)
-              .on('postgres_changes', { event: '*', schema: 'public', table: 'status_values' }, fetchTrucks)
-              .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, fetchDoors)
-              .on('postgres_changes', { event: '*', schema: 'public', table: 'door_status_values' }, fetchDoors)
-              .on('postgres_changes', { event: '*', schema: 'public', table: 'printroom_entries' }, fetchPrintroom)
-              .on('postgres_changes', { event: '*', schema: 'public', table: 'staging_doors' }, fetchStaging)
-              .subscribe()
-          }, 2000)
-        }
-      })
+
+    let channel = makeChannel().subscribe((status) => {
+      if (status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') {
+        setTimeout(() => {
+          supabase.removeChannel(channel)
+          channel = makeChannel().subscribe()
+        }, 2000)
+      }
+    })
 
     // Reload immediately when tab becomes visible again
-    const handleVisibility = () => { if (document.visibilityState === 'visible') loadAll() }
+    const handleVisibility = () => {
+      if (document.visibilityState !== 'visible') return
+      loadAll()
+      // Re-subscribe if channel dropped while tab was hidden (common on Firefox)
+      const state = channel.state
+      if (state !== 'joined' && state !== 'joining') {
+        supabase.removeChannel(channel)
+        channel = makeChannel().subscribe()
+      }
+    }
     document.addEventListener('visibilitychange', handleVisibility)
 
     const handleResume = () => {
       loadAll()
-      // Re-subscribe if channel is not in SUBSCRIBED state
       const state = channel.state
       if (state !== 'joined' && state !== 'joining') {
         supabase.removeChannel(channel)
-        channel = supabase.channel('movement-realtime')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'live_movement' }, fetchTrucks)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'status_values' }, fetchTrucks)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, fetchDoors)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'door_status_values' }, fetchDoors)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'printroom_entries' }, fetchPrintroom)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'staging_doors' }, fetchStaging)
-          .subscribe()
+        channel = makeChannel().subscribe()
       }
     }
     window.addEventListener('badger:resume', handleResume)
+
+    // Fallback poll every 30s — catches updates when WebSocket silently drops
+    // Especially important for Firefox which is more aggressive about suspending WebSockets
+    const poll = setInterval(() => {
+      // Only poll if channel is NOT subscribed (realtime working = no need to poll)
+      const s = channel.state
+      if (s !== 'joined') {
+        fetchTrucks()
+        fetchDoors()
+      }
+    }, 30_000)
 
     return () => {
       supabase.removeChannel(channel)
       document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('badger:resume', handleResume)
+      clearInterval(poll)
     }
   }, [loadAll])
 
