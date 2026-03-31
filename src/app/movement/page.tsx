@@ -97,20 +97,50 @@ export default function Movement() {
       if (data) setStagingDoors(data)
     }
 
-    const channel = supabase.channel('movement-realtime')
+    let channel = supabase.channel('movement-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'live_movement' }, fetchTrucks)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'status_values' }, fetchTrucks)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, fetchDoors)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'door_status_values' }, fetchDoors)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'printroom_entries' }, fetchPrintroom)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staging_doors' }, fetchStaging)
-      .subscribe()
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') {
+          // Re-subscribe after a short delay
+          setTimeout(() => {
+            supabase.removeChannel(channel)
+            channel = supabase.channel('movement-realtime')
+              .on('postgres_changes', { event: '*', schema: 'public', table: 'live_movement' }, fetchTrucks)
+              .on('postgres_changes', { event: '*', schema: 'public', table: 'status_values' }, fetchTrucks)
+              .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, fetchDoors)
+              .on('postgres_changes', { event: '*', schema: 'public', table: 'door_status_values' }, fetchDoors)
+              .on('postgres_changes', { event: '*', schema: 'public', table: 'printroom_entries' }, fetchPrintroom)
+              .on('postgres_changes', { event: '*', schema: 'public', table: 'staging_doors' }, fetchStaging)
+              .subscribe()
+          }, 2000)
+        }
+      })
 
     // Reload immediately when tab becomes visible again
     const handleVisibility = () => { if (document.visibilityState === 'visible') loadAll() }
     document.addEventListener('visibilitychange', handleVisibility)
 
-    const handleResume = () => loadAll()
+    const handleResume = () => {
+      loadAll()
+      // Re-subscribe if channel is not in SUBSCRIBED state
+      const state = channel.state
+      if (state !== 'joined' && state !== 'joining') {
+        supabase.removeChannel(channel)
+        channel = supabase.channel('movement-realtime')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'live_movement' }, fetchTrucks)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'status_values' }, fetchTrucks)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, fetchDoors)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'door_status_values' }, fetchDoors)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'printroom_entries' }, fetchPrintroom)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'staging_doors' }, fetchStaging)
+          .subscribe()
+      }
+    }
     window.addEventListener('badger:resume', handleResume)
 
     return () => {

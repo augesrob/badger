@@ -26,9 +26,7 @@ export function KeepAlive() {
     const handleVisibility = () => {
       if (document.visibilityState !== 'visible') return
 
-      // Always reconnect Supabase WebSocket when tab comes back
-      supabase.realtime.disconnect()
-      setTimeout(() => supabase.realtime.connect(), 300)
+      // Signal pages to re-check data and re-subscribe if needed
       window.dispatchEvent(new CustomEvent('badger:resume'))
 
       if (!mobile.current) return
