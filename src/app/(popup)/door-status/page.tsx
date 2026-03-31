@@ -49,11 +49,40 @@ export default function DoorStatusWindow() {
   useEffect(() => {
     if (!profile || !can('movement')) return
     fetchAll()
-    const channel = supabase.channel('door-window-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, fetchAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'door_status_values' }, fetchAll)
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
+
+    const subscribe = () => {
+      const ch = supabase.channel('door-window-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, fetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'door_status_values' }, fetchAll)
+        .subscribe((status) => {
+          if (status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') {
+            setTimeout(() => { supabase.removeChannel(ch); subscribe() }, 2000)
+          }
+        })
+      return ch
+    }
+
+    let channel = subscribe()
+
+    // Popout windows don't get KeepAlive — handle visibility directly
+    const handleVisibility = () => {
+      if (document.visibilityState !== 'visible') return
+      fetchAll()
+      if (channel.state !== 'joined' && channel.state !== 'joining') {
+        supabase.removeChannel(channel)
+        channel = subscribe()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    // Fallback poll every 30s in case WebSocket silently drops
+    const poll = setInterval(fetchAll, 30000)
+
+    return () => {
+      supabase.removeChannel(channel)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      clearInterval(poll)
+    }
   }, [fetchAll, profile, can])
 
   const setDoorStatus = async (doorId: number, status: string) => {
