@@ -47,11 +47,12 @@ export default function DoorStatusWindow() {
   }, [])
 
   useEffect(() => {
-    if (!profile || !can('movement')) return
+    if (!profile) return
     fetchAll()
 
+    // Auto-reconnecting subscribe helper — unique channel name avoids conflicts with movement page
     const subscribe = () => {
-      const ch = supabase.channel('door-window-realtime')
+      const ch = supabase.channel('door-status-popup-v2')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, fetchAll)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'door_status_values' }, fetchAll)
         .subscribe((status) => {
@@ -64,7 +65,7 @@ export default function DoorStatusWindow() {
 
     let channel = subscribe()
 
-    // Popout windows don't get KeepAlive — handle visibility directly
+    // Popup windows don't get KeepAlive — re-fetch + reconnect when tab becomes visible
     const handleVisibility = () => {
       if (document.visibilityState !== 'visible') return
       fetchAll()
@@ -75,15 +76,16 @@ export default function DoorStatusWindow() {
     }
     document.addEventListener('visibilitychange', handleVisibility)
 
-    // Fallback poll every 30s in case WebSocket silently drops
-    const poll = setInterval(fetchAll, 30000)
+    // Fallback poll every 10s — catches changes if WebSocket silently drops
+    const poll = setInterval(fetchAll, 10_000)
 
     return () => {
       supabase.removeChannel(channel)
       document.removeEventListener('visibilitychange', handleVisibility)
       clearInterval(poll)
     }
-  }, [fetchAll, profile, can])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]) // stable after mount — fetchAll is memoised, can doesn't affect subscription
 
   const setDoorStatus = async (doorId: number, status: string) => {
     setDoors(ds => ds.map(d => d.id === doorId ? { ...d, door_status: status } : d))
