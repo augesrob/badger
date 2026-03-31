@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useRef } from 'react'
-import { supabase } from '@/lib/supabase'
 
 // KeepAlive: only does what's actually needed.
 // - On MOBILE (iOS/Android): silent audio + speechSynthesis resume + Supabase reconnect
