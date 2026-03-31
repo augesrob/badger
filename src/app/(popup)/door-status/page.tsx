@@ -50,14 +50,14 @@ export default function DoorStatusWindow() {
     if (!profile) return
     fetchAll()
 
-    // Auto-reconnecting subscribe helper — unique channel name avoids conflicts with movement page
+    // Auto-reconnecting realtime channel
     const subscribe = () => {
-      const ch = supabase.channel('door-status-popup-v2')
+      const ch = supabase.channel(`door-status-popup-${Date.now()}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, fetchAll)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'door_status_values' }, fetchAll)
         .subscribe((status) => {
           if (status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') {
-            setTimeout(() => { supabase.removeChannel(ch); subscribe() }, 2000)
+            setTimeout(() => { supabase.removeChannel(ch); subscribe() }, 1000)
           }
         })
       return ch
@@ -65,7 +65,7 @@ export default function DoorStatusWindow() {
 
     let channel = subscribe()
 
-    // Popup windows don't get KeepAlive — re-fetch + reconnect when tab becomes visible
+    // Re-fetch + reconnect when window regains focus
     const handleVisibility = () => {
       if (document.visibilityState !== 'visible') return
       fetchAll()
@@ -76,8 +76,9 @@ export default function DoorStatusWindow() {
     }
     document.addEventListener('visibilitychange', handleVisibility)
 
-    // Fallback poll every 10s — catches changes if WebSocket silently drops
-    const poll = setInterval(fetchAll, 10_000)
+    // Aggressive poll — popup is dedicated window, 2s poll is instant feel
+    // Only 2 small queries so egress impact is negligible
+    const poll = setInterval(fetchAll, 2_000)
 
     return () => {
       supabase.removeChannel(channel)
@@ -85,7 +86,7 @@ export default function DoorStatusWindow() {
       clearInterval(poll)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile]) // stable after mount — fetchAll is memoised, can doesn't affect subscription
+  }, [profile])
 
   const setDoorStatus = async (doorId: number, status: string) => {
     setDoors(ds => ds.map(d => d.id === doorId ? { ...d, door_status: status } : d))
