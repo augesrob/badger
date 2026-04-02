@@ -105,11 +105,14 @@ export default function Movement() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'printroom_entries' }, fetchPrintroom)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staging_doors' }, fetchStaging)
 
+    let reconnecting = false
     let channel = makeChannel().subscribe((status) => {
-      if (status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') {
+      if ((status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') && !reconnecting) {
+        reconnecting = true
         setTimeout(() => {
           supabase.removeChannel(channel)
           channel = makeChannel().subscribe()
+          reconnecting = false
         }, 2000)
       }
     })

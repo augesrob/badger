@@ -51,13 +51,15 @@ export default function DoorStatusWindow() {
     fetchAll()
 
     // Auto-reconnecting realtime channel
+    let reconnecting = false
     const subscribe = () => {
       const ch = supabase.channel(`door-status-popup-${Date.now()}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'loading_doors' }, fetchAll)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'door_status_values' }, fetchAll)
         .subscribe((status) => {
-          if (status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') {
-            setTimeout(() => { supabase.removeChannel(ch); subscribe() }, 1000)
+          if ((status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') && !reconnecting) {
+            reconnecting = true
+            setTimeout(() => { supabase.removeChannel(ch); channel = subscribe(); reconnecting = false }, 2000)
           }
         })
       return ch
@@ -76,9 +78,11 @@ export default function DoorStatusWindow() {
     }
     document.addEventListener('visibilitychange', handleVisibility)
 
-    // Aggressive poll — popup is dedicated window, 2s poll is instant feel
-    // Only 2 small queries so egress impact is negligible
-    const poll = setInterval(fetchAll, 2_000)
+    // Safety-net poll every 15s — only fires if tab visible and realtime dropped
+    const poll = setInterval(() => {
+      if (document.hidden) return
+      if (channel.state !== 'joined') fetchAll()
+    }, 15_000)
 
     return () => {
       supabase.removeChannel(channel)
