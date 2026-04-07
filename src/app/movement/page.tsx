@@ -444,33 +444,38 @@ export default function Movement() {
     <RequirePage pageKey="movement">
     <div>
       {/* STICKY Door Status Bar */}
-      <div className="sticky top-[49px] z-40 bg-[#0f0f0f] border-b border-[#333] -mx-4 px-4 py-1 mb-3">
-        <div className="flex items-center gap-1 overflow-x-auto">
+      <div style={{ position: 'sticky', top: 49, zIndex: 40, background: '#0f0f0f', borderBottom: '1px solid #333', margin: '0 -1rem', padding: '5px 1rem', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflowX: 'auto' }}>
+          {/* Pop-out button */}
           <button
             onClick={() => window.open('/door-status', 'door-status', 'popup,width=420,height=340')}
-            className="flex-shrink-0 bg-amber-500/10 border border-amber-500/40 text-amber-400 rounded px-1.5 py-0 text-[10px] font-bold hover:bg-amber-500/20 transition-colors leading-none h-5"
             title="Open door status in separate window"
+            style={{ flexShrink: 0, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)', color: '#fbbf24', borderRadius: 6, padding: '3px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer', lineHeight: '20px', height: 28 }}
           >
             🚪↗
           </button>
+          {/* Door pills */}
           {doors.map(d => {
             const st = d.door_status || 'Loading'
             const col = doorStatusColor(st, doorStatusValues)
             return (
-              <div key={d.id} className="flex items-center gap-1 rounded px-1.5 flex-shrink-0 border h-6"
-                style={{ borderColor: col, background: `${col}15` }}>
-                <span className="text-[10px] font-extrabold text-white leading-none">{d.door_name}</span>
-                <select value={st} onChange={e => setDoorStatus(d.id, e.target.value)}
-                  className="status-select-compact" style={{ background: col }}>
+              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, border: `1px solid ${col}`, borderRadius: 6, background: `${col}22`, padding: '0 6px', height: 28 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' }}>{d.door_name}</span>
+                <select
+                  value={st}
+                  onChange={e => setDoorStatus(d.id, e.target.value)}
+                  style={{ background: col, border: 'none', borderRadius: 4, color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', outline: 'none', height: 22, padding: '0 4px', lineHeight: 1 }}
+                >
                   {(doorStatusValues.length > 0 ? doorStatusValues.map(s => s.status_name) : [...DOOR_STATUSES]).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
             )
           })}
-          <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
+          {/* Right side: TTS + live indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexShrink: 0 }}>
             <TTSMiniToggle page="movement" />
-            <span className="text-[10px] text-green-500 animate-pulse">● LIVE</span>
-            <span className="text-[9px] text-gray-500">{lastUpdate}</span>
+            <span style={{ fontSize: 10, color: '#4ade80' }} className="animate-pulse">● LIVE</span>
+            <span style={{ fontSize: 10, color: '#6b7280' }}>{lastUpdate}</span>
           </div>
         </div>
       </div>
