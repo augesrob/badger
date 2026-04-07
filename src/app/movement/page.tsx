@@ -448,7 +448,7 @@ export default function Movement() {
         <div className="flex items-center gap-1 overflow-x-auto">
           <button
             onClick={() => window.open('/door-status', 'door-status', 'popup,width=420,height=340')}
-            className="flex-shrink-0 bg-amber-500/10 border border-amber-500/40 text-amber-400 rounded px-1.5 py-0.5 text-[10px] font-bold hover:bg-amber-500/20 transition-colors leading-none"
+            className="flex-shrink-0 bg-amber-500/10 border border-amber-500/40 text-amber-400 rounded px-1.5 py-0 text-[10px] font-bold hover:bg-amber-500/20 transition-colors leading-none h-5"
             title="Open door status in separate window"
           >
             🚪↗
@@ -457,11 +457,11 @@ export default function Movement() {
             const st = d.door_status || 'Loading'
             const col = doorStatusColor(st, doorStatusValues)
             return (
-              <div key={d.id} className="flex items-center gap-1 rounded px-1.5 py-0.5 flex-shrink-0 border"
+              <div key={d.id} className="flex items-center gap-1 rounded px-1.5 flex-shrink-0 border h-6"
                 style={{ borderColor: col, background: `${col}15` }}>
                 <span className="text-[10px] font-extrabold text-white leading-none">{d.door_name}</span>
                 <select value={st} onChange={e => setDoorStatus(d.id, e.target.value)}
-                  className="status-select text-[9px] py-0 px-0.5 h-5 leading-none" style={{ background: col }}>
+                  className="status-select-compact" style={{ background: col }}>
                   {(doorStatusValues.length > 0 ? doorStatusValues.map(s => s.status_name) : [...DOOR_STATUSES]).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
