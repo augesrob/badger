@@ -444,27 +444,27 @@ export default function Movement() {
     <RequirePage pageKey="movement">
     <div>
       {/* STICKY Door Status Bar */}
-      <div style={{ position: 'sticky', top: 49, zIndex: 40, background: '#0f0f0f', borderBottom: '1px solid #333', margin: '0 -1rem', padding: '5px 1rem', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflowX: 'auto' }}>
+      <div style={{ position: 'sticky', top: 49, zIndex: 40, background: '#0f0f0f', borderBottom: '1px solid #333', margin: '0 -1rem', padding: '4px 1rem', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflowX: 'auto' }}>
           {/* Pop-out button */}
           <button
             onClick={() => window.open('/door-status', 'door-status', 'popup,width=420,height=340')}
             title="Open door status in separate window"
-            style={{ flexShrink: 0, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)', color: '#fbbf24', borderRadius: 6, padding: '3px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer', lineHeight: '20px', height: 28 }}
+            style={{ flexShrink: 0, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)', color: '#fbbf24', borderRadius: 6, padding: '0 8px', fontSize: 12, fontWeight: 700, cursor: 'pointer', alignSelf: 'stretch', display: 'flex', alignItems: 'center' }}
           >
             🚪↗
           </button>
-          {/* Door pills */}
+          {/* Door pills — height driven by native select, no fixed height fighting the browser */}
           {doors.map(d => {
             const st = d.door_status || 'Loading'
             const col = doorStatusColor(st, doorStatusValues)
             return (
-              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, border: `1px solid ${col}`, borderRadius: 6, background: `${col}22`, padding: '0 6px', height: 28 }}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' }}>{d.door_name}</span>
+              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 0, flexShrink: 0, border: `1px solid ${col}`, borderRadius: 6, background: `${col}22`, overflow: 'hidden' }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', padding: '0 6px', borderRight: `1px solid ${col}` }}>{d.door_name}</span>
                 <select
                   value={st}
                   onChange={e => setDoorStatus(d.id, e.target.value)}
-                  style={{ background: col, border: 'none', borderRadius: 4, color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', outline: 'none', height: 22, padding: '0 4px', lineHeight: 1 }}
+                  style={{ background: col, border: 'none', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', outline: 'none', padding: '2px 4px', margin: 0, display: 'block' }}
                 >
                   {(doorStatusValues.length > 0 ? doorStatusValues.map(s => s.status_name) : [...DOOR_STATUSES]).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
