@@ -1,11 +1,130 @@
 'use client'
-import { useEffect, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { LoadingDoor, LiveMovement, StatusValue, PrintroomEntry, StagingDoor, Tractor, TrailerItem, DoorStatusValue, DockLockStatusValue, DOOR_STATUSES, doorStatusColor } from '@/lib/types'
 import { getTTSSettings, useMovementTTS } from '@/lib/tts'
 import { TTSMiniToggle } from '@/components/TTSPanel'
 import RequirePage from '@/components/RequirePage'
+
+// ─── Custom Door Status Bar ───────────────────────────────────────────────────
+// Uses a fully custom dropdown instead of native <select> so it looks identical
+// on Chrome, Firefox, Edge, and Safari — native selects vary in height/padding by OS.
+function DoorPill({ door, statusOptions, statusColor, onSelect }: {
+  door: LoadingDoor
+  statusOptions: string[]
+  statusColor: (s: string) => string
+  onSelect: (status: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const st = door.door_status || 'Loading'
+  const col = statusColor(st)
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
+      {/* Pill button */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 0,
+          border: `1px solid ${col}`, borderRadius: 6,
+          background: `${col}22`, overflow: 'hidden',
+          cursor: 'pointer', padding: 0, height: 30,
+        }}
+      >
+        <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', padding: '0 7px', borderRight: `1px solid ${col}`, height: '100%', display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
+          {door.door_name}
+        </span>
+        <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', background: col, padding: '0 6px', height: '100%', display: 'flex', alignItems: 'center', whiteSpace: 'nowrap', gap: 4 }}>
+          {st} <span style={{ fontSize: 8, opacity: 0.8 }}>▼</span>
+        </span>
+      </button>
+      {/* Dropdown menu */}
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, marginTop: 3, zIndex: 100,
+          background: '#1a1a1a', border: '1px solid #444', borderRadius: 6,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.6)', minWidth: '100%', overflow: 'hidden',
+        }}>
+          {statusOptions.map(s => (
+            <button
+              key={s}
+              onClick={() => { onSelect(s); setOpen(false) }}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left',
+                padding: '6px 10px', fontSize: 11, fontWeight: 600,
+                color: '#fff', background: s === st ? `${statusColor(s)}44` : 'transparent',
+                border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
+                borderLeft: `3px solid ${statusColor(s)}`,
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = `${statusColor(s)}33`)}
+              onMouseLeave={e => (e.currentTarget.style.background = s === st ? `${statusColor(s)}44` : 'transparent')}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DoorStatusBar({ doors, doorStatusValues, onSetDoorStatus, lastUpdate, ttsToggle }: {
+  doors: LoadingDoor[]
+  doorStatusValues: DoorStatusValue[]
+  onSetDoorStatus: (id: number, status: string) => void
+  lastUpdate: string
+  ttsToggle: React.ReactNode
+}) {
+  const statusOptions = doorStatusValues.length > 0
+    ? doorStatusValues.map(s => s.status_name)
+    : [...DOOR_STATUSES]
+  const statusColor = (s: string) => doorStatusColor(s, doorStatusValues)
+
+  return (
+    <div style={{ position: 'sticky', top: 49, zIndex: 40, background: '#0f0f0f', borderBottom: '1px solid #333', margin: '0 -1rem', padding: '5px 1rem', marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflowX: 'auto' }}>
+        {/* Pop-out button */}
+        <button
+          onClick={() => window.open('/door-status', 'door-status', 'popup,width=420,height=340')}
+          title="Open door status in pop-out window"
+          style={{ flexShrink: 0, height: 30, padding: '0 10px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)', color: '#fbbf24', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+        >
+          🚪↗
+        </button>
+        {/* Door pills */}
+        {doors.map(d => (
+          <DoorPill
+            key={d.id}
+            door={d}
+            statusOptions={statusOptions}
+            statusColor={statusColor}
+            onSelect={status => onSetDoorStatus(d.id, status)}
+          />
+        ))}
+        {/* Right: TTS + live */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexShrink: 0 }}>
+          {ttsToggle}
+          <span style={{ fontSize: 10, color: '#4ade80' }} className="animate-pulse">● LIVE</span>
+          <span style={{ fontSize: 10, color: '#6b7280' }}>{lastUpdate}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 
 export default function Movement() {
   const toast = useToast()
@@ -443,42 +562,14 @@ export default function Movement() {
   return (
     <RequirePage pageKey="movement">
     <div>
-      {/* STICKY Door Status Bar */}
-      <div style={{ position: 'sticky', top: 49, zIndex: 40, background: '#0f0f0f', borderBottom: '1px solid #333', margin: '0 -1rem', padding: '4px 1rem', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflowX: 'auto' }}>
-          {/* Pop-out button */}
-          <button
-            onClick={() => window.open('/door-status', 'door-status', 'popup,width=420,height=340')}
-            title="Open door status in separate window"
-            style={{ flexShrink: 0, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)', color: '#fbbf24', borderRadius: 6, padding: '0 8px', fontSize: 12, fontWeight: 700, cursor: 'pointer', alignSelf: 'stretch', display: 'flex', alignItems: 'center' }}
-          >
-            🚪↗
-          </button>
-          {/* Door pills — height driven by native select, no fixed height fighting the browser */}
-          {doors.map(d => {
-            const st = d.door_status || 'Loading'
-            const col = doorStatusColor(st, doorStatusValues)
-            return (
-              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 0, flexShrink: 0, border: `1px solid ${col}`, borderRadius: 6, background: `${col}22`, overflow: 'hidden' }}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', padding: '0 6px', borderRight: `1px solid ${col}` }}>{d.door_name}</span>
-                <select
-                  value={st}
-                  onChange={e => setDoorStatus(d.id, e.target.value)}
-                  style={{ background: col, border: 'none', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', outline: 'none', padding: '2px 4px', margin: 0, display: 'block' }}
-                >
-                  {(doorStatusValues.length > 0 ? doorStatusValues.map(s => s.status_name) : [...DOOR_STATUSES]).map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-            )
-          })}
-          {/* Right side: TTS + live indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexShrink: 0 }}>
-            <TTSMiniToggle page="movement" />
-            <span style={{ fontSize: 10, color: '#4ade80' }} className="animate-pulse">● LIVE</span>
-            <span style={{ fontSize: 10, color: '#6b7280' }}>{lastUpdate}</span>
-          </div>
-        </div>
-      </div>
+      {/* STICKY Door Status Bar — custom dropdowns, no native <select>, consistent across all browsers */}
+      <DoorStatusBar
+        doors={doors}
+        doorStatusValues={doorStatusValues}
+        onSetDoorStatus={setDoorStatus}
+        lastUpdate={lastUpdate}
+        ttsToggle={<TTSMiniToggle page="movement" />}
+      />
 
       <h1 className="text-xl font-bold mb-2">🚚 Live Movement</h1>
 
