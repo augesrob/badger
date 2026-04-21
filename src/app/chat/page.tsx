@@ -4,6 +4,29 @@ import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
+// ── In-memory chat unread store — shared with NotificationBell, zero egress ──
+// Exported so Nav/NotificationBell can subscribe without any DB calls.
+export interface ChatUnread { roomId: number; roomName: string; preview: string }
+type UnreadListener = (items: ChatUnread[]) => void
+export const chatUnreadStore = (() => {
+  let items: ChatUnread[] = []
+  const listeners = new Set<UnreadListener>()
+  return {
+    add(item: ChatUnread) {
+      // Keep max 20, most recent first, dedupe by roomId (update preview)
+      items = [item, ...items.filter(i => i.roomId !== item.roomId)].slice(0, 20)
+      listeners.forEach(l => l([...items]))
+    },
+    clearRoom(roomId: number) {
+      items = items.filter(i => i.roomId !== roomId)
+      listeners.forEach(l => l([...items]))
+    },
+    clearAll() { items = []; listeners.forEach(l => l([])) },
+    subscribe(l: UnreadListener) { listeners.add(l); l([...items]); return () => listeners.delete(l) },
+    get count() { return items.length },
+  }
+})()
+
 interface Message {
   id: number
   room_id: number
@@ -170,9 +193,14 @@ export default function ChatPage() {
               setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
             }
           } else {
+            // Increment in-sidebar unread badge
             setRooms(prev => prev.map(r =>
               r.id === roomId ? { ...r, unread: r.unread + 1 } : r
             ))
+            // Notify the bell using in-memory store — zero extra DB/egress
+            // payload.new already contains room_id + content from the realtime push
+            const roomName = roomsRef.current.find(r => r.id === roomId)?.name ?? 'Chat'
+            chatUnreadStore.add({ roomId, roomName, preview: String(payload.new.content ?? '').slice(0, 60) })
           }
         })
     })
@@ -214,6 +242,7 @@ export default function ChatPage() {
     if (!activeRoomId) return
     loadMessages(activeRoomId)
     setRooms(prev => prev.map(r => r.id === activeRoomId ? { ...r, unread: 0 } : r))
+    chatUnreadStore.clearRoom(activeRoomId)
   }, [activeRoomId, loadMessages])
 
   // ── Send / delete / clear ───────────────────────────────────────────────
