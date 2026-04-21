@@ -29,7 +29,6 @@ async function fetchSheetCSV(gid: string): Promise<string[][]> {
 }
 
 // Exact column offsets confirmed from CSV inspection:
-// Row layout: col0=Batch, then per door: DoorLoc, (icon), Route#, Truck#, Status, Pods, Pallets
 const DOOR_GROUPS = [
   { doorName: '13A', truckCol: 4,  podsCol: 6,  palletsCol: 7  },
   { doorName: '13B', truckCol: 11, podsCol: 13, palletsCol: 14 },
@@ -39,7 +38,11 @@ const DOOR_GROUPS = [
   { doorName: '15B', truckCol: 39, podsCol: 41, palletsCol: 42 },
 ]
 
-const BAD_VALUES = new Set(['MIA', '#REF!', '#N/A', 'N/A', 'CPU', 'IGNORE', 'IGNORE', 'MT', ''])
+// Truly invalid sheet values — skip entirely
+const BAD_VALUES = new Set(['MIA', '#REF!', '#N/A', 'N/A', ''])
+
+// Special truck labels stored as-is in printroom but never added to live_movement
+const NO_MOVEMENT = new Set(['cpu', 'gap', 'end'])
 
 export async function DELETE() {
   // Clean up bad data from previous broken sync run:
@@ -226,7 +229,9 @@ export async function POST(req: NextRequest) {
 
       let movementAdded = 0
       for (const truck of Array.from(syncedTrucks)) {
-        if (inMovement.has(truck)) continue // already in movement
+        if (inMovement.has(truck)) continue
+        // cpu/gap/end go in printroom only — automation handles them, no live_movement row needed
+        if (NO_MOVEMENT.has(truck.toLowerCase())) continue
 
         // Find preshift position
         let preshiftLoc: string | null = null
