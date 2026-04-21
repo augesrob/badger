@@ -534,7 +534,7 @@ export default function PrintRoom() {
                               list="semi-slots-list"
                               onBlur={e => saveField(entry.id, 'truck_number', e.target.value)}
                               className="bg-[#222] border border-[#333] rounded px-1 py-1.5 text-sm w-full font-bold text-amber-500 focus:border-amber-500 outline-none text-center" />
-                            <input defaultValue={entry.pods || 0} placeholder="0"
+                            <input key={`pods-${entry.id}-${entry.pods}`} defaultValue={entry.pods || 0} placeholder="0"
                               onBlur={e => {
                                 const raw = e.target.value.trim()
                                 const val_ = raw === '' || isNaN(parseInt(raw)) ? 0 : parseInt(raw)
@@ -542,7 +542,7 @@ export default function PrintRoom() {
                                 saveField(entry.id, 'pods', val_)
                               }}
                               className="bg-[#222] border border-[#333] rounded px-1 py-1.5 text-xs w-full focus:border-amber-500 outline-none text-center" />
-                            <input defaultValue={entry.pallets_trays || 0} placeholder="0"
+                            <input key={`pal-${entry.id}-${entry.pallets_trays}`} defaultValue={entry.pallets_trays || 0} placeholder="0"
                               onBlur={e => {
                                 const raw = e.target.value.trim()
                                 const val_ = raw === '' || isNaN(parseInt(raw)) ? 0 : parseInt(raw)
