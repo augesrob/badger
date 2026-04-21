@@ -198,8 +198,60 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // ── Step 4: Upsert trucks into live_movement ─────────────────────────
+      // Get all unique truck numbers that were synced (new or existing)
+      const { data: allEntries } = await adminSupabase
+        .from('printroom_entries')
+        .select('truck_number')
+      const syncedTrucks = new Set(
+        (allEntries ?? [])
+          .map((e: { truck_number: string | null }) => e.truck_number?.trim())
+          .filter((t): t is string => !!t && t !== 'end' && !BAD_VALUES.has(t.toUpperCase()))
+      )
+
+      // Get existing live_movement trucks
+      const { data: existing } = await adminSupabase.from('live_movement').select('truck_number')
+      const inMovement = new Set((existing ?? []).map((e: { truck_number: string }) => e.truck_number))
+
+      // Get staging doors for preshift location lookup
+      const { data: stagingDoors } = await adminSupabase.from('staging_doors').select('door_label, in_front, in_back')
+
+      // Get status values
+      const { data: statusValues } = await adminSupabase.from('status_values').select('id, status_name')
+      const statusByName = new Map((statusValues ?? []).map((s: { id: number; status_name: string }) => [s.status_name, s.id]))
+
+      // Get tractor numbers
+      const { data: tractors } = await adminSupabase.from('tractors').select('truck_number')
+      const tractorNums = new Set((tractors ?? []).map((t: { truck_number: number }) => String(t.truck_number)))
+
+      let movementAdded = 0
+      for (const truck of syncedTrucks) {
+        if (inMovement.has(truck)) continue // already in movement
+
+        // Find preshift position
+        let preshiftLoc: string | null = null
+        let preshiftStatus: string | null = null
+        for (const sd of (stagingDoors ?? [])) {
+          if (sd.in_front === truck) { preshiftLoc = sd.door_label; preshiftStatus = 'Ready'; break }
+          if (sd.in_back  === truck) { preshiftLoc = sd.door_label; preshiftStatus = 'In Back'; break }
+        }
+
+        const isSemi = /^\d+-\d+$/.test(truck)
+        const isTractor = tractorNums.has(truck)
+        const defaultStatusName = preshiftStatus ?? ((isSemi || isTractor) ? 'Transfer' : 'On Route')
+        const statusId = statusByName.get(defaultStatusName) ?? null
+
+        await adminSupabase.from('live_movement').insert({
+          truck_number: truck,
+          status_id: statusId,
+          current_location: preshiftLoc,
+        })
+        movementAdded++
+      }
+
       results.printroomUpdated = printroomUpdated
       results.printroomCreated = printroomCreated
+      results.movementAdded = movementAdded
     }
 
     return NextResponse.json({ ok: true, ...results })
