@@ -39,7 +39,7 @@ export default function PrintRoom() {
       if (!data.ok) { toast(`Sheet sync failed: ${data.error}`, 'error'); return }
       toast(`✅ Sheet sync: ${data.printroomUpdated ?? 0} row(s) filled`)
       await loadData()
-    } catch (e) {
+    } catch {
       toast('Sheet sync error', 'error')
     } finally {
       setSheetSyncing(false)
