@@ -79,7 +79,7 @@ export default function PrintRoom() {
     return () => { supabase.removeChannel(channel) }
   }, [loadData])
 
-  const saveField = useCallback(async (id: number, field: string, value: string | number, forceSave = false) => {
+  const saveField = useCallback(async (id: number, field: string, value: string | number | null, forceSave = false) => {
     // If truck_number is changing, get old value first for cleanup
     let oldTruckNumber: string | null = null
     if (field === 'truck_number') {
@@ -499,11 +499,23 @@ export default function PrintRoom() {
                               list="semi-slots-list"
                               onBlur={e => saveField(entry.id, 'truck_number', e.target.value)}
                               className="bg-[#222] border border-[#333] rounded px-1 py-1.5 text-sm w-full font-bold text-amber-500 focus:border-amber-500 outline-none text-center" />
-                            <input defaultValue={entry.pods || ''} placeholder="0"
-                              onBlur={e => saveField(entry.id, 'pods', parseInt(e.target.value) || 0)}
+                            <input defaultValue={entry.pods ?? ''} placeholder="0"
+                              onBlur={e => {
+                                const raw = e.target.value.trim()
+                                const val_ = raw === '' ? null : parseInt(raw)
+                                if (val_ === null || (!isNaN(val_) && val_ >= 0)) {
+                                  saveField(entry.id, 'pods', val_ as unknown as number)
+                                }
+                              }}
                               className="bg-[#222] border border-[#333] rounded px-1 py-1.5 text-xs w-full focus:border-amber-500 outline-none text-center" />
-                            <input defaultValue={entry.pallets_trays || ''} placeholder="0"
-                              onBlur={e => saveField(entry.id, 'pallets_trays', parseInt(e.target.value) || 0)}
+                            <input defaultValue={entry.pallets_trays ?? ''} placeholder="0"
+                              onBlur={e => {
+                                const raw = e.target.value.trim()
+                                const val_ = raw === '' ? null : parseInt(raw)
+                                if (val_ === null || (!isNaN(val_) && val_ >= 0)) {
+                                  saveField(entry.id, 'pallets_trays', val_ as unknown as number)
+                                }
+                              }}
                               className="bg-[#222] border border-[#333] rounded px-1 py-1.5 text-xs w-full focus:border-amber-500 outline-none text-center" />
                             <input defaultValue={entry.notes || ''} placeholder="Notes..."
                               onBlur={e => saveField(entry.id, 'notes', e.target.value)}
