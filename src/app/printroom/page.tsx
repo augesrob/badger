@@ -115,8 +115,8 @@ export default function PrintRoom() {
       }
     }
 
-    const { error } = await supabase.from('printroom_entries').update({ [field]: value || null }).eq('id', id)
-    if (error) { toast('Save failed', 'error'); return }
+    const { error } = await supabase.from('printroom_entries').update({ [field]: value ?? null }).eq('id', id)
+    if (error) { console.error('saveField error:', field, value, error); toast('Save failed', 'error'); return }
 
     // Sync notes/route_info changes into routesheet localStorage so routesheet stays current
     if ((field === 'notes' || field === 'route_info') && value !== undefined) {
