@@ -17,7 +17,7 @@ export const chatUnreadStore = (() => {
       listeners.forEach(l => l([...items]))
     },
     clearAll() { items = []; listeners.forEach(l => l([])) },
-    subscribe(l: UnreadListener) { listeners.add(l); l([...items]); return () => listeners.delete(l) },
+    subscribe(l: UnreadListener) { listeners.add(l); l([...items]); return () => { listeners.delete(l) } },
     get count() { return items.length },
   }
 })()
