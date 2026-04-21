@@ -18,8 +18,7 @@ async function fetchSheetCSV(gid: string): Promise<string[][]> {
   return text.split('\n').map(line => {
     const cells: string[] = []
     let cur = '', inQ = false
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i]
+    for (const c of line) {
       if (c === '"') { inQ = !inQ }
       else if (c === ',' && !inQ) { cells.push(cur.trim()); cur = '' }
       else { cur += c }
@@ -27,6 +26,30 @@ async function fetchSheetCSV(gid: string): Promise<string[][]> {
     cells.push(cur.trim())
     return cells
   })
+}
+
+// Exact column offsets confirmed from CSV inspection:
+// Row layout: col0=Batch, then per door: DoorLoc, (icon), Route#, Truck#, Status, Pods, Pallets
+const DOOR_GROUPS = [
+  { doorName: '13A', truckCol: 4,  podsCol: 6,  palletsCol: 7  },
+  { doorName: '13B', truckCol: 11, podsCol: 13, palletsCol: 14 },
+  { doorName: '14A', truckCol: 18, podsCol: 20, palletsCol: 21 },
+  { doorName: '14B', truckCol: 25, podsCol: 27, palletsCol: 28 },
+  { doorName: '15A', truckCol: 32, podsCol: 34, palletsCol: 35 },
+  { doorName: '15B', truckCol: 39, podsCol: 41, palletsCol: 42 },
+]
+
+const BAD_VALUES = new Set(['MIA', '#REF!', '#N/A', 'N/A', 'CPU', 'IGNORE', 'IGNORE', 'MT', ''])
+
+export async function DELETE() {
+  // Clean up bad data from previous broken sync run:
+  // Route numbers (1-2 digit) were incorrectly written into truck_number fields
+  const { data, error } = await adminSupabase
+    .from('printroom_entries')
+    .update({ truck_number: null })
+    .or('truck_number.eq.1,truck_number.eq.2,truck_number.eq.3,truck_number.eq.4,truck_number.eq.5,truck_number.eq.6,truck_number.eq.7,truck_number.eq.8')
+  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+  return NextResponse.json({ ok: true, cleaned: data })
 }
 
 export async function POST(req: NextRequest) {
@@ -47,6 +70,7 @@ export async function POST(req: NextRequest) {
       ]))
 
       let updated = 0
+      // Header row 0 = "Door #, In Front, In Back", data from row 1
       for (const row of rows.slice(1)) {
         const label = (row[0] ?? '').replace(/\s+/g, '').toUpperCase()
         if (!label.match(/^\d+[AB]$/i)) continue
@@ -79,94 +103,94 @@ export async function POST(req: NextRequest) {
 
       const doorNameToId = new Map(doors.map(d => [d.door_name?.trim(), d.id]))
 
-      // Find header row (contains "Truck")
-      let headerRowIdx = -1
-      for (let i = 0; i < Math.min(10, rows.length); i++) {
-        if (rows[i].some(c => c.toLowerCase().includes('truck'))) { headerRowIdx = i; break }
+      type E = {
+        id: number
+        truck_number: string | null
+        pods: number | null
+        pallets_trays: number | null
+        loading_door_id: number
+        batch_number: number
+        row_order: number
       }
-      if (headerRowIdx < 0) {
-        results.printroomUpdated = 0
-        results.printroomError = 'Header row not found'
-      } else {
-        const headerRow = rows[headerRowIdx]
-        // Door name row is 2 rows above the column header row
-        const doorNameRow = rows[Math.max(0, headerRowIdx - 2)]
 
-        // Find door groups: scan for "Door" in header row
-        // Each group: DoorLoc(+0) Route(+1) Truck(+2) Status(+3) Pods(+4) Pallets(+5)
-        interface DoorGroup { doorName: string; truckCol: number; podsCol: number; palletsCol: number }
-        const doorGroups: DoorGroup[] = []
-        for (let col = 1; col < headerRow.length; col++) {
-          if (headerRow[col]?.toLowerCase().includes('door')) {
-            // Find door name from the merged header row above
-            let doorName = ''
-            for (let c = col + 2; c >= Math.max(0, col - 1); c--) {
-              const v = doorNameRow[c]?.trim()
-              if (v && /^\d+[AB]$/i.test(v)) { doorName = v.toUpperCase(); break }
-            }
-            // Also check the cell directly above this column group
-            if (!doorName) {
-              const above = doorNameRow[col]?.trim()
-              if (above && /\d+[AB]/i.test(above)) doorName = above.replace(/[^0-9AB]/gi, '').toUpperCase()
-            }
-            doorGroups.push({ doorName, truckCol: col+2, podsCol: col+4, palletsCol: col+5 })
-          }
-        }
+      // Build lookup: doorId:batch:rowOrder → entry
+      const entryMap = new Map<string, E>()
+      for (const e of entries as E[]) {
+        entryMap.set(`${e.loading_door_id}:${e.batch_number}:${e.row_order}`, e)
+      }
 
-        // Build entry lookup: doorId:batch:rowOrder → entry
-        type E = { id: number; truck_number: string|null; pods: number|null; pallets_trays: number|null; loading_door_id: number; batch_number: number; row_order: number }
-        const entryMap = new Map<string, E>()
-        for (const e of entries as E[]) {
-          entryMap.set(`${e.loading_door_id}:${e.batch_number}:${e.row_order}`, e)
-        }
+      let printroomUpdated = 0
+      let currentBatch = 1
+      // Track how many data rows we've seen per door+batch
+      const doorRowIdx = new Map<string, number>()
 
-        let printroomUpdated = 0
-        let currentBatch = 1
-        const doorRowIdx = new Map<string, number>()
+      // Data starts at row index 4 (rows 0-3 are title/header rows)
+      // Row 0: blank, Row 1: door names (13A etc), Row 2: Loading, Row 3: column headers
+      for (let r = 4; r < rows.length; r++) {
+        const row = rows[r]
 
-        for (let r = headerRowIdx + 1; r < rows.length; r++) {
-          const row = rows[r]
-          const batchCell = row[0]?.trim()
-          if (batchCell && /^[1-4]$/.test(batchCell)) {
-            currentBatch = parseInt(batchCell)
+        // Skip completely empty rows
+        if (row.every(c => !c?.trim())) continue
+
+        // Skip notes rows at the bottom (col 0 contains text like "Shift Notes")
+        const col0 = row[0]?.trim()
+        if (col0 && !/^[1-4]$/.test(col0) && col0.length > 1) continue
+
+        // Detect batch number change
+        if (col0 && /^[1-4]$/.test(col0)) {
+          const newBatch = parseInt(col0)
+          if (newBatch !== currentBatch) {
+            currentBatch = newBatch
             doorRowIdx.clear()
           }
-          if (row.every(c => !c?.trim())) continue
+        }
 
-          for (const g of doorGroups) {
-            if (!g.doorName) continue
-            const doorId = doorNameToId.get(g.doorName)
-            if (!doorId) continue
+        // Process each door group
+        let anyData = false
+        for (const g of DOOR_GROUPS) {
+          const doorId = doorNameToId.get(g.doorName)
+          if (!doorId) continue
 
-            const sheetTruck   = row[g.truckCol]?.trim() || null
-            const sheetPods    = row[g.podsCol]?.trim() || null
-            const sheetPallets = row[g.palletsCol]?.trim() || null
-            if (!sheetTruck && !sheetPods && !sheetPallets) continue
+          const rawTruck   = row[g.truckCol]?.trim() || ''
+          const rawPods    = row[g.podsCol]?.trim() || ''
+          const rawPallets = row[g.palletsCol]?.trim() || ''
 
-            const key = `${g.doorName}:${currentBatch}`
-            const rowOrd = (doorRowIdx.get(key) ?? 0) + 1
-            doorRowIdx.set(key, rowOrd)
+          // Skip if no useful data in this door's columns for this row
+          if (!rawTruck && !rawPods && !rawPallets) continue
 
-            const entry = entryMap.get(`${doorId}:${currentBatch}:${rowOrd}`)
-            if (!entry) continue
+          anyData = true
+          const key = `${g.doorName}:${currentBatch}`
+          const rowOrd = (doorRowIdx.get(key) ?? 0) + 1
+          doorRowIdx.set(key, rowOrd)
 
-            const BAD = new Set(['MIA', '#REF!', '#N/A', 'N/A', 'CPU', 'IGNORE', ''])
-            const upd: Record<string, string|number|null> = {}
-            if (!entry.truck_number && sheetTruck && !BAD.has(sheetTruck.toUpperCase()))
-              upd.truck_number = sheetTruck
-            if ((!entry.pods || entry.pods === 0) && sheetPods && !isNaN(parseInt(sheetPods)))
-              upd.pods = parseInt(sheetPods)
-            if ((!entry.pallets_trays || entry.pallets_trays === 0) && sheetPallets && !isNaN(parseInt(sheetPallets)))
-              upd.pallets_trays = parseInt(sheetPallets)
+          const entry = entryMap.get(`${doorId}:${currentBatch}:${rowOrd}`)
+          if (!entry) continue
 
-            if (Object.keys(upd).length > 0) {
-              await adminSupabase.from('printroom_entries').update(upd).eq('id', entry.id)
-              printroomUpdated++
-            }
+          const upd: Record<string, string | number> = {}
+          if (!entry.truck_number && rawTruck && !BAD_VALUES.has(rawTruck.toUpperCase())) {
+            upd.truck_number = rawTruck
+          }
+          if ((!entry.pods || entry.pods === 0) && rawPods && !isNaN(parseInt(rawPods))) {
+            upd.pods = parseInt(rawPods)
+          }
+          if ((!entry.pallets_trays || entry.pallets_trays === 0) && rawPallets && !isNaN(parseInt(rawPallets))) {
+            upd.pallets_trays = parseInt(rawPallets)
+          }
+
+          if (Object.keys(upd).length > 0) {
+            await adminSupabase.from('printroom_entries').update(upd).eq('id', entry.id)
+            printroomUpdated++
           }
         }
-        results.printroomUpdated = printroomUpdated
+
+        // If this row had no data in any door column at all, don't count it as a row
+        // (blank rows between batches shouldn't advance the row counter)
+        if (!anyData) {
+          // Rolled back above — doorRowIdx already not incremented
+        }
       }
+
+      results.printroomUpdated = printroomUpdated
     }
 
     return NextResponse.json({ ok: true, ...results })
