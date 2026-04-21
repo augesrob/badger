@@ -502,19 +502,15 @@ export default function PrintRoom() {
                             <input defaultValue={entry.pods ?? ''} placeholder="0"
                               onBlur={e => {
                                 const raw = e.target.value.trim()
-                                const val_ = raw === '' ? null : parseInt(raw)
-                                if (val_ === null || (!isNaN(val_) && val_ >= 0)) {
-                                  saveField(entry.id, 'pods', val_ as unknown as number)
-                                }
+                                const val_ = raw === '' ? 0 : parseInt(raw)
+                                if (!isNaN(val_) && val_ >= 0) saveField(entry.id, 'pods', val_)
                               }}
                               className="bg-[#222] border border-[#333] rounded px-1 py-1.5 text-xs w-full focus:border-amber-500 outline-none text-center" />
                             <input defaultValue={entry.pallets_trays ?? ''} placeholder="0"
                               onBlur={e => {
                                 const raw = e.target.value.trim()
-                                const val_ = raw === '' ? null : parseInt(raw)
-                                if (val_ === null || (!isNaN(val_) && val_ >= 0)) {
-                                  saveField(entry.id, 'pallets_trays', val_ as unknown as number)
-                                }
+                                const val_ = raw === '' ? 0 : parseInt(raw)
+                                if (!isNaN(val_) && val_ >= 0) saveField(entry.id, 'pallets_trays', val_)
                               }}
                               className="bg-[#222] border border-[#333] rounded px-1 py-1.5 text-xs w-full focus:border-amber-500 outline-none text-center" />
                             <input defaultValue={entry.notes || ''} placeholder="Notes..."
