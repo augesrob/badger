@@ -225,7 +225,7 @@ export async function POST(req: NextRequest) {
       const tractorNums = new Set((tractors ?? []).map((t: { truck_number: number }) => String(t.truck_number)))
 
       let movementAdded = 0
-      for (const truck of syncedTrucks) {
+      for (const truck of Array.from(syncedTrucks)) {
         if (inMovement.has(truck)) continue // already in movement
 
         // Find preshift position
