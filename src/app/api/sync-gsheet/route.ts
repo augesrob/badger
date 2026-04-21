@@ -94,103 +94,112 @@ export async function POST(req: NextRequest) {
     if (target === 'printroom' || target === 'both') {
       const rows = await fetchSheetCSV(MOVEMENT_GID)
 
+      const { data: doors } = await adminSupabase
+        .from('loading_doors').select('id, door_name')
+      if (!doors) throw new Error('Could not load loading doors')
+      const doorNameToId = new Map(doors.map(d => [d.door_name?.trim(), d.id]))
+
+      // ── Step 1: Parse sheet into per-door-per-batch rows ──────────────────
+      type SheetRow = { truck: string; pods: number|null; pallets: number|null }
+      const sheetData = new Map<string, SheetRow[]>() // "doorName:batch" → rows
+
+      let currentBatch = 1
+      for (let r = 4; r < rows.length; r++) {
+        const row = rows[r]
+        if (row.every(c => !c?.trim())) continue
+        const col0 = row[0]?.trim()
+        // Stop at notes section
+        if (col0 && !/^[1-4]$/.test(col0) && col0.length > 1) continue
+        if (col0 && /^[1-4]$/.test(col0)) currentBatch = parseInt(col0)
+
+        for (const g of DOOR_GROUPS) {
+          const truck   = row[g.truckCol]?.trim() || ''
+          const rawPods = row[g.podsCol]?.trim() || ''
+          const rawPal  = row[g.palletsCol]?.trim() || ''
+          if (!truck && !rawPods && !rawPal) continue
+          if (BAD_VALUES.has(truck.toUpperCase())) continue
+          const key = `${g.doorName}:${currentBatch}`
+          if (!sheetData.has(key)) sheetData.set(key, [])
+          sheetData.get(key)!.push({
+            truck,
+            pods:    rawPods && !isNaN(parseInt(rawPods)) ? parseInt(rawPods) : null,
+            pallets: rawPal  && !isNaN(parseInt(rawPal))  ? parseInt(rawPal)  : null,
+          })
+        }
+      }
+
+      // ── Step 2: Load existing entries grouped by door+batch ───────────────
       const { data: entries } = await adminSupabase
         .from('printroom_entries')
         .select('id, truck_number, pods, pallets_trays, loading_door_id, batch_number, row_order')
-      const { data: doors } = await adminSupabase
-        .from('loading_doors').select('id, door_name')
-      if (!entries || !doors) throw new Error('Could not load printroom data')
+        .order('batch_number').order('row_order')
+      if (!entries) throw new Error('Could not load printroom entries')
 
-      const doorNameToId = new Map(doors.map(d => [d.door_name?.trim(), d.id]))
+      type E = { id: number; truck_number: string|null; pods: number|null; pallets_trays: number|null; loading_door_id: number; batch_number: number; row_order: number }
 
-      type E = {
-        id: number
-        truck_number: string | null
-        pods: number | null
-        pallets_trays: number | null
-        loading_door_id: number
-        batch_number: number
-        row_order: number
-      }
-
-      // Build lookup: doorId:batch:rowOrder → entry
-      const entryMap = new Map<string, E>()
+      // Group: doorId:batch → sorted entries
+      const entryGroups = new Map<string, E[]>()
       for (const e of entries as E[]) {
-        entryMap.set(`${e.loading_door_id}:${e.batch_number}:${e.row_order}`, e)
+        const k = `${e.loading_door_id}:${e.batch_number}`
+        if (!entryGroups.has(k)) entryGroups.set(k, [])
+        entryGroups.get(k)!.push(e)
       }
 
       let printroomUpdated = 0
-      let currentBatch = 1
-      // Track how many data rows we've seen per door+batch
-      const doorRowIdx = new Map<string, number>()
+      let printroomCreated = 0
 
-      // Data starts at row index 4 (rows 0-3 are title/header rows)
-      // Row 0: blank, Row 1: door names (13A etc), Row 2: Loading, Row 3: column headers
-      for (let r = 4; r < rows.length; r++) {
-        const row = rows[r]
+      // ── Step 3: For each door+batch, match sheet rows to DB rows ──────────
+      for (const g of DOOR_GROUPS) {
+        const doorId = doorNameToId.get(g.doorName)
+        if (!doorId) continue
 
-        // Skip completely empty rows
-        if (row.every(c => !c?.trim())) continue
+        for (let batch = 1; batch <= 4; batch++) {
+          const sheetRows = sheetData.get(`${g.doorName}:${batch}`) ?? []
+          if (sheetRows.length === 0) continue
 
-        // Skip notes rows at the bottom (col 0 contains text like "Shift Notes")
-        const col0 = row[0]?.trim()
-        if (col0 && !/^[1-4]$/.test(col0) && col0.length > 1) continue
+          const dbKey = `${doorId}:${batch}`
+          const dbRows = entryGroups.get(dbKey) ?? []
 
-        // Detect batch number change
-        if (col0 && /^[1-4]$/.test(col0)) {
-          const newBatch = parseInt(col0)
-          if (newBatch !== currentBatch) {
-            currentBatch = newBatch
-            doorRowIdx.clear()
+          // Find the max row_order already in DB for this door+batch
+          const maxRowOrder = dbRows.length > 0
+            ? Math.max(...dbRows.map(e => e.row_order))
+            : 0
+
+          for (let i = 0; i < sheetRows.length; i++) {
+            const sh = sheetRows[i]
+            const dbRow = dbRows[i] // may be undefined if sheet has more rows
+
+            if (dbRow) {
+              // Row exists — fill blanks only
+              const upd: Record<string, string|number> = {}
+              if (!dbRow.truck_number && sh.truck) upd.truck_number = sh.truck
+              if ((!dbRow.pods || dbRow.pods === 0) && sh.pods !== null) upd.pods = sh.pods
+              if ((!dbRow.pallets_trays || dbRow.pallets_trays === 0) && sh.pallets !== null) upd.pallets_trays = sh.pallets
+              if (Object.keys(upd).length > 0) {
+                await adminSupabase.from('printroom_entries').update(upd).eq('id', dbRow.id)
+                printroomUpdated++
+              }
+            } else {
+              // Row doesn't exist — create it
+              const newRowOrder = maxRowOrder + (i - dbRows.length + 1)
+              const insert: Record<string, string|number|boolean|null> = {
+                loading_door_id: doorId,
+                batch_number: batch,
+                row_order: newRowOrder,
+                is_end_marker: false,
+                truck_number: sh.truck || null,
+                pods: sh.pods ?? 0,
+                pallets_trays: sh.pallets ?? 0,
+              }
+              await adminSupabase.from('printroom_entries').insert(insert)
+              printroomCreated++
+            }
           }
-        }
-
-        // Process each door group
-        let anyData = false
-        for (const g of DOOR_GROUPS) {
-          const doorId = doorNameToId.get(g.doorName)
-          if (!doorId) continue
-
-          const rawTruck   = row[g.truckCol]?.trim() || ''
-          const rawPods    = row[g.podsCol]?.trim() || ''
-          const rawPallets = row[g.palletsCol]?.trim() || ''
-
-          // Skip if no useful data in this door's columns for this row
-          if (!rawTruck && !rawPods && !rawPallets) continue
-
-          anyData = true
-          const key = `${g.doorName}:${currentBatch}`
-          const rowOrd = (doorRowIdx.get(key) ?? 0) + 1
-          doorRowIdx.set(key, rowOrd)
-
-          const entry = entryMap.get(`${doorId}:${currentBatch}:${rowOrd}`)
-          if (!entry) continue
-
-          const upd: Record<string, string | number> = {}
-          if (!entry.truck_number && rawTruck && !BAD_VALUES.has(rawTruck.toUpperCase())) {
-            upd.truck_number = rawTruck
-          }
-          if ((!entry.pods || entry.pods === 0) && rawPods && !isNaN(parseInt(rawPods))) {
-            upd.pods = parseInt(rawPods)
-          }
-          if ((!entry.pallets_trays || entry.pallets_trays === 0) && rawPallets && !isNaN(parseInt(rawPallets))) {
-            upd.pallets_trays = parseInt(rawPallets)
-          }
-
-          if (Object.keys(upd).length > 0) {
-            await adminSupabase.from('printroom_entries').update(upd).eq('id', entry.id)
-            printroomUpdated++
-          }
-        }
-
-        // If this row had no data in any door column at all, don't count it as a row
-        // (blank rows between batches shouldn't advance the row counter)
-        if (!anyData) {
-          // Rolled back above — doorRowIdx already not incremented
         }
       }
 
       results.printroomUpdated = printroomUpdated
+      results.printroomCreated = printroomCreated
     }
 
     return NextResponse.json({ ok: true, ...results })
