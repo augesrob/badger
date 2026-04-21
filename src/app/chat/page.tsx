@@ -3,29 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-
-// ── In-memory chat unread store — shared with NotificationBell, zero egress ──
-// Exported so Nav/NotificationBell can subscribe without any DB calls.
-export interface ChatUnread { roomId: number; roomName: string; preview: string }
-type UnreadListener = (items: ChatUnread[]) => void
-export const chatUnreadStore = (() => {
-  let items: ChatUnread[] = []
-  const listeners = new Set<UnreadListener>()
-  return {
-    add(item: ChatUnread) {
-      // Keep max 20, most recent first, dedupe by roomId (update preview)
-      items = [item, ...items.filter(i => i.roomId !== item.roomId)].slice(0, 20)
-      listeners.forEach(l => l([...items]))
-    },
-    clearRoom(roomId: number) {
-      items = items.filter(i => i.roomId !== roomId)
-      listeners.forEach(l => l([...items]))
-    },
-    clearAll() { items = []; listeners.forEach(l => l([])) },
-    subscribe(l: UnreadListener) { listeners.add(l); l([...items]); return () => listeners.delete(l) },
-    get count() { return items.length },
-  }
-})()
+import { chatUnreadStore } from '@/lib/chatUnreadStore'
 
 interface Message {
   id: number

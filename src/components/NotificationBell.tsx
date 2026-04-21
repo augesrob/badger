@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from './AuthProvider'
-import { chatUnreadStore, ChatUnread } from '@/app/chat/page'
+import { chatUnreadStore, ChatUnread } from '@/lib/chatUnreadStore'
 
 interface Notif {
   id: number
