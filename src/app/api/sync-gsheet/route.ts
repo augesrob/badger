@@ -162,15 +162,11 @@ export async function POST(req: NextRequest) {
 
           const dbKey = `${doorId}:${batch}`
           const dbRows = entryGroups.get(dbKey) ?? []
-
-          // Find the max row_order already in DB for this door+batch
-          const maxRowOrder = dbRows.length > 0
-            ? Math.max(...dbRows.map(e => e.row_order))
-            : 0
+          const maxRowOrder = dbRows.length > 0 ? Math.max(...dbRows.map(e => e.row_order)) : 0
 
           for (let i = 0; i < sheetRows.length; i++) {
             const sh = sheetRows[i]
-            const dbRow = dbRows[i] // may be undefined if sheet has more rows
+            const dbRow = dbRows[i]
 
             if (dbRow) {
               // Row exists — fill blanks only
@@ -183,9 +179,9 @@ export async function POST(req: NextRequest) {
                 printroomUpdated++
               }
             } else {
-              // Row doesn't exist — create it
+              // Sheet has more rows than DB — create new row
               const newRowOrder = maxRowOrder + (i - dbRows.length + 1)
-              const insert: Record<string, string|number|boolean|null> = {
+              await adminSupabase.from('printroom_entries').insert({
                 loading_door_id: doorId,
                 batch_number: batch,
                 row_order: newRowOrder,
@@ -193,9 +189,19 @@ export async function POST(req: NextRequest) {
                 truck_number: sh.truck || null,
                 pods: sh.pods ?? 0,
                 pallets_trays: sh.pallets ?? 0,
-              }
-              await adminSupabase.from('printroom_entries').insert(insert)
+              })
               printroomCreated++
+            }
+          }
+
+          // Delete leftover empty DB rows beyond what the sheet has
+          // (rows with no truck_number that are past the sheet's row count)
+          if (dbRows.length > sheetRows.length) {
+            const extraRows = dbRows.slice(sheetRows.length)
+            for (const extra of extraRows) {
+              if (!extra.truck_number) {
+                await adminSupabase.from('printroom_entries').delete().eq('id', extra.id)
+              }
             }
           }
         }
