@@ -24,7 +24,29 @@ export default function PrintRoom() {
   } | null>(null)
   const [highlightIds, setHighlightIds] = useState<Set<number>>(new Set())
 
-  // Route sync state
+  // Google Sheet sync state
+  const [sheetSyncing, setSheetSyncing] = useState(false)
+
+  const syncFromGoogleSheet = async () => {
+    setSheetSyncing(true)
+    try {
+      const res = await fetch('/api/sync-gsheet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: 'printroom' }),
+      })
+      const data = await res.json()
+      if (!data.ok) { toast(`Sheet sync failed: ${data.error}`, 'error'); return }
+      toast(`✅ Sheet sync: ${data.printroomUpdated ?? 0} row(s) filled`)
+      await loadData()
+    } catch (e) {
+      toast('Sheet sync error', 'error')
+    } finally {
+      setSheetSyncing(false)
+    }
+  }
+
+
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<{
     updated: { truck: string; door: string; route: string }[]
@@ -439,8 +461,20 @@ export default function PrintRoom() {
           <h1 className="text-2xl font-bold">🖨️ Print Room</h1>
           <p className="text-sm text-gray-500">Enter trucks per door. Trucks auto-appear in Live Movement.</p>
         </div>
-        <button
-          onClick={syncRoutesFromRouteSheet}
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={syncFromGoogleSheet}
+            disabled={sheetSyncing}
+            title="Fill blank Truck#, Pods, Pallets from Google Sheet (blanks only)"
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border transition-colors flex-shrink-0 ${
+              sheetSyncing
+                ? 'bg-[#222] text-gray-500 border-[#333] cursor-wait'
+                : 'bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20'
+            }`}>
+            {sheetSyncing ? '⏳ Syncing...' : '📊 Sync Sheet'}
+          </button>
+          <button
+            onClick={syncRoutesFromRouteSheet}
           disabled={syncing}
           title="Pull routes from Route Sheet data and fill the Rt column (ignores semis/tractors)"
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border transition-colors flex-shrink-0 ${
@@ -450,6 +484,7 @@ export default function PrintRoom() {
           }`}>
           {syncing ? '⏳ Syncing...' : '🔄 Sync Routes'}
         </button>
+        </div>
       </div>
 
       <div className="flex gap-4 items-start overflow-hidden">
