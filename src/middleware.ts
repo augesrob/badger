@@ -7,6 +7,7 @@ export async function middleware(req: NextRequest) {
   // Skip auth check for public paths
   if (
     pathname.startsWith('/login') ||
+    pathname.startsWith('/download') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/favicon') ||
