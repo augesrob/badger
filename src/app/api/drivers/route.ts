@@ -11,10 +11,23 @@ export async function POST(req: NextRequest) {
   const { action } = body
 
   if (action === 'upload') return handleUpload(body.text)
+  if (action === 'debug') return handleDebug(body.text)
   if (action === 'list') return handleList()
   if (action === 'clear') return handleClear()
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
+}
+
+async function handleDebug(text: string) {
+  if (!text) return NextResponse.json({ error: 'No text' }, { status: 400 })
+  const lines = text.split('\n').slice(0, 50) // first 50 lines
+  const records = parseDriverReport(text)
+  const sample = records.slice(0, 10).map(r => ({
+    route: r.route_number, name: r.route_name, driver: r.driver_name,
+    truck: r.truck_number, cases: r.cases_expected, stops: r.stops,
+    transfer: r.transfer_driver, ttruck: r.transfer_truck, start: r.start_time
+  }))
+  return NextResponse.json({ lineCount: text.split('\n').length, lines, recordCount: records.length, sample })
 }
 
 async function handleUpload(text: string) {
@@ -95,8 +108,9 @@ function parseDriverReport(text: string): Record<string, unknown>[] {
     const routeMatch = line.match(/^(\d{4})\s+(.+)/)
     if (!routeMatch) continue
 
-    // Skip if this looks like a stats line (e.g. "24 613 11061.20")
+    // Skip stat lines and weight/time lines
     if (routeMatch[2].match(/^\d[\d.\s,]+$/)) continue
+    if (routeMatch[2].match(/^Start Time/)) continue
 
     const routeNumber = routeMatch[1]
     const rest = routeMatch[2]
@@ -210,7 +224,9 @@ function parseDriverReport(text: string): Record<string, unknown>[] {
 
       // Standalone number line after "Stops: Helper:" (stops value on its own line)
       // e.g. line "Stops: Helper: FDL Cs: 626" then next line "16"
+      // or line "Stops: Helper: FDL Cs: 256" then next line "30"
       if (dl.match(/^\d{1,3}$/) && !record.stops) {
+        // Only treat as stops if previous line had Stops: without a number after it
         const prevLine = lines[j - 1] || ''
         if (prevLine.includes('Stops:') && !prevLine.match(/Stops:\s*\d/)) {
           record.stops = parseInt(dl)
