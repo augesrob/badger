@@ -41,9 +41,13 @@ export default function DriversPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  // Only show transfer regions (not FDL local routes)
+  const transferRegions = ['GREENBAY', 'WAUSAU', 'MKE', 'EC']
+  const transferRoutes = routes.filter(r => transferRegions.includes(r.region))
+
   // Filter
-  const regions = Array.from(new Set(routes.map(r => r.region))).sort()
-  let filtered = regionFilter === 'all' ? routes : routes.filter(r => r.region === regionFilter)
+  const regions = Array.from(new Set(transferRoutes.map(r => r.region))).sort()
+  let filtered = regionFilter === 'all' ? transferRoutes : transferRoutes.filter(r => r.region === regionFilter)
 
   if (search) {
     const q = search.toLowerCase()
@@ -52,7 +56,9 @@ export default function DriversPage() {
       r.driver_name?.toLowerCase().includes(q) ||
       r.route_number?.includes(q) ||
       r.route_name?.toLowerCase().includes(q) ||
-      r.truck_number?.includes(q)
+      r.truck_number?.includes(q) ||
+      r.transfer_truck?.includes(q) ||
+      r.helper_name?.toLowerCase().includes(q)
     )
   }
 
@@ -71,12 +77,12 @@ export default function DriversPage() {
     <div>
       <h1 className="text-2xl font-bold mb-1">🚛 Transfer Routing</h1>
       <p className="text-sm text-gray-500 mb-4">
-        {routes.length > 0
-          ? `${routes.length} routes • ${routes[0]?.upload_date || ''}`
+        {transferRoutes.length > 0
+          ? `${transferRoutes.length} transfer routes • ${routes[0]?.upload_date || ''}`
           : 'No routing data available'}
       </p>
 
-      {routes.length === 0 ? (
+      {transferRoutes.length === 0 ? (
         <div className="text-center py-16">
           <div className="text-4xl mb-3">📄</div>
           <div className="text-gray-400">No routing data loaded yet</div>
