@@ -12,6 +12,7 @@ import AutoResetConfig from './AutoResetConfig'
 const NAV_ITEMS = [
   { id: 'trucks',      label: '🚚 Truck Database',   ready: true },
   { id: 'tractors',    label: '🚛 Tractor Trailers',  ready: true },
+  { id: 'drivers',     label: '🧑‍✈️ Drivers',           ready: true },
   { id: 'fleet',       label: '🚛 Fleet Inventory',   ready: true },
   { id: 'automation',  label: '⚡ Automation',         ready: true },
   { id: 'statuses',    label: '🏷️ Status Values',     ready: true },
@@ -651,6 +652,214 @@ export default function Admin() {
       )}
     </div>
   )
+
+  // ======== DRIVERS SECTION ========
+  function DriversSection() {
+    interface DriverRoute {
+      id: number
+      region: string
+      route_number: string
+      route_name: string
+      driver_name: string
+      driver_phone: string
+      truck_number: string
+      helper_name: string
+      cases_expected: number
+      stops: number
+      weight: number
+      start_time: string
+      transfer_driver: string
+      transfer_truck: string
+      notes: string
+      upload_date: string
+    }
+
+    const [routes, setRoutes] = useState<DriverRoute[]>([])
+    const [loading, setLoading] = useState(true)
+    const [uploading, setUploading] = useState(false)
+    const [regionFilter, setRegionFilter] = useState('all')
+
+    const loadDrivers = async () => {
+      setLoading(true)
+      try {
+        const res = await fetch('/api/drivers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'list' }),
+        })
+        const data = await res.json()
+        if (data.data) setRoutes(data.data)
+      } catch (e) { console.error(e) }
+      setLoading(false)
+    }
+
+    useEffect(() => { loadDrivers() }, [])
+
+    const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      if (!file) return
+      setUploading(true)
+      try {
+        const form = new FormData()
+        form.append('file', file)
+        const res = await fetch('/api/drivers', { method: 'POST', body: form })
+        const data = await res.json()
+        if (data.success) {
+          toast(`Uploaded! ${data.count} routes loaded`)
+          loadDrivers()
+        } else {
+          toast(data.error || 'Upload failed', 'error')
+        }
+      } catch { toast('Upload failed', 'error') }
+      setUploading(false)
+      e.target.value = ''
+    }
+
+    const handleClear = async () => {
+      if (!confirm('Clear all driver data?')) return
+      await fetch('/api/drivers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'clear' }),
+      })
+      setRoutes([])
+      toast('Driver data cleared')
+    }
+
+    // Get unique regions
+    const regions = Array.from(new Set(routes.map(r => r.region))).sort()
+    const filtered = regionFilter === 'all' ? routes : routes.filter(r => r.region === regionFilter)
+
+    // Group by transfer driver
+    const byDriver = new Map<string, DriverRoute[]>()
+    filtered.forEach(r => {
+      const key = r.transfer_driver || 'Unassigned'
+      if (!byDriver.has(key)) byDriver.set(key, [])
+      byDriver.get(key)!.push(r)
+    })
+
+    // Sort drivers alphabetically
+    const sortedDrivers = Array.from(byDriver.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+
+    return (
+      <div>
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+          <div>
+            <h2 className="text-xl font-bold">🧑‍✈️ Drivers</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              {routes.length > 0 ? `${routes.length} routes loaded • ${routes[0]?.upload_date || ''}` : 'Upload Route/Driver Report PDF'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className={`cursor-pointer px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${uploading ? 'bg-gray-700 text-gray-400' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
+              {uploading ? '⏳ Uploading...' : '📄 Upload PDF'}
+              <input type="file" accept=".pdf" onChange={handleUpload} className="hidden" disabled={uploading} />
+            </label>
+            {routes.length > 0 && (
+              <button onClick={handleClear} className="bg-red-900/50 text-red-400 px-4 py-2 rounded-lg text-xs font-bold hover:bg-red-900">
+                🗑️ Clear
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Region filter chips */}
+        {regions.length > 0 && (
+          <div className="flex gap-2 flex-wrap mb-4">
+            <button onClick={() => setRegionFilter('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${regionFilter === 'all' ? 'bg-amber-500 text-black' : 'bg-[#333] text-gray-400 hover:text-white'}`}>
+              All ({routes.length})
+            </button>
+            {regions.map(r => (
+              <button key={r} onClick={() => setRegionFilter(r)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${regionFilter === r ? 'bg-amber-500 text-black' : 'bg-[#333] text-gray-400 hover:text-white'}`}>
+                {r} ({routes.filter(rt => rt.region === r).length})
+              </button>
+            ))}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-center py-10 text-gray-500">Loading...</div>
+        ) : routes.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="text-4xl mb-3">📄</div>
+            <div className="text-gray-400 mb-1">No driver data loaded</div>
+            <div className="text-gray-600 text-sm">Upload a Route/Driver Report PDF to get started</div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {sortedDrivers.map(([driverName, driverRoutes]) => {
+              const transferTruck = driverRoutes[0]?.transfer_truck || ''
+              const driverRegions = Array.from(new Set(driverRoutes.map(r => r.region)))
+              const totalCases = driverRoutes.reduce((sum, r) => sum + (r.cases_expected || 0), 0)
+
+              return (
+                <div key={driverName} className="bg-[#1a1a1a] border border-[#333] rounded-xl overflow-hidden">
+                  {/* Driver header */}
+                  <div className="bg-[#222] px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-3">
+                      <div className="text-lg font-extrabold text-white">{driverName}</div>
+                      {driverRegions.map(r => (
+                        <span key={r} className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400">{r}</span>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-4 text-xs text-gray-400">
+                      {transferTruck && <span>Truck: <span className="font-bold text-amber-500">{transferTruck}</span></span>}
+                      <span>{driverRoutes.length} routes</span>
+                      <span>{totalCases.toLocaleString()} cases</span>
+                    </div>
+                  </div>
+
+                  {/* Route list */}
+                  <div className="divide-y divide-white/5">
+                    {driverRoutes.map(r => (
+                      <div key={r.id} className="px-4 py-2.5 flex items-center gap-3 text-sm">
+                        {/* Route # */}
+                        <div className="w-12 font-extrabold text-amber-500">{r.route_number}</div>
+                        {/* Route name */}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-white truncate">{r.route_name}</div>
+                          <div className="text-xs text-gray-500 flex items-center gap-2">
+                            {r.driver_name && <span>{r.driver_name}</span>}
+                            {r.driver_phone && <span className="text-gray-600">{r.driver_phone}</span>}
+                          </div>
+                        </div>
+                        {/* Truck */}
+                        <div className="text-center">
+                          <div className="text-xs text-gray-500">Truck</div>
+                          <div className="font-bold text-green-400">{r.truck_number || '—'}</div>
+                        </div>
+                        {/* Cases */}
+                        <div className="text-center w-14">
+                          <div className="text-xs text-gray-500">Cases</div>
+                          <div className="font-bold text-white">{r.cases_expected || '—'}</div>
+                        </div>
+                        {/* Stops */}
+                        <div className="text-center w-12">
+                          <div className="text-xs text-gray-500">Stops</div>
+                          <div className="font-bold text-white">{r.stops || '—'}</div>
+                        </div>
+                        {/* Start time */}
+                        <div className="text-center w-16">
+                          <div className="text-xs text-gray-500">Start</div>
+                          <div className="font-medium text-blue-400 text-xs">{r.start_time || '—'}</div>
+                        </div>
+                        {/* Notes */}
+                        {r.notes && (
+                          <div className="text-xs text-yellow-500/70 max-w-[120px] truncate" title={r.notes}>📝 {r.notes}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   function FleetSection() {
     const [truckUsage, setFleetData] = useState<{ truck: { id: number; truck_number: number; truck_type: string; is_active: boolean; transmission: string; notes: string | null }; inUse: boolean; door?: string; status?: string; statusColor?: string }[]>([])
@@ -1436,6 +1645,7 @@ export default function Admin() {
     switch (activeSection) {
       case 'trucks': return <TruckSection />
       case 'tractors': return <TractorSection />
+      case 'drivers': return <DriversSection />
       case 'fleet': return <FleetSection />
       case 'automation': return <AutomationSection />
       case 'statuses': return statusSectionJSX()
