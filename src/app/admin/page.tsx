@@ -700,9 +700,34 @@ export default function Admin() {
       if (!file) return
       setUploading(true)
       try {
-        const form = new FormData()
-        form.append('file', file)
-        const res = await fetch('/api/drivers', { method: 'POST', body: form })
+        // Parse PDF on client side using pdfjs-dist
+        const pdfjsLib = await import('pdfjs-dist')
+        pdfjsLib.GlobalWorkerOptions.workerSrc = ''
+
+        const arrayBuffer = await file.arrayBuffer()
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+        const textParts: string[] = []
+
+        for (let p = 1; p <= pdf.numPages; p++) {
+          const page = await pdf.getPage(p)
+          const content = await page.getTextContent()
+          const pageText = content.items
+            .map((item: unknown) => {
+              const textItem = item as { str?: string }
+              return textItem.str || ''
+            })
+            .join('\n')
+          textParts.push(pageText)
+        }
+
+        const fullText = textParts.join('\n')
+
+        // Send extracted text to API for parsing/storage
+        const res = await fetch('/api/drivers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upload', text: fullText }),
+        })
         const data = await res.json()
         if (data.success) {
           toast(`Uploaded! ${data.count} routes loaded`)
