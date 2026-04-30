@@ -117,6 +117,7 @@ export default function Nav() {
               {driversOpen && (
                 <div className="absolute left-0 top-full bg-nav border border-amber-500/30 rounded-b-lg shadow-2xl min-w-[190px] z-[100]" style={{ marginTop: '-2px' }}>
                   {[
+                    { href: '/drivers',       label: '🚛 Transfer Routing' },
                     { href: '/drivers/live',  label: '📍 Live View' },
                     { href: '/drivers/semis', label: '🚛 Semi / Trailer List' },
                   ].map(c => (

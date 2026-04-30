@@ -8,6 +8,7 @@ export async function middleware(req: NextRequest) {
   if (
     pathname.startsWith('/login') ||
     pathname.startsWith('/download') ||
+    pathname === '/drivers' ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/favicon') ||

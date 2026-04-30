@@ -700,9 +700,27 @@ export default function Admin() {
       if (!file) return
       setUploading(true)
       try {
-        // Parse PDF on client side using pdfjs-dist
-        const pdfjsLib = await import('pdfjs-dist')
-        pdfjsLib.GlobalWorkerOptions.workerSrc = ''
+        // Load pdfjs from CDN
+        const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174'
+        if (!(window as unknown as Record<string, unknown>).pdfjsLib) {
+          await new Promise<void>((resolve, reject) => {
+            const script = document.createElement('script')
+            script.src = `${PDFJS_CDN}/pdf.min.js`
+            script.onload = () => resolve()
+            script.onerror = () => reject(new Error('Failed to load PDF.js'))
+            document.head.appendChild(script)
+          })
+        }
+        const pdfjsLib = (window as unknown as Record<string, unknown>).pdfjsLib as {
+          GlobalWorkerOptions: { workerSrc: string }
+          getDocument: (opts: { data: ArrayBuffer }) => { promise: Promise<{
+            numPages: number
+            getPage: (n: number) => Promise<{
+              getTextContent: () => Promise<{ items: { str?: string }[] }>
+            }>
+          }> }
+        }
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `${PDFJS_CDN}/pdf.worker.min.js`
 
         const arrayBuffer = await file.arrayBuffer()
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
@@ -712,17 +730,14 @@ export default function Admin() {
           const page = await pdf.getPage(p)
           const content = await page.getTextContent()
           const pageText = content.items
-            .map((item: unknown) => {
-              const textItem = item as { str?: string }
-              return textItem.str || ''
-            })
+            .map(item => item.str || '')
             .join('\n')
           textParts.push(pageText)
         }
 
         const fullText = textParts.join('\n')
 
-        // Send extracted text to API for parsing/storage
+        // Send extracted text to API
         const res = await fetch('/api/drivers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
