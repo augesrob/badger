@@ -118,6 +118,8 @@ function parseDriverReport(text: string): Record<string, unknown>[] {
       if (tdMatch) transferDriver = tdMatch[1].trim()
 
       // Extract route driver phone from beforeRegion
+      // Normal: "WEST ALLIS Michael Schlampp (920)579-0637"
+      // Malformed: "WEST ALLIS Michael Schlampp ((26)2) -440-"
       const phoneMatch = beforeRegion.match(/^(.+?)\s*\((\d{3})\)[)\s-]*(\d{3})[)\s-]*(\d{4})$/)
       if (phoneMatch) {
         const namesPart = phoneMatch[1].trim()
@@ -139,8 +141,33 @@ function parseDriverReport(text: string): Record<string, unknown>[] {
         routeName = rWords.join(' ')
         driverName = dWords.join(' ')
       } else {
-        // CPU route: "CPU GREENBAY ( ) -"
-        routeName = beforeRegion.replace(/\(\s*\)\s*-?\s*$/, '').trim()
+        // Phone regex failed — try to parse without phone
+        // Could be malformed phone like "((26)2) -440-" or CPU route
+        const cpuCheck = beforeRegion.replace(/\(\s*\)\s*-?\s*$/, '').trim()
+        if (cpuCheck.startsWith('CPU')) {
+          routeName = cpuCheck
+        } else {
+          // Try to split on the first opening paren (start of phone)
+          const parenIdx = beforeRegion.indexOf('(')
+          if (parenIdx > 0) {
+            const namesPart = beforeRegion.substring(0, parenIdx).trim()
+            const phonePart = beforeRegion.substring(parenIdx).trim()
+            driverPhone = phonePart
+            // Split names
+            const words = namesPart.split(/\s+/)
+            const rWords: string[] = []
+            const dWords: string[] = []
+            let inDriver = false
+            for (const w of words) {
+              if (!inDriver && w === w.toUpperCase() && w.length > 1) rWords.push(w)
+              else { inDriver = true; dWords.push(w) }
+            }
+            routeName = rWords.join(' ')
+            driverName = dWords.join(' ')
+          } else {
+            routeName = beforeRegion
+          }
+        }
       }
     } else {
       // No region split found - just grab route name
@@ -181,6 +208,15 @@ function parseDriverReport(text: string): Record<string, unknown>[] {
       const stopsMatch = dl.match(/Stops:\s*(\d+)/)
       if (stopsMatch) record.stops = parseInt(stopsMatch[1])
 
+      // Standalone number line after "Stops: Helper:" (stops value on its own line)
+      // e.g. line "Stops: Helper: FDL Cs: 626" then next line "16"
+      if (dl.match(/^\d{1,3}$/) && !record.stops) {
+        const prevLine = lines[j - 1] || ''
+        if (prevLine.includes('Stops:') && !prevLine.match(/Stops:\s*\d/)) {
+          record.stops = parseInt(dl)
+        }
+      }
+
       // FDL Cs: "FDL Cs: 495" - actual case count
       const fdlCsMatch = dl.match(/FDL Cs:\s*(\d+)/)
       if (fdlCsMatch) record.cases_expected = parseInt(fdlCsMatch[1])
@@ -217,13 +253,13 @@ function parseDriverReport(text: string): Record<string, unknown>[] {
       }
 
       // Handle split line patterns where truck number is on a separate line:
-      // "532.00 160 160" → decimal, truck, truck(dup)
-      // "397.11 161" → decimal, truck
-      // "254.00 172 222" → decimal, truck, transfer_truck
-      const splitNums = dl.match(/^([\d,.]+)\s+(\d{2,4})(?:\s+(\d{2,4}))?$/)
+      // "532.00 160 160" → decimal(cases), truck, truck(dup)
+      // "397.11 161" → decimal(cases), truck
+      // "254.00 172 222" → decimal(cases), truck, transfer_truck
+      // Must have a DECIMAL number first (cases value) to distinguish from standalone stops
+      const splitNums = dl.match(/^(\d+\.\d+)\s+(\d{2,4})(?:\s+(\d{2,4}))?$/)
       if (splitNums && !record.truck_number) {
         record.truck_number = splitNums[2]
-        // Third number: if different from second, it might be transfer truck
         if (splitNums[3] && splitNums[3] !== splitNums[2] && !record.transfer_truck) {
           record.transfer_truck = splitNums[3]
         }
