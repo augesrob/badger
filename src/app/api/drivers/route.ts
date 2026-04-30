@@ -216,18 +216,17 @@ function parseDriverReport(text: string): Record<string, unknown>[] {
         }
       }
 
-      // Handle split line: "397.11 161" where 161 is the truck number
-      // This happens when the next line has "Cases: Truck: Truck:" (empty first Truck:)
-      if (dl.match(/^[\d,.]+\s+\d{2,3}$/) && !record.truck_number) {
-        const splitMatch = dl.match(/^[\d,.]+\s+(\d{2,3})$/)
-        if (splitMatch) record.truck_number = splitMatch[1]
-      }
-
-      // Also check for standalone number that could be truck
-      // Line like "532.00 160 160" — second/third number is truck
-      if (dl.match(/^[\d,.]+\s+\d{2,4}\s+\d{2,4}$/) && !record.truck_number) {
-        const nums = dl.match(/\d+/g)
-        if (nums && nums.length >= 2) record.truck_number = nums[1]
+      // Handle split line patterns where truck number is on a separate line:
+      // "532.00 160 160" → decimal, truck, truck(dup)
+      // "397.11 161" → decimal, truck
+      // "254.00 172 222" → decimal, truck, transfer_truck
+      const splitNums = dl.match(/^([\d,.]+)\s+(\d{2,4})(?:\s+(\d{2,4}))?$/)
+      if (splitNums && !record.truck_number) {
+        record.truck_number = splitNums[2]
+        // Third number: if different from second, it might be transfer truck
+        if (splitNums[3] && splitNums[3] !== splitNums[2] && !record.transfer_truck) {
+          record.transfer_truck = splitNums[3]
+        }
       }
 
       // Helper: "Helper: Trey Beau FDL Cs:" or "Helper:" (empty)
