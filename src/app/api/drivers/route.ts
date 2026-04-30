@@ -23,7 +23,7 @@ async function handleUpload(text: string) {
   try {
     const records = parseDriverReport(text)
     if (records.length === 0) {
-      return NextResponse.json({ error: 'No routes found in PDF text. Check format.' }, { status: 400 })
+      return NextResponse.json({ error: 'No routes found in PDF' }, { status: 400 })
     }
 
     await supabase.from('route_drivers').delete().gte('id', 0)
@@ -31,10 +31,7 @@ async function handleUpload(text: string) {
     for (let i = 0; i < records.length; i += 50) {
       const batch = records.slice(i, i + 50)
       const { error } = await supabase.from('route_drivers').insert(batch)
-      if (error) {
-        console.error('Insert error:', error)
-        return NextResponse.json({ error: error.message }, { status: 500 })
-      }
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
     return NextResponse.json({ success: true, count: records.length })
@@ -61,233 +58,198 @@ async function handleClear() {
   return NextResponse.json({ success: true })
 }
 
-// ============================================================
-// PARSER — works on text extracted by pdfjs from the Route/Driver Report
-// ============================================================
+/*
+  ACTUAL pdfjs output format (lines reconstructed from Y-position):
+  
+  Route line:
+    "2501 GREEN BAY WEST Craig Cameron (414)750-4152 GREENBAY Billy Langrud +1 (920) 238-2291"
+  
+  Data lines (order varies, sometimes merged):
+    "Stops: 26 Helper: FDL Cs: 495"
+    "Cases: 494.33 Truck: 147 Truck: 224 Virtual Transfer - 2"
+    "Weight: 13048 Start Time: 6:00 AM"
+    
+  Or sometimes split differently:
+    "Stops: Helper: Trey Beau FDL Cs: 398"
+    "397.11 161"
+    "Cases: Truck: Truck: 224 Virtual Transfer - 2"
+*/
+
 function parseDriverReport(text: string): Record<string, unknown>[] {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   const records: Record<string, unknown>[] = []
   const today = new Date().toISOString().split('T')[0]
 
   let currentRegion = 'FDL'
-  let i = 0
 
-  while (i < lines.length) {
+  for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
 
-    // Detect region: "FDL Cases", "GREENBAY Cases", "WAUSAU Cases", "MKE Cases", "EC Cases"
-    const regionMatch = line.match(/^(FDL|GREENBAY|WAUSAU|MKE|EC)\s+Cases/)
-    if (regionMatch) {
-      currentRegion = regionMatch[1]
-      i++
+    // Detect region
+    if (line === 'FDL' || line === 'GREENBAY' || line === 'WAUSAU' || line === 'MKE' || line === 'EC') {
+      currentRegion = line
       continue
     }
 
-    // Route line: starts with 4-digit number followed by route name + driver info
-    // e.g. "1501 KIEL Max Martin (920)960-7290 FDL Max Martin +1 (920) 960-7290"
+    // Route line: "2501 GREEN BAY WEST Craig Cameron (414)750-4152 GREENBAY Billy Langrud +1 (920) 238-2291"
     const routeMatch = line.match(/^(\d{4})\s+(.+)/)
-    if (routeMatch) {
-      const routeNumber = routeMatch[1]
-      const rest = routeMatch[2]
+    if (!routeMatch) continue
 
-      // Parse route name, driver name, driver phone from the route line
-      // The line contains: ROUTE_NAME DRIVER_NAME (PHONE) REGION TRANSFER_DRIVER +1 (PHONE)
-      let routeName = ''
-      let driverName = ''
-      let driverPhone = ''
-      let transferDriver = ''
+    // Skip if this looks like a stats line (e.g. "24 613 11061.20")
+    if (routeMatch[2].match(/^\d[\d.\s,]+$/)) continue
 
-      // Try to find the first phone number — everything before it is route name + driver
-      const firstPhone = rest.match(/^(.+?)\s*\((\d{3})\)[\s)]*(\d{3})[\s-]*(\d{4})(.*)/)
-      if (firstPhone) {
-        const beforePhone = firstPhone[1].trim()
-        driverPhone = `(${firstPhone[2]})${firstPhone[3]}-${firstPhone[4]}`
-        const afterPhone = firstPhone[5]
+    const routeNumber = routeMatch[1]
+    const rest = routeMatch[2]
 
-        // Split beforePhone into route name + driver name
-        // Route name is typically ALL CAPS words, driver name is mixed case
-        const words = beforePhone.split(/\s+/)
-        const routeWords: string[] = []
-        const driverWords: string[] = []
-        let hitDriver = false
+    let routeName = ''
+    let driverName = ''
+    let driverPhone = ''
+    let transferDriver = ''
 
+    // Parse: "ROUTE_NAME DriverName (phone) REGION TransferDriver +1 (phone)"
+    // The region code (FDL/GREENBAY/WAUSAU/MKE/EC) separates route driver from transfer driver
+    const regionSplit = rest.match(/^(.+?)\s+(FDL|GREENBAY|WAUSAU|MKE|EC)\s+(.+)$/)
+    if (regionSplit) {
+      const beforeRegion = regionSplit[1] // "ROUTE_NAME DriverName (phone)"
+      const afterRegion = regionSplit[3]  // "TransferDriver +1 (phone)"
+
+      // Extract transfer driver: "Billy Langrud +1 (920) 238-2291"
+      const tdMatch = afterRegion.match(/^([\w\s]+?)\s+\+1/)
+      if (tdMatch) transferDriver = tdMatch[1].trim()
+
+      // Extract route driver phone from beforeRegion
+      const phoneMatch = beforeRegion.match(/^(.+?)\s*\((\d{3})\)[)\s-]*(\d{3})[)\s-]*(\d{4})$/)
+      if (phoneMatch) {
+        const namesPart = phoneMatch[1].trim()
+        driverPhone = `(${phoneMatch[2]})${phoneMatch[3]}-${phoneMatch[4]}`
+
+        // Split namesPart into route name (UPPERCASE) and driver name (mixed case)
+        const words = namesPart.split(/\s+/)
+        const rWords: string[] = []
+        const dWords: string[] = []
+        let inDriver = false
         for (const w of words) {
-          if (!hitDriver && (w === w.toUpperCase() || w === 'CPU' || w.includes('-'))) {
-            routeWords.push(w)
+          if (!inDriver && w === w.toUpperCase() && w.length > 1 && !w.match(/^\(/)) {
+            rWords.push(w)
           } else {
-            hitDriver = true
-            driverWords.push(w)
+            inDriver = true
+            dWords.push(w)
           }
         }
-        routeName = routeWords.join(' ')
-        driverName = driverWords.join(' ')
-
-        // Transfer driver from after the region code
-        // Pattern: "FDL Max Martin +1 (920) 960-7290"
-        const tdMatch = afterPhone.match(/(?:FDL|GREENBAY|WAUSAU|MKE|EC)\s+([\w\s]+?)\s+\+1/)
-        if (tdMatch) {
-          transferDriver = tdMatch[1].trim()
-        }
+        routeName = rWords.join(' ')
+        driverName = dWords.join(' ')
       } else {
-        // CPU route: "CPU FOND DU LAC ( ) - FDL"
-        const cpuMatch = rest.match(/^(.+?)\s*\(\s*\)\s*-\s*(\w+)/)
-        if (cpuMatch) {
-          routeName = cpuMatch[1].trim()
-        } else {
-          routeName = rest.trim()
-        }
+        // CPU route: "CPU GREENBAY ( ) -"
+        routeName = beforeRegion.replace(/\(\s*\)\s*-?\s*$/, '').trim()
       }
-
-      // Now scan ahead for the data block
-      const record: Record<string, unknown> = {
-        region: currentRegion,
-        route_number: routeNumber,
-        route_name: routeName,
-        driver_name: driverName,
-        driver_phone: driverPhone,
-        truck_number: '',
-        helper_name: '',
-        cases_expected: 0,
-        stops: 0,
-        weight: 0,
-        start_time: '',
-        transfer_driver: transferDriver,
-        transfer_truck: '',
-        notes: '',
-        upload_date: today,
-      }
-
-      // Look backwards for transfer truck number
-      // It appears BEFORE the route line as "195" (just a number) or "231 Virtual Transfer - 1"
-      for (let b = i - 1; b >= Math.max(0, i - 5); b--) {
-        const bl = lines[b]
-        const vtMatch = bl.match(/^(\d+)-?\s+Virtual Transfer/)
-        if (vtMatch) {
-          record.transfer_truck = vtMatch[1]
-          break
-        }
-        // Plain number that's a transfer truck (like "195" before route 1501)
-        if (bl.match(/^\d+$/) && parseInt(bl) > 100 && parseInt(bl) < 999) {
-          // Check if this is a transfer truck by seeing if next line is a route
-          const nextIdx = b + 1
-          if (nextIdx <= i && lines[nextIdx]?.match(/^\d{4}\s/)) {
-            // This could be the transfer truck OR weight/stops value
-            // Check if there's a "Stops:" or "Weight:" nearby
-            const contextLine = lines[b - 1]
-            if (contextLine && !contextLine.match(/^(Stops|Cases|Weight):/)) {
-              record.transfer_truck = bl
-            }
-          }
-          break
-        }
-      }
-
-      // Scan forward for metadata
-      let j = i + 1
-      const scanLimit = Math.min(i + 15, lines.length)
-      const noteLines: string[] = []
-
-      while (j < scanLimit) {
-        const sl = lines[j]
-
-        // Hit next route = stop
-        if (sl.match(/^\d{4}\s/) && j > i + 1) break
-        // Hit next "Route Driver" header = stop
-        if (sl === 'Route Driver Transfer' || sl === 'Route Driver') break
-
-        // FDL Cs: value is on the SAME line or NEXT line
-        if (sl.startsWith('FDL Cs:')) {
-          const valOnLine = sl.match(/FDL Cs:\s*([\d,.]+)/)
-          if (valOnLine) {
-            record.cases_expected = Math.round(parseFloat(valOnLine[1].replace(',', '')))
-          }
-        }
-
-        // "300.44 Truck:" — cases value merged with Truck label
-        const caseTruckMerge = sl.match(/^([\d,.]+)\s+Truck:/)
-        if (caseTruckMerge) {
-          record.cases_expected = Math.round(parseFloat(caseTruckMerge[1].replace(',', '')))
-        }
-
-        // Stops value — number before "Stops:" label
-        if (sl === 'Stops:' || sl === 'Cases:' || sl === 'Weight:') {
-          const prevLine = lines[j - 1]
-          if (prevLine?.match(/^\d+$/)) {
-            const val = parseInt(prevLine)
-            if (sl === 'Stops:') record.stops = val
-            else if (sl === 'Cases:') record.cases_expected = val
-            else if (sl === 'Weight:') record.weight = val
-          }
-        }
-
-        // "30 Helper:" — stops value merged with Helper label
-        const stopsHelper = sl.match(/^(\d+)\s+Helper:/)
-        if (stopsHelper) {
-          record.stops = parseInt(stopsHelper[1])
-        }
-
-        // Truck line
-        const truckMatch = sl.match(/^Truck:\s*(.+)/)
-        if (truckMatch) {
-          const tv = truckMatch[1].trim()
-          if (tv === 'CPU') {
-            record.truck_number = 'CPU'
-          } else {
-            // Could be "195" or "Luke Frame\n245" (helper name then number on next line)
-            const numMatch = tv.match(/^(\d+)$/)
-            if (numMatch) {
-              record.truck_number = numMatch[1]
-            } else {
-              // Helper name on this line, truck number possibly on next
-              record.helper_name = tv
-              if (j + 1 < scanLimit && lines[j + 1]?.match(/^\d+$/)) {
-                j++
-                record.truck_number = lines[j]
-              }
-            }
-          }
-        }
-
-        // Start Time
-        const timeMatch = sl.match(/Start Time:\s*(.+)/)
-        if (timeMatch) {
-          record.start_time = timeMatch[1].trim()
-          j++
-          break
-        }
-
-        // Transfer driver from standalone line in scan
-        // "FDL Max Martin +1 (920) 960-7290" — only if we didn't get it from route line
-        if (!record.transfer_driver) {
-          const tdMatch = sl.match(/^(?:FDL|GREENBAY|WAUSAU|MKE|EC)\s+([\w\s]+?)\s+\+1\s+\(\d{3}\)/)
-          if (tdMatch) {
-            record.transfer_driver = tdMatch[1].trim()
-          }
-        }
-
-        // Notes line — "Notes Transfer" or "Notes" header
-        if (sl === 'Notes' || sl.startsWith('Notes ')) {
-          // Look backwards for note content between this and previous known label
-          for (let k = j - 1; k >= Math.max(i + 1, j - 4); k--) {
-            const nl = lines[k]
-            if (nl.match(/^(Route|Driver|Transfer|Stops|Cases|Weight|FDL|Truck|Start|Helper|Virtual|\d+$)/)) break
-            if (nl.length > 2 && nl !== 'Notes' && !nl.match(/^\d+$/)) {
-              noteLines.unshift(nl)
-            }
-          }
-        }
-
-        j++
-      }
-
-      if (noteLines.length > 0) record.notes = noteLines.join('; ')
-
-      records.push(record)
-      i = j
-      continue
+    } else {
+      // No region split found - just grab route name
+      routeName = rest.split(/\s{2,}/)[0]?.trim() || rest.trim()
     }
 
-    i++
+    // Now scan the next few lines for data fields
+    const record: Record<string, unknown> = {
+      region: currentRegion,
+      route_number: routeNumber,
+      route_name: routeName,
+      driver_name: driverName,
+      driver_phone: driverPhone,
+      truck_number: '',
+      helper_name: '',
+      cases_expected: 0,
+      stops: 0,
+      weight: 0,
+      start_time: '',
+      transfer_driver: transferDriver,
+      transfer_truck: '',
+      notes: '',
+      upload_date: today,
+    }
+
+    // Scan ahead 1-8 lines for data fields
+    for (let j = i + 1; j <= Math.min(i + 8, lines.length - 1); j++) {
+      const dl = lines[j]
+
+      // Stop if we hit another route line
+      if (dl.match(/^\d{4}\s+[A-Z]/) && !dl.match(/^\d{4}\s+Start/)) break
+      // Stop at "Route Driver" header
+      if (dl === 'Route Driver' || dl === 'Route Driver Transfer') break
+
+      // Extract all fields from each data line
+
+      // Stops: "Stops: 26" or "Stops: 36 Helper: ..."
+      const stopsMatch = dl.match(/Stops:\s*(\d+)/)
+      if (stopsMatch) record.stops = parseInt(stopsMatch[1])
+
+      // FDL Cs: "FDL Cs: 495" - actual case count
+      const fdlCsMatch = dl.match(/FDL Cs:\s*(\d+)/)
+      if (fdlCsMatch) record.cases_expected = parseInt(fdlCsMatch[1])
+
+      // Weight: "Weight: 13048"
+      const weightMatch = dl.match(/Weight:\s*(\d+)/)
+      if (weightMatch) record.weight = parseInt(weightMatch[1])
+
+      // Truck parsing - complex because of split lines
+      // Normal: "Cases: 494.33 Truck: 147 Truck: 224 Virtual Transfer - 2"
+      // Split: line has "Cases: Truck: Truck: 224 Virtual Transfer - 2" and truck# is on PREVIOUS line
+      
+      // First find all "Truck: VALUE" patterns
+      const truckPattern = /Truck:\s*(\S*)/g
+      let truckMatch
+      const truckValues: { value: string; hasVirtualAfter: boolean }[] = []
+      while ((truckMatch = truckPattern.exec(dl)) !== null) {
+        const val = truckMatch[1]
+        const afterPos = truckMatch.index + truckMatch[0].length
+        const afterText = dl.substring(afterPos)
+        truckValues.push({
+          value: val,
+          hasVirtualAfter: afterText.trimStart().startsWith('Virtual Transfer') || 
+                           (afterText.includes('Virtual Transfer'))
+        })
+      }
+      
+      for (const tv of truckValues) {
+        if (tv.hasVirtualAfter && tv.value) {
+          record.transfer_truck = tv.value
+        } else if (tv.value && tv.value !== '' && !record.truck_number) {
+          record.truck_number = tv.value
+        }
+      }
+
+      // Handle split line: "397.11 161" where 161 is the truck number
+      // This happens when the next line has "Cases: Truck: Truck:" (empty first Truck:)
+      if (dl.match(/^[\d,.]+\s+\d{2,3}$/) && !record.truck_number) {
+        const splitMatch = dl.match(/^[\d,.]+\s+(\d{2,3})$/)
+        if (splitMatch) record.truck_number = splitMatch[1]
+      }
+
+      // Also check for standalone number that could be truck
+      // Line like "532.00 160 160" — second/third number is truck
+      if (dl.match(/^[\d,.]+\s+\d{2,4}\s+\d{2,4}$/) && !record.truck_number) {
+        const nums = dl.match(/\d+/g)
+        if (nums && nums.length >= 2) record.truck_number = nums[1]
+      }
+
+      // Helper: "Helper: Trey Beau FDL Cs:" or "Helper:" (empty)
+      const helperMatch = dl.match(/Helper:\s*([A-Za-z][\w\s]*?)(?=\s+FDL|\s+Truck|\s+\d|\s*$)/)
+      if (helperMatch && helperMatch[1].trim().length > 1) {
+        record.helper_name = helperMatch[1].trim()
+      }
+
+      // Start Time: "Start Time: 6:00 AM"
+      const startMatch = dl.match(/Start Time:\s*([\d:]+\s*[AP]M)/)
+      if (startMatch) record.start_time = startMatch[1]
+
+      // Notes: look for note content before "Notes" label
+      if (dl === 'Notes' || dl.match(/^Notes\s/)) {
+        const prevLine = lines[j - 1]
+        if (prevLine && !prevLine.match(/^(Route|Driver|Stops|Cases|Weight|FDL|Truck|Start|Helper|\d{4}\s)/) && prevLine.length > 2) {
+          record.notes = prevLine
+        }
+      }
+    }
+
+    records.push(record)
   }
 
   return records

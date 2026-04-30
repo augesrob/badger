@@ -716,7 +716,7 @@ export default function Admin() {
           getDocument: (opts: { data: ArrayBuffer }) => { promise: Promise<{
             numPages: number
             getPage: (n: number) => Promise<{
-              getTextContent: () => Promise<{ items: { str?: string }[] }>
+              getTextContent: () => Promise<{ items: { str?: string; transform?: number[] }[] }>
             }>
           }> }
         }
@@ -724,18 +724,39 @@ export default function Admin() {
 
         const arrayBuffer = await file.arrayBuffer()
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-        const textParts: string[] = []
+        const allLines: string[] = []
 
         for (let p = 1; p <= pdf.numPages; p++) {
           const page = await pdf.getPage(p)
           const content = await page.getTextContent()
-          const pageText = content.items
-            .map(item => item.str || '')
-            .join('\n')
-          textParts.push(pageText)
+
+          // Reconstruct lines using Y-position from transform matrix
+          // Items on the same Y position are on the same line
+          const lineMap = new Map<number, { x: number; text: string }[]>()
+
+          for (const item of content.items) {
+            const text = (item as { str?: string }).str || ''
+            if (!text.trim()) continue
+            const transform = (item as { transform?: number[] }).transform
+            // transform[5] is the Y position, transform[4] is X position
+            const y = transform ? Math.round(transform[5]) : 0
+            const x = transform ? transform[4] : 0
+            if (!lineMap.has(y)) lineMap.set(y, [])
+            lineMap.get(y)!.push({ x, text })
+          }
+
+          // Sort lines by Y (descending because PDF Y goes bottom-up)
+          const sortedYs = Array.from(lineMap.keys()).sort((a, b) => b - a)
+          for (const y of sortedYs) {
+            const items = lineMap.get(y)!
+            // Sort items within line by X position (left to right)
+            items.sort((a, b) => a.x - b.x)
+            const lineText = items.map(i => i.text).join(' ')
+            allLines.push(lineText)
+          }
         }
 
-        const fullText = textParts.join('\n')
+        const fullText = allLines.join('\n')
 
         // Send extracted text to API
         const res = await fetch('/api/drivers', {
