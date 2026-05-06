@@ -1,5 +1,5 @@
 'use client'
-import React, { useEffect, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { LoadingDoor, LiveMovement, StatusValue, PrintroomEntry, StagingDoor, Tractor, TrailerItem, DoorStatusValue, DockLockStatusValue, DOOR_STATUSES, doorStatusColor } from '@/lib/types'
@@ -290,10 +290,10 @@ export default function Movement() {
   }, [])
 
   // TTS: announce door/truck status changes
-  const truckTTSData = trucks.map(t => ({
+  const truckTTSData = useMemo(() => trucks.map(t => ({
     truck_number: t.truck_number,
     status_name: t.status_name || '',
-  }))
+  })), [trucks])
   useMovementTTS(doors, truckTTSData, ttsSettings)
 
   // Build preshift location lookup: truck_number → just door label "22B"

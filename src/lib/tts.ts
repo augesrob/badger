@@ -33,103 +33,154 @@ export function getTTSSettings(page: string): TTSSettings {
 export function saveTTSSettings(page: string, settings: TTSSettings) {
   if (typeof window === 'undefined') return
   localStorage.setItem(getSettingsKey(page), JSON.stringify(settings))
-  // Notify same-tab listeners (storage event only fires cross-tab)
   window.dispatchEvent(new CustomEvent('badger:tts-changed'))
 }
 
-export function speak(text: string, settings: TTSSettings) {
-  if (!settings.enabled) return
+// ============================================================
+// SPEECH QUEUE — queues announcements so they don't cancel each other
+// ============================================================
+const speechQueue: { text: string; settings: TTSSettings }[] = []
+let isSpeaking = false
+
+// Track user interaction for Chrome autoplay policy
+if (typeof window !== 'undefined') {
+  const markInteraction = () => { /* tracked for Chrome autoplay */ }
+  window.addEventListener('click', markInteraction, { passive: true })
+  window.addEventListener('touchstart', markInteraction, { passive: true })
+  window.addEventListener('keydown', markInteraction, { passive: true })
+}
+
+function processQueue() {
+  if (isSpeaking || speechQueue.length === 0) return
   if (typeof window === 'undefined' || !window.speechSynthesis) return
 
-  // iOS: if speechSynthesis was paused by background, resume it first
+  // Chrome blocks speech if no recent user interaction (>1 hour idle)
+  // Still try — worst case it silently fails
+  const item = speechQueue.shift()!
+  isSpeaking = true
+
+  // Reset stuck speechSynthesis
   if (window.speechSynthesis.paused) {
     window.speechSynthesis.resume()
   }
-
-  // Cancel any current/stuck speech
   window.speechSynthesis.cancel()
 
-  // Small delay to let cancel settle (required on iOS)
   setTimeout(() => {
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.volume = settings.volume
-    utterance.rate = settings.rate
+    const utterance = new SpeechSynthesisUtterance(item.text)
+    utterance.volume = item.settings.volume
+    utterance.rate = item.settings.rate
     utterance.pitch = 1
 
-    // iOS requires explicit voice selection — pick English or fallback to first
+    // Pick English voice
     const voices = window.speechSynthesis.getVoices()
     if (voices.length > 0) {
       const englishVoice = voices.find(v => v.lang.startsWith('en')) || voices[0]
       utterance.voice = englishVoice
     }
 
-    // iOS bug: utterances >~15s get cut off. Split long text into sentences.
-    // For our short status announcements this won't trigger, but good to have.
+    utterance.onend = () => {
+      isSpeaking = false
+      // Small gap between announcements
+      setTimeout(processQueue, 300)
+    }
+    utterance.onerror = () => {
+      isSpeaking = false
+      setTimeout(processQueue, 300)
+    }
+
     window.speechSynthesis.speak(utterance)
 
-    // iOS sometimes needs a kick after speak() — resume if it didn't start
+    // Failsafe: if speech doesn't end within 10 seconds, force next
     setTimeout(() => {
-      if (window.speechSynthesis.paused) window.speechSynthesis.resume()
-    }, 100)
-  }, 50)
+      if (isSpeaking) {
+        window.speechSynthesis.cancel()
+        isSpeaking = false
+        processQueue()
+      }
+    }, 10000)
+  }, 80)
 }
 
-// Hook for movement page TTS
+export function speak(text: string, settings: TTSSettings) {
+  if (!settings.enabled) return
+  if (typeof window === 'undefined' || !window.speechSynthesis) return
+
+  // Add to queue instead of cancelling current speech
+  speechQueue.push({ text, settings })
+
+  // Limit queue to 5 to prevent flood
+  while (speechQueue.length > 5) speechQueue.shift()
+
+  processQueue()
+}
+
+// ============================================================
+// MOVEMENT TTS HOOK
+// ============================================================
 export function useMovementTTS(
   doors: { id: number; door_name: string; door_status: string }[],
   trucks: { truck_number: string; status_name?: string }[],
   settings: TTSSettings,
 ) {
-  const prevDoorSnapshot  = useRef<string>('')
+  // Use refs to avoid re-running effect when settings object reference changes
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
+
+  const prevDoorSnapshot = useRef<string>('')
   const prevTruckSnapshot = useRef<string>('')
-  const initialized       = useRef(false)
+  const initialized = useRef(false)
+
+  // Stable snapshot strings — only change when actual data changes
+  const doorSnap = JSON.stringify(doors.map(d => [d.id, d.door_status]))
+  const truckSnap = JSON.stringify(trucks.map(t => [t.truck_number, t.status_name || '']))
 
   useEffect(() => {
-    const doorSnap  = JSON.stringify(doors.map(d => [d.id, d.door_status]))
-    const truckSnap = JSON.stringify(trucks.map(t => [t.truck_number, t.status_name || '']))
+    const s = settingsRef.current
 
     // First load — store snapshot without announcing
     if (!initialized.current) {
       if (doors.length > 0 || trucks.length > 0) {
-        prevDoorSnapshot.current  = doorSnap
+        prevDoorSnapshot.current = doorSnap
         prevTruckSnapshot.current = truckSnap
         initialized.current = true
       }
       return
     }
 
-    if (!settings.enabled) {
-      prevDoorSnapshot.current  = doorSnap
+    // Always update snapshots even if TTS disabled — prevents announcement flood on enable
+    if (!s.enabled) {
+      prevDoorSnapshot.current = doorSnap
       prevTruckSnapshot.current = truckSnap
       return
     }
 
-    // Detect door changes
-    if (settings.doorStatus && doorSnap !== prevDoorSnapshot.current) {
-      const prevDoors: [number, string][] = prevDoorSnapshot.current ? JSON.parse(prevDoorSnapshot.current) : []
+    // Detect door status changes
+    if (s.doorStatus && doorSnap !== prevDoorSnapshot.current && prevDoorSnapshot.current) {
+      const prevDoors: [number, string][] = JSON.parse(prevDoorSnapshot.current)
       const prevMap = new Map(prevDoors)
       doors.forEach(d => {
         const prev = prevMap.get(d.id)
-        if (prev !== undefined && prev !== d.door_status) {
-          speak(`Door ${d.door_name} is now ${d.door_status}`, settings)
+        if (prev !== undefined && prev !== d.door_status && d.door_status) {
+          speak(`Door ${d.door_name} is now ${d.door_status}`, s)
         }
       })
     }
 
     // Detect truck status changes
-    if (settings.truckStatus && truckSnap !== prevTruckSnapshot.current) {
-      const prevTrucks: [string, string][] = prevTruckSnapshot.current ? JSON.parse(prevTruckSnapshot.current) : []
+    if (s.truckStatus && truckSnap !== prevTruckSnapshot.current && prevTruckSnapshot.current) {
+      const prevTrucks: [string, string][] = JSON.parse(prevTruckSnapshot.current)
       const prevMap = new Map(prevTrucks)
       trucks.forEach(t => {
         const prev = prevMap.get(t.truck_number)
         const curr = t.status_name || ''
-        if (prev !== undefined && prev !== curr) {
-          speak(`Truck ${t.truck_number}, ${curr || 'status unknown'}`, settings)
+        if (prev !== undefined && prev !== curr && curr) {
+          speak(`Truck ${t.truck_number}, ${curr}`, s)
         }
       })
     }
 
-    prevDoorSnapshot.current  = doorSnap
+    prevDoorSnapshot.current = doorSnap
     prevTruckSnapshot.current = truckSnap
-  }, [doors, trucks, settings])
+  // ONLY re-run when actual snapshot data changes, NOT on settings/reference changes
+  }, [doorSnap, truckSnap])
 }
