@@ -6,10 +6,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-// AccuWeather location key for Fond du Lac, WI (54935)
-// We'll look this up on first call and cache it
-let locationKey = '2256656' // Default FDL key
-const ACCUWEATHER_BASE = 'https://dataservice.accuweather.com'
+// Weather data sourced from Open-Meteo (free, no API key needed)
+// Fond du Lac, WI coordinates: 43.7730, -88.4471
 
 export async function POST(req: NextRequest) {
   const { action } = await req.json()
@@ -84,7 +82,7 @@ async function getCurrentWeather() {
       source: 'accuweather',
       updated: new Date().toISOString()
     })
-  } catch (err) {
+  } catch {
     // Fallback to API
     return await getCurrentFromAPI()
   }
@@ -114,7 +112,7 @@ async function getCurrentFromAPI() {
       source: 'open-meteo',
       updated: new Date().toISOString()
     })
-  } catch (err) {
+  } catch {
     return NextResponse.json({ error: 'Weather fetch failed' }, { status: 500 })
   }
 }
@@ -221,7 +219,7 @@ async function getDoorStatus() {
       rules: rules || [],
       updated: new Date().toISOString()
     })
-  } catch (err) {
+  } catch {
     return NextResponse.json({ error: 'Door status check failed' }, { status: 500 })
   }
 }

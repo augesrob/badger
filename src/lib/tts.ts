@@ -182,5 +182,6 @@ export function useMovementTTS(
     prevDoorSnapshot.current = doorSnap
     prevTruckSnapshot.current = truckSnap
   // ONLY re-run when actual snapshot data changes, NOT on settings/reference changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doorSnap, truckSnap])
 }
