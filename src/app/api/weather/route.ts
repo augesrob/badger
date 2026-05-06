@@ -39,53 +39,11 @@ export async function POST(req: NextRequest) {
 }
 
 // ============================================================
-// WEATHER DATA — Scrape AccuWeather HTML (no API key needed)
+// WEATHER DATA — Open-Meteo API (free, no key needed)
 // ============================================================
 
-async function scrapeAccuWeather(path: string): Promise<string> {
-  const url = `https://www.accuweather.com${path}`
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml',
-      'Accept-Language': 'en-US,en;q=0.9',
-    },
-    next: { revalidate: 300 } // Cache for 5 minutes
-  })
-  return res.text()
-}
-
 async function getCurrentWeather() {
-  try {
-    const html = await scrapeAccuWeather('/en/us/fond-du-lac/54935/current-conditions/2256656')
-
-    // Parse current conditions from HTML
-    const temp = extractNumber(html, /class="temp-container"[^>]*>.*?(\d+)°/s) ||
-                 extractNumber(html, /class="temp"[^>]*>(\d+)°/s)
-    const feelsLike = extractNumber(html, /RealFeel®.*?(\d+)°/s)
-    const condition = extractText(html, /class="phrase"[^>]*>([^<]+)/s)
-    const humidity = extractNumber(html, /Humidity.*?(\d+)%/s)
-    const dewPoint = extractNumber(html, /Dew Point.*?(\d+)°/s)
-    const wind = extractText(html, /Wind.*?(\d+\s*mph[^<]*)/s)
-    const visibility = extractText(html, /Visibility.*?([\d.]+\s*mi)/s)
-    const uvIndex = extractText(html, /UV Index.*?(\d+\s+\w+)/s)
-    const pressure = extractText(html, /Pressure.*?([\d.]+\s*(?:in|mb))/s)
-
-    // If scraping fails, try the AccuWeather API with a free key
-    if (!temp && !dewPoint) {
-      return await getCurrentFromAPI()
-    }
-
-    return NextResponse.json({
-      temp, feelsLike, condition, humidity, dewPoint,
-      wind, visibility, uvIndex, pressure,
-      source: 'accuweather',
-      updated: new Date().toISOString()
-    })
-  } catch {
-    // Fallback to API
-    return await getCurrentFromAPI()
-  }
+  return await getCurrentFromAPI()
 }
 
 async function getCurrentFromAPI() {
@@ -283,16 +241,6 @@ async function updateConfig(body: Record<string, unknown>) {
 // ============================================================
 // HELPERS
 // ============================================================
-function extractNumber(html: string, regex: RegExp): number | null {
-  const m = html.match(regex)
-  return m ? parseInt(m[1]) : null
-}
-
-function extractText(html: string, regex: RegExp): string | null {
-  const m = html.match(regex)
-  return m ? m[1].trim() : null
-}
-
 function degToDir(deg: number): string {
   const dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']
   return dirs[Math.round(deg / 22.5) % 16]
