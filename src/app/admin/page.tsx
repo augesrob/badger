@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { id: 'trucks',      label: '🚚 Truck Database',   ready: true },
   { id: 'tractors',    label: '🚛 Tractor Trailers',  ready: true },
   { id: 'drivers',     label: '🧑‍✈️ Drivers',           ready: true },
+  { id: 'weather',     label: '🌤️ Weather Rules',     ready: true },
   { id: 'fleet',       label: '🚛 Fleet Inventory',   ready: true },
   { id: 'automation',  label: '⚡ Automation',         ready: true },
   { id: 'statuses',    label: '🏷️ Status Values',     ready: true },
@@ -652,6 +653,143 @@ export default function Admin() {
       )}
     </div>
   )
+
+  // ======== WEATHER RULES SECTION ========
+  function WeatherRulesSection() {
+    interface WRule {
+      id: number; rule_name: string; rule_type: string; threshold: number
+      door_action: string; priority: number; is_active: boolean; description: string
+    }
+    interface WConfig { zip_code: string; location_name: string }
+
+    const [rules, setRules] = useState<WRule[]>([])
+    const [config, setConfig] = useState<WConfig>({ zip_code: '54935', location_name: 'Fond du Lac, WI' })
+    const [loading, setLoading] = useState(true)
+    const [editId, setEditId] = useState<number | null>(null)
+    const [editForm, setEditForm] = useState({ rule_name: '', rule_type: 'dew_point_min', threshold: 51, door_action: 'close', priority: 5, description: '' })
+
+    const loadRules = async () => {
+      const res = await fetch('/api/weather', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'rules' }) })
+      const data = await res.json()
+      if (data.rules) setRules(data.rules)
+      if (data.config) setConfig(data.config)
+      setLoading(false)
+    }
+
+    useEffect(() => { loadRules() }, [])
+
+    const saveRule = async () => {
+      const action = editId ? 'update_rule' : 'add_rule'
+      const body = editId ? { action, id: editId, ...editForm } : { action, ...editForm }
+      await fetch('/api/weather', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      setEditId(null)
+      setEditForm({ rule_name: '', rule_type: 'dew_point_min', threshold: 51, door_action: 'close', priority: 5, description: '' })
+      loadRules()
+      toast('Rule saved')
+    }
+
+    const deleteRule = async (id: number) => {
+      if (!confirm('Delete this rule?')) return
+      await fetch('/api/weather', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_rule', id }) })
+      loadRules()
+      toast('Rule deleted')
+    }
+
+    const toggleRule = async (rule: WRule) => {
+      await fetch('/api/weather', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'update_rule', ...rule, is_active: !rule.is_active }) })
+      loadRules()
+    }
+
+    const startEdit = (r: WRule) => {
+      setEditId(r.id)
+      setEditForm({ rule_name: r.rule_name, rule_type: r.rule_type, threshold: r.threshold, door_action: r.door_action, priority: r.priority, description: r.description || '' })
+    }
+
+    const ruleTypes = [
+      { value: 'dew_point_min', label: 'Dew Point ≥ (min)' },
+      { value: 'dew_point_max', label: 'Dew Point ≤ (max)' },
+      { value: 'temp_min', label: 'Temperature ≥ (min)' },
+      { value: 'temp_max', label: 'Temperature ≤ (max)' },
+    ]
+
+    if (loading) return <div className="text-center py-10 text-gray-500">Loading...</div>
+
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-xl font-bold">🌤️ Weather Rules</h2>
+            <p className="text-xs text-gray-500 mt-1">Configure door open/close thresholds based on weather conditions</p>
+          </div>
+          <div className="text-sm text-gray-400">
+            📍 {config.location_name} ({config.zip_code})
+          </div>
+        </div>
+
+        {/* Add/Edit form */}
+        <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 mb-4">
+          <div className="text-sm font-bold text-amber-500 mb-3">{editId ? '✏️ Edit Rule' : '➕ Add Rule'}</div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+            <input value={editForm.rule_name} onChange={e => setEditForm({ ...editForm, rule_name: e.target.value })}
+              placeholder="Rule name" className="input-field text-sm" />
+            <select value={editForm.rule_type} onChange={e => setEditForm({ ...editForm, rule_type: e.target.value })}
+              className="input-field text-sm">
+              {ruleTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+            <input type="number" value={editForm.threshold} onChange={e => setEditForm({ ...editForm, threshold: parseFloat(e.target.value) })}
+              placeholder="Threshold °F" className="input-field text-sm" />
+            <select value={editForm.door_action} onChange={e => setEditForm({ ...editForm, door_action: e.target.value })}
+              className="input-field text-sm">
+              <option value="open">🟢 Doors Open</option>
+              <option value="close">🔴 Doors Close</option>
+            </select>
+            <input type="number" value={editForm.priority} onChange={e => setEditForm({ ...editForm, priority: parseInt(e.target.value) })}
+              placeholder="Priority" className="input-field text-sm" />
+            <input value={editForm.description} onChange={e => setEditForm({ ...editForm, description: e.target.value })}
+              placeholder="Description" className="input-field text-sm" />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={saveRule} className="bg-amber-500 text-black px-4 py-2 rounded-lg text-xs font-bold hover:bg-amber-400">
+              {editId ? 'Update' : 'Add Rule'}
+            </button>
+            {editId && (
+              <button onClick={() => { setEditId(null); setEditForm({ rule_name: '', rule_type: 'dew_point_min', threshold: 51, door_action: 'close', priority: 5, description: '' }) }}
+                className="bg-[#333] text-gray-400 px-4 py-2 rounded-lg text-xs font-bold hover:text-white">Cancel</button>
+            )}
+          </div>
+        </div>
+
+        {/* Rules list */}
+        <div className="bg-[#1a1a1a] border border-[#333] rounded-xl overflow-hidden">
+          <div className="divide-y divide-white/5">
+            {rules.map(r => (
+              <div key={r.id} className={`px-4 py-3 flex items-center justify-between ${!r.is_active ? 'opacity-40' : ''}`}>
+                <div className="flex items-center gap-3 flex-1">
+                  <span className={`px-2 py-1 rounded text-xs font-bold ${r.door_action === 'open' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                    {r.door_action === 'open' ? 'OPEN' : 'CLOSE'}
+                  </span>
+                  <div>
+                    <div className="text-sm font-medium text-white">{r.description || r.rule_name}</div>
+                    <div className="text-xs text-gray-500">
+                      {ruleTypes.find(t => t.value === r.rule_type)?.label} {r.threshold}° • Priority {r.priority}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => toggleRule(r)} className="text-xs text-gray-500 hover:text-white" title="Toggle">
+                    {r.is_active ? '✅' : '❌'}
+                  </button>
+                  <button onClick={() => startEdit(r)} className="text-xs text-gray-500 hover:text-white">✏️</button>
+                  <button onClick={() => deleteRule(r.id)} className="text-xs text-red-500/50 hover:text-red-500">✕</button>
+                </div>
+              </div>
+            ))}
+            {rules.length === 0 && <div className="px-4 py-8 text-center text-gray-500">No rules. Add one above.</div>}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // ======== DRIVERS SECTION ========
   function DriversSection() {
@@ -1646,6 +1784,7 @@ export default function Admin() {
       case 'trucks': return <TruckSection />
       case 'tractors': return <TractorSection />
       case 'drivers': return <DriversSection />
+      case 'weather': return <WeatherRulesSection />
       case 'fleet': return <FleetSection />
       case 'automation': return <AutomationSection />
       case 'statuses': return statusSectionJSX()

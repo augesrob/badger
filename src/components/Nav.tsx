@@ -104,6 +104,7 @@ export default function Nav() {
 
           {can('preshift')  && navLink('/preshift',  '📋 PreShift')}
           {can('movement')  && navLink('/movement',  '🚚 Live Movement')}
+          {navLink('/weather', '🌤️ Weather')}
 
           {/* Drivers dropdown */}
           {can('drivers') && (
