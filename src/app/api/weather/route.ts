@@ -10,30 +10,19 @@ const supabase = createClient(
 // Fond du Lac, WI coordinates: 43.7730, -88.4471
 
 export async function POST(req: NextRequest) {
-  const { action } = await req.json()
+  const body = await req.json()
+  const action = body.action
 
   if (action === 'current') return getCurrentWeather()
   if (action === 'hourly') return getHourlyForecast()
   if (action === 'minutecast') return getMinutecast()
   if (action === 'rules') return getRules()
-  if (action === 'update_rule') {
-    const body = await req.clone().json()
-    return updateRule(body)
-  }
-  if (action === 'add_rule') {
-    const body = await req.clone().json()
-    return addRule(body)
-  }
-  if (action === 'delete_rule') {
-    const body = await req.clone().json()
-    return deleteRule(body.id)
-  }
+  if (action === 'update_rule') return updateRule(body)
+  if (action === 'add_rule') return addRule(body)
+  if (action === 'delete_rule') return deleteRule(body.id)
   if (action === 'door_status') return getDoorStatus()
   if (action === 'config') return getConfig()
-  if (action === 'update_config') {
-    const body = await req.clone().json()
-    return updateConfig(body)
-  }
+  if (action === 'update_config') return updateConfig(body)
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 }
