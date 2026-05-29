@@ -74,13 +74,13 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, { pages: string[]; feature
                'preshift_edit','printroom_edit','fleet_edit','ptt'],
   },
   semi_driver: {
-    // Read-only movement, Drivers + Global chat only, no TTS
+    // Read-only movement, Drivers + Global chat only, no TTS, no PTT, no voice commands
     pages:    ['movement','drivers','drivers_live','drivers_semis','chat','profile'],
-    features: ['ptt'],
+    features: [],
   },
   driver: {
     // Same as semi_driver
     pages:    ['movement','drivers','drivers_live','drivers_semis','chat','profile'],
-    features: ['ptt'],
+    features: [],
   },
 }
