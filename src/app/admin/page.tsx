@@ -2231,15 +2231,17 @@ function ApiSection() {
     )
   }
 
-  interface AcctUser {
-    id: string; email?: string; display_name?: string; username?: string
-    role?: string; avatar_color?: string; created_at?: string; hwid?: string
-    is_active?: boolean
-  }
-  interface AcctEditForm {
-    displayName: string; username: string; role: string; avatarColor: string
-  }
-
+  type AcctRole = 'admin' | 'print_room' | 'truck_mover' | 'trainee' | 'driver'
+  interface AcctUser { id: string; username: string; display_name: string | null; role: AcctRole; avatar_color: string; avatar_url: string | null; phone: string | null; sms_enabled: boolean; created_at: string; email?: string }
+  interface AcctEditForm { displayName: string; username: string; email: string; phone: string; role: AcctRole; smsEnabled: boolean; newPassword: string; showPassword: boolean }
+  const ACCT_ROLES: { value: AcctRole; label: string; color: string }[] = [
+    { value: 'admin',       label: '🔧 Admin',       color: '#f59e0b' },
+    { value: 'print_room',  label: '🖨️ Print Room', color: '#3b82f6' },
+    { value: 'truck_mover', label: '🚛 Truck Mover', color: '#8b5cf6' },
+    { value: 'trainee',     label: '📚 Trainee',     color: '#22c55e' },
+    { value: 'driver',      label: '🚚 Driver',      color: '#6b7280' },
+  ]
+  const ACCT_CREATE_DEFAULT = { email: '', password: '', username: '', displayName: '', role: 'driver' as AcctRole }
 
 function AccountsSection() {
   const [users, setUsers]           = useState<AcctUser[]>([])
