@@ -2062,122 +2062,173 @@ function ApiSection() {
   )
 }
 
-// ── Backup Section ───────────────────────────────────────────────────────────
-function BackupSection() {
-  const [webhookUrl, setWebhookUrl]   = useState('')
-  const [savedWebhook, setSavedWebhook] = useState('')
-  const [lastBackup, setLastBackup]   = useState<Record<string, string | number | boolean | null> | null>(null)
-  const [running, setRunning]         = useState(false)
-  const [result, setResult]           = useState<Record<string, unknown> | null>(null)
-  const [error, setError]             = useState<string | null>(null)
-  const [showHook, setShowHook]       = useState(false)
+// ── Backup Section ────────────────────────────────────────────────────────────────
+  function BackupSection() {
+    interface TableInfo { label: string; description: string; emoji: string }
+    interface BackupLog {
+      last_backup_at?: string; last_backup_filename?: string; last_backup_status?: string
+      last_backup_tables?: number; last_backup_rows?: number; last_backup_size_kb?: number
+      failed_tables?: string[]
+    }
 
-  const fetchStatus = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return
-    const res = await fetch('/api/admin/backup', { headers: { Authorization: `Bearer ${session.access_token}` } })
-    if (res.ok) setLastBackup(await res.json())
-  }, [])
+    const [allTables, setAllTables]     = useState<string[]>([])
+    const [selected, setSelected]       = useState<string[]>([])
+    const [labels, setLabels]           = useState<Record<string, TableInfo>>({})
+    const [lastBackup, setLastBackup]   = useState<BackupLog | null>(null)
+    const [running, setRunning]         = useState(false)
+    const [result, setResult]           = useState<{filename: string; tables: number; rows: number} | null>(null)
+    const [loading, setLoading]         = useState(true)
+    const [saved, setSaved]             = useState(false)
 
-  useEffect(() => {
-    const saved = localStorage.getItem('badger_discord_webhook')
-    if (saved) { setSavedWebhook(saved); setWebhookUrl(saved) }
-    fetchStatus()
-  }, [fetchStatus])
+    const load = async () => {
+      setLoading(true)
+      const [tabRes, logRes] = await Promise.all([
+        fetch('/api/cron/backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get_tables' }) }),
+        fetch('/api/cron/backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get_last' }) }),
+      ])
+      const tabData = await tabRes.json()
+      const logData = await logRes.json()
+      if (tabData.tables) setAllTables(tabData.tables)
+      if (tabData.selected) setSelected(tabData.selected)
+      if (tabData.labels) setLabels(tabData.labels)
+      if (logData.log) setLastBackup(logData.log)
+      setLoading(false)
+    }
 
-  const saveHook = () => { localStorage.setItem('badger_discord_webhook', webhookUrl); setSavedWebhook(webhookUrl) }
+    useEffect(() => { load() }, [])
 
-  const runBackup = async () => {
-    const url = savedWebhook || webhookUrl
-    if (!url) { setError('Enter a Discord webhook URL first'); return }
-    setRunning(true); setResult(null); setError(null)
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) throw new Error('Not authenticated')
-      const res = await fetch('/api/admin/backup', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ webhook_url: url }) })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Backup failed')
-      setResult(data); fetchStatus()
-    } catch (e) { setError(String(e)) }
-    setRunning(false)
-  }
+    const toggleTable = (t: string) => {
+      setSelected(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
+      setSaved(false)
+    }
 
-  const fmt = (ts: string) => new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
-  const ago = (ts: string) => { const h = Math.floor((Date.now() - new Date(ts).getTime()) / 3600000); const m = Math.floor(((Date.now() - new Date(ts).getTime()) % 3600000) / 60000); return h > 24 ? `${Math.floor(h/24)}d ago` : h > 0 ? `${h}h ${m}m ago` : `${m}m ago` }
+    const selectAll = () => { setSelected([...allTables]); setSaved(false) }
+    const selectNone = () => { setSelected([]); setSaved(false) }
 
-  return (
-    <div className="space-y-6 max-w-2xl">
-      <div><h1 className="text-xl font-bold">💾 Database Backup</h1><p className="text-xs text-gray-500 mt-1">Exports all tables as JSON and sends to Discord.</p></div>
+    const saveConfig = async () => {
+      await fetch('/api/cron/backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save_config', selected_tables: selected }) })
+      setSaved(true)
+      toast('Backup config saved')
+    }
 
-      <div className={`rounded-2xl border p-5 ${lastBackup?.last_backup_at ? lastBackup.last_backup_status === 'success' ? 'bg-green-950/20 border-green-500/30' : 'bg-yellow-950/20 border-yellow-500/30' : 'bg-[#111] border-[#333]'}`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">{lastBackup?.last_backup_at ? lastBackup.last_backup_status === 'success' ? '✅' : '⚠️' : '📭'}</span>
+    const runNow = async () => {
+      setRunning(true); setResult(null)
+      try {
+        const res = await fetch('/api/cron/backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'run_now', selected_tables: selected }) })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Backup failed')
+        setResult({ filename: data.filename, tables: data.tables, rows: data.rows })
+        toast('Backup sent to Discord!')
+        load()
+      } catch (e) { toast(String(e), 'error') }
+      setRunning(false)
+    }
+
+    const fmt = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+    const ago = (iso: string) => { const d = (Date.now() - new Date(iso).getTime()) / 1000; if (d < 60) return 'just now'; if (d < 3600) return `${Math.floor(d/60)}m ago`; if (d < 86400) return `${Math.floor(d/3600)}h ago`; return `${Math.floor(d/86400)}d ago` }
+
+    if (loading) return <div className="text-center py-10 text-gray-500">Loading...</div>
+
+    return (
+      <div className="space-y-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold">💾 Database Backup</h1>
+            <p className="text-xs text-gray-500 mt-1">Weekly auto-backup every Sunday at midnight UTC. Choose what to include below.</p>
+          </div>
+          {/* Last backup status card */}
+          <div className={`rounded-xl border px-4 py-3 min-w-[200px] ${lastBackup?.last_backup_at ? lastBackup.last_backup_status === 'success' ? 'bg-green-950/20 border-green-500/30' : 'bg-yellow-950/20 border-yellow-500/30' : 'bg-[#111] border-[#333]'}`}>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-lg">{lastBackup?.last_backup_at ? lastBackup.last_backup_status === 'success' ? '✅' : '⚠️' : '📭'}</span>
+              <span className="font-semibold text-sm">{lastBackup?.last_backup_at ? 'Last Backup' : 'No backups yet'}</span>
+            </div>
+            {lastBackup?.last_backup_at && (
+              <>
+                <div className="text-xs text-gray-400">{fmt(lastBackup.last_backup_at)}</div>
+                <div className="text-xs text-gray-500">{ago(lastBackup.last_backup_at)}</div>
+                <div className="flex gap-3 mt-1.5 text-xs text-gray-400">
+                  <span>{lastBackup.last_backup_tables} tables</span>
+                  <span>{Number(lastBackup.last_backup_rows).toLocaleString()} rows</span>
+                  <span>{lastBackup.last_backup_size_kb} KB</span>
+                </div>
+                {lastBackup.last_backup_filename && <div className="mt-1.5 font-mono text-[10px] text-gray-600 truncate">{lastBackup.last_backup_filename}</div>}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Table selection */}
+        <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
             <div>
-              <div className="font-semibold text-sm">{lastBackup?.last_backup_at ? 'Last Backup' : 'No backups yet'}</div>
-              {lastBackup?.last_backup_at && <div className="text-xs text-gray-500 mt-0.5">{fmt(String(lastBackup.last_backup_at))} · {ago(String(lastBackup.last_backup_at))}</div>}
+              <div className="text-sm font-bold text-amber-500">What to back up</div>
+              <div className="text-xs text-gray-500 mt-0.5">{selected.length} of {allTables.length} tables selected</div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={selectAll} className="text-xs text-amber-400 hover:text-amber-300 underline">All</button>
+              <button onClick={selectNone} className="text-xs text-gray-500 hover:text-white underline">None</button>
             </div>
           </div>
-          {lastBackup?.last_backup_at && (
-            <div className="text-right text-xs text-gray-500 space-y-0.5">
-              <div>{String(lastBackup.last_backup_tables)} tables</div>
-              <div>{Number(lastBackup.last_backup_rows).toLocaleString()} rows</div>
-              <div>{String(lastBackup.last_backup_size_kb)} KB</div>
-            </div>
-          )}
-        </div>
-        {lastBackup?.last_backup_filename && <div className="mt-3 font-mono text-[11px] text-gray-500 bg-black/30 rounded px-3 py-1.5">{String(lastBackup.last_backup_filename)}</div>}
-      </div>
 
-      <div className="bg-[#111] border border-[#333] rounded-2xl p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <div><div className="font-semibold text-sm">Discord Webhook</div><div className="text-xs text-gray-500">{savedWebhook ? '✅ Saved' : 'Not configured'}</div></div>
-          <button onClick={() => setShowHook(v => !v)} className="text-xs text-amber-400 hover:text-amber-300">{showHook ? 'Hide' : 'Edit'}</button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {allTables.map(t => {
+              const info = labels[t]
+              const isSelected = selected.includes(t)
+              return (
+                <label key={t} className={`flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-[#111] border border-[#222] hover:border-[#444]'}`}>
+                  <input type="checkbox" checked={isSelected} onChange={() => toggleTable(t)}
+                    className="mt-0.5 accent-amber-500 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-white flex items-center gap-1.5">
+                      <span>{info?.emoji ?? '📄'}</span>
+                      <span>{info?.label ?? t}</span>
+                    </div>
+                    {info?.description && <div className="text-[11px] text-gray-500 mt-0.5">{info.description}</div>}
+                    <div className="font-mono text-[10px] text-gray-600 mt-0.5">{t}</div>
+                  </div>
+                </label>
+              )
+            })}
+          </div>
+
+          <div className="flex items-center gap-3 mt-4 pt-4 border-t border-[#333]">
+            <button onClick={saveConfig}
+              className="bg-[#333] hover:bg-[#444] text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">
+              {saved ? '✅ Saved' : '💾 Save Config'}
+            </button>
+            <span className="text-xs text-gray-600">Changes are used by both the weekly cron and manual backups.</span>
+          </div>
         </div>
-        {showHook && (
-          <div className="space-y-2">
-            <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="https://discord.com/api/webhooks/..."
-              className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-amber-500 outline-none font-mono" />
-            <button onClick={saveHook} disabled={!webhookUrl} className="px-4 py-1.5 bg-amber-500/20 border border-amber-500/40 rounded-lg text-sm text-amber-400 disabled:opacity-40">💾 Save Webhook</button>
+
+        {/* Manual run */}
+        <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 flex items-center justify-between gap-4">
+          <div>
+            <div className="font-semibold text-sm">Run Backup Now</div>
+            <div className="text-xs text-gray-500 mt-0.5">Sends immediately to the Discord webhook with current selection ({selected.length} tables)</div>
+          </div>
+          <button onClick={runNow} disabled={running || selected.length === 0}
+            className="bg-amber-500 text-black px-5 py-2.5 rounded-lg text-sm font-bold hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap">
+            {running ? <><span className="animate-spin inline-block">⏳</span>Running...</> : <>💾 Run Backup Now</>}
+          </button>
+        </div>
+
+        {result && (
+          <div className="bg-green-950/30 border border-green-500/30 rounded-xl p-4">
+            <div className="text-green-400 font-bold text-sm">✅ Backup sent to Discord</div>
+            <div className="text-xs text-gray-400 mt-1">{result.tables} tables · {result.rows.toLocaleString()} rows</div>
+            <div className="font-mono text-[11px] text-gray-500 mt-1">{result.filename}</div>
           </div>
         )}
-      </div>
 
-      <div className="bg-[#111] border border-[#333] rounded-2xl p-5 space-y-4">
-        <div><div className="font-semibold text-sm">Manual Backup</div><div className="text-xs text-gray-500">All tables exported — new tables included automatically</div></div>
-        <button onClick={runBackup} disabled={running || !savedWebhook}
-          className="w-full py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 rounded-xl font-bold text-black text-sm flex items-center justify-center gap-2">
-          {running ? <><span className="animate-spin">⏳</span>Running...</> : <>💾 Run Backup Now</>}
-        </button>
-        {!savedWebhook && <p className="text-xs text-gray-500 text-center">Configure Discord webhook above first</p>}
-        {result && <div className="bg-green-950/30 border border-green-500/30 rounded-xl p-4"><div className="text-green-400 font-bold text-sm">✅ Backup sent to Discord</div><div className="font-mono text-[11px] text-gray-500 mt-1">{String(result.filename)}</div></div>}
-        {error && <div className="bg-red-950/30 border border-red-500/30 rounded-xl p-4"><div className="text-red-400 font-bold text-sm">❌ {error}</div></div>}
-      </div>
-
-      <div className="bg-[#111] border border-[#333] rounded-2xl p-5 space-y-2">
-        <div className="font-semibold text-sm">📋 How to Restore</div>
-        <ol className="text-xs text-gray-500 space-y-1.5 list-decimal list-inside">
-          <li>Download the <code className="bg-black/40 px-1 rounded">.json</code> file from Discord</li>
+        <div className="bg-[#111] border border-[#222] rounded-xl p-4 text-xs text-gray-500 space-y-1">
+          <div className="font-bold text-gray-400 mb-2">📌 How to restore</div>
+          <li>Open Discord → find the backup message → download the <code className="text-amber-400/80">.json</code> file</li>
           <li>Send it to Claude and say <span className="text-amber-400/80 italic">&quot;Convert this Badger backup to SQL INSERT statements&quot;</span></li>
-          <li>Run the generated SQL in your Supabase SQL editor</li>
-        </ol>
+          <li>Or paste it here and say <span className="text-amber-400/80 italic">&quot;Restore this backup to Supabase project vjmvuqunedyuovtqtotj&quot;</span></li>
+        </div>
       </div>
-    </div>
-  )
-}
-
-// ── Accounts Section ─────────────────────────────────────────────────────────
-type AcctRole = 'admin' | 'print_room' | 'truck_mover' | 'trainee' | 'driver'
-interface AcctUser { id: string; username: string; display_name: string | null; role: AcctRole; avatar_color: string; avatar_url: string | null; phone: string | null; sms_enabled: boolean; created_at: string; email?: string }
-interface AcctEditForm { displayName: string; username: string; email: string; phone: string; role: AcctRole; smsEnabled: boolean; newPassword: string; showPassword: boolean }
-const ACCT_ROLES: { value: AcctRole; label: string; color: string }[] = [
-  { value: 'admin',       label: '🔧 Admin',       color: '#f59e0b' },
-  { value: 'print_room',  label: '🖨️ Print Room', color: '#3b82f6' },
-  { value: 'truck_mover', label: '🚛 Truck Mover', color: '#8b5cf6' },
-  { value: 'trainee',     label: '📚 Trainee',     color: '#22c55e' },
-  { value: 'driver',      label: '🚚 Driver',      color: '#6b7280' },
-]
-const ACCT_CREATE_DEFAULT = { email: '', password: '', username: '', displayName: '', role: 'driver' as AcctRole }
+    )
+  }
 
 function AccountsSection() {
   const [users, setUsers]           = useState<AcctUser[]>([])
