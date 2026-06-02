@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 
 const cards = [
   { href: '/printroom', icon: '🖨️', title: 'Print Room', desc: 'Loading doors 13A-15B. Assign routes, track pods/pallets, organize batches.', color: 'border-amber-500' },
@@ -10,7 +11,9 @@ const cards = [
 export default function Home() {
   return (
     <div className="py-10 text-center">
-      <div className="text-6xl mb-4">🦡</div>
+      <div className="flex justify-center mb-4">
+        <Image src="/icon-192.png" alt="Badger" width={80} height={80} className="rounded-full" />
+      </div>
       <h1 className="text-3xl font-bold mb-2">Badger Truck Management</h1>
       <p className="text-gray-500 mb-10 text-lg">Real-time warehouse truck operations</p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl mx-auto">

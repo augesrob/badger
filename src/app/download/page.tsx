@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 
 interface GitHubRelease {
   tag_name: string
@@ -37,7 +38,9 @@ export default function DownloadPage() {
 
       {/* Header */}
       <div className="text-center">
-        <div className="text-6xl mb-4">🦡</div>
+        <div className="flex justify-center mb-4">
+          <Image src="/icon-192.png" alt="Badger" width={80} height={80} className="rounded-full" />
+        </div>
         <h1 className="text-3xl font-bold text-foreground">Badger Android App</h1>
         <p className="text-muted mt-2 text-sm">Access badge — live movement, PTT, voice commands &amp; more</p>
       </div>
