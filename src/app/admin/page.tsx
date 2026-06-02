@@ -2231,6 +2231,12 @@ function ApiSection() {
     )
   }
 
+  interface AcctUser {
+    id: string; email?: string; display_name?: string; username?: string
+    role?: string; avatar_color?: string; created_at?: string; hwid?: string
+    is_active?: boolean
+  }
+
 function AccountsSection() {
   const [users, setUsers]           = useState<AcctUser[]>([])
   const [loading, setLoading]       = useState(true)
