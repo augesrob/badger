@@ -10,7 +10,7 @@ const supabaseAdmin = createClient(
 const SKIP_TABLES = ['schema_migrations', 'backup_log', 'backup_config']
 
 // Friendly display names for known tables
-export const TABLE_LABELS: Record<string, { label: string; description: string; emoji: string }> = {
+const TABLE_LABELS: Record<string, { label: string; description: string; emoji: string }> = {
   tractors:               { emoji: '🚛', label: 'Tractor Trailers',   description: 'Tractor assignments and driver info' },
   trailer_list:           { emoji: '🔗', label: 'Trailer List',        description: 'All trailer numbers' },
   trucks:                 { emoji: '🚚', label: 'Truck Database',      description: 'Box trucks, vans, tandems, semis' },
