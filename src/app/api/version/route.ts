@@ -1,0 +1,70 @@
+import { NextResponse } from 'next/server'
+
+// Cached for 5 minutes — reduces GitHub API calls from every device check
+export const revalidate = 300
+
+/**
+ * GET /api/version
+ * Returns the latest badger-android release for the access-vXXX tag series.
+ * Response shape must match AppUpdater.VersionResponse on the Android side:
+ *   { versionCode: number, tagName: string, downloadUrl: string }
+ */
+export async function GET() {
+  const token = process.env.GITHUB_TOKEN
+  if (!token) {
+    return NextResponse.json({ error: 'GitHub token not configured' }, { status: 500 })
+  }
+
+  try {
+    const res = await fetch(
+      'https://api.github.com/repos/augesrob/badger-android/releases?per_page=50',
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'BadgerServer',
+        },
+        next: { revalidate: 300 },
+      }
+    )
+
+    if (!res.ok) {
+      return NextResponse.json({ error: `GitHub API error ${res.status}` }, { status: res.status })
+    }
+
+    const releases: any[] = await res.json()
+
+    // Find the highest access-vXXX tag
+    const latest = releases
+      .filter((r) => typeof r.tag_name === 'string' && r.tag_name.startsWith('access-v'))
+      .sort((a, b) => {
+        const av = parseInt(a.tag_name.replace('access-v', ''), 10)
+        const bv = parseInt(b.tag_name.replace('access-v', ''), 10)
+        return bv - av
+      })[0]
+
+    if (!latest) {
+      return NextResponse.json({ error: 'No access-v releases found' }, { status: 404 })
+    }
+
+    const tagName: string = latest.tag_name
+    const versionCode = parseInt(tagName.replace('access-v', ''), 10)
+
+    const apkAsset = (latest.assets ?? []).find((a: any) =>
+      typeof a.name === 'string' && a.name.endsWith('.apk')
+    )
+
+    if (!apkAsset) {
+      return NextResponse.json({ error: 'No APK asset on latest release' }, { status: 404 })
+    }
+
+    return NextResponse.json({
+      versionCode,
+      tagName,
+      downloadUrl: apkAsset.browser_download_url as string,
+    })
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message ?? 'Unknown error' }, { status: 500 })
+  }
+}
