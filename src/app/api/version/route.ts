@@ -33,11 +33,14 @@ export async function GET() {
       return NextResponse.json({ error: `GitHub API error ${res.status}` }, { status: res.status })
     }
 
-    const releases: any[] = await res.json()
+    type GhAsset = { name: string; browser_download_url: string }
+    type GhRelease = { tag_name: string; assets: GhAsset[] }
+
+    const releases = (await res.json()) as GhRelease[]
 
     // Find the highest access-vXXX tag
     const latest = releases
-      .filter((r) => typeof r.tag_name === 'string' && r.tag_name.startsWith('access-v'))
+      .filter((r) => r.tag_name.startsWith('access-v'))
       .sort((a, b) => {
         const av = parseInt(a.tag_name.replace('access-v', ''), 10)
         const bv = parseInt(b.tag_name.replace('access-v', ''), 10)
@@ -48,12 +51,10 @@ export async function GET() {
       return NextResponse.json({ error: 'No access-v releases found' }, { status: 404 })
     }
 
-    const tagName: string = latest.tag_name
+    const tagName = latest.tag_name
     const versionCode = parseInt(tagName.replace('access-v', ''), 10)
 
-    const apkAsset = (latest.assets ?? []).find((a: any) =>
-      typeof a.name === 'string' && a.name.endsWith('.apk')
-    )
+    const apkAsset = (latest.assets ?? []).find((a) => a.name.endsWith('.apk'))
 
     if (!apkAsset) {
       return NextResponse.json({ error: 'No APK asset on latest release' }, { status: 404 })
@@ -64,7 +65,8 @@ export async function GET() {
       tagName,
       downloadUrl: apkAsset.browser_download_url as string,
     })
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message ?? 'Unknown error' }, { status: 500 })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
