@@ -2064,6 +2064,7 @@ function ApiSection() {
 
 // ── Backup Section ────────────────────────────────────────────────────────────────
   function BackupSection() {
+    const toast = useToast()
     interface TableInfo { label: string; description: string; emoji: string }
     interface BackupLog {
       last_backup_at?: string; last_backup_filename?: string; last_backup_status?: string
