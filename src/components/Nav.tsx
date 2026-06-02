@@ -1,5 +1,6 @@
 'use client'
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { useTheme } from './ThemeProvider'
 import { useAuth } from './AuthProvider'
@@ -56,8 +57,9 @@ export default function Nav() {
       <div className="max-w-[1400px] mx-auto flex items-center flex-wrap">
 
         {/* Logo */}
-        <Link href="/" className="px-4 py-3 text-lg font-bold text-amber-500 hover:text-amber-400">
-          🦡 <span className="text-foreground">Badger</span>
+        <Link href="/" className="px-3 py-2 flex items-center gap-2 hover:opacity-90 transition-opacity">
+          <Image src="/icon-192.png" alt="Badger" width={32} height={32} className="rounded-full" />
+          <span className="text-lg font-bold text-foreground">Badger</span>
         </Link>
 
         <div className="flex flex-1 items-center">
