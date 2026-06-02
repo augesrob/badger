@@ -2236,6 +2236,10 @@ function ApiSection() {
     role?: string; avatar_color?: string; created_at?: string; hwid?: string
     is_active?: boolean
   }
+  interface AcctEditForm {
+    displayName: string; username: string; role: string; avatarColor: string
+  }
+
 
 function AccountsSection() {
   const [users, setUsers]           = useState<AcctUser[]>([])
