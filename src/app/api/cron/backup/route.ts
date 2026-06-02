@@ -14,8 +14,6 @@ const TABLE_LABELS: Record<string, { label: string; description: string; emoji: 
   tractors:               { emoji: '🚛', label: 'Tractor Trailers',   description: 'Tractor assignments and driver info' },
   trailer_list:           { emoji: '🔗', label: 'Trailer List',        description: 'All trailer numbers' },
   trucks:                 { emoji: '🚚', label: 'Truck Database',      description: 'Box trucks, vans, tandems, semis' },
-  trailers:               { emoji: '📦', label: 'Trailers (semi)',      description: 'Trailer assignments on semi trucks' },
-  fleet_inventory:        { emoji: '🏭', label: 'Fleet Inventory',     description: 'Full fleet inventory records' },
   profiles:               { emoji: '👤', label: 'Role Accounts',       description: 'User profiles and roles' },
   status_values:          { emoji: '🏷️', label: 'Truck Statuses',      description: 'Truck status values and colors' },
   door_status_values:     { emoji: '🚪', label: 'Door Statuses',       description: 'Door status values and colors' },
@@ -31,9 +29,8 @@ const TABLE_LABELS: Record<string, { label: string; description: string; emoji: 
   printroom_entries:      { emoji: '🖨️', label: 'Print Room Entries',  description: 'Current print room queue' },
   messages:               { emoji: '💬', label: 'Chat Messages',       description: 'All chat room messages' },
   chat_rooms:             { emoji: '🗨️', label: 'Chat Rooms',          description: 'Chat room definitions' },
-  driver_routes:          { emoji: '🧑‍✈️', label: 'Driver Routes',       description: 'Uploaded driver/route report data' },
+  route_drivers:          { emoji: '🧑‍✈️', label: 'Driver Routes',       description: 'Uploaded driver/route report data' },
   reset_log:              { emoji: '⚠️', label: 'Reset Log',           description: 'History of data resets' },
-  notification_prefs:     { emoji: '🔔', label: 'Notification Prefs',  description: 'Per-user notification settings' },
 }
 
 async function getAllTables(): Promise<string[]> {
