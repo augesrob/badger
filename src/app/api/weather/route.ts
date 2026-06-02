@@ -6,8 +6,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-// Weather data sourced from Open-Meteo (free, no API key needed)
-// Fond du Lac, WI coordinates: 43.7730, -88.4471
+export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
@@ -40,7 +39,7 @@ async function getCurrentFromAPI() {
   try {
     const res = await fetch(
       'https://api.open-meteo.com/v1/forecast?latitude=43.7730&longitude=-88.4471&current=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,wind_speed_10m,wind_direction_10m,weather_code,surface_pressure&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America/Chicago',
-      { next: { revalidate: 300 } }
+      { cache: 'no-store' }
     )
     const data = await res.json()
     const c = data.current
@@ -68,7 +67,7 @@ async function getHourlyForecast() {
   try {
     const res = await fetch(
       'https://api.open-meteo.com/v1/forecast?latitude=43.7730&longitude=-88.4471&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation_probability,weather_code,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America/Chicago&forecast_hours=24',
-      { next: { revalidate: 600 } }
+      { cache: 'no-store' }
     )
     const data = await res.json()
     const h = data.hourly
@@ -96,7 +95,7 @@ async function getMinutecast() {
     // Open-Meteo minutely_15 for precipitation
     const res = await fetch(
       'https://api.open-meteo.com/v1/forecast?latitude=43.7730&longitude=-88.4471&minutely_15=precipitation,weather_code&timezone=America/Chicago&forecast_minutely_15=8',
-      { next: { revalidate: 300 } }
+      { cache: 'no-store' }
     )
     const data = await res.json()
     const m = data.minutely_15
@@ -121,7 +120,7 @@ async function getDoorStatus() {
     // Get current weather
     const weatherRes = await fetch(
       'https://api.open-meteo.com/v1/forecast?latitude=43.7730&longitude=-88.4471&current=temperature_2m,dew_point_2m&temperature_unit=fahrenheit&timezone=America/Chicago',
-      { next: { revalidate: 300 } }
+      { cache: 'no-store' }
     )
     const weatherData = await weatherRes.json()
     const currentTemp = Math.round(weatherData.current.temperature_2m)
