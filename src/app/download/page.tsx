@@ -39,7 +39,6 @@ export default function DownloadPage() {
 
   const phoneApk  = release?.assets.find(a => a.name.includes('access') && !a.name.includes('wear') && a.name.endsWith('.apk'))
   const phoneSizeMb = phoneApk ? (phoneApk.size / 1024 / 1024).toFixed(1) : null
-  const wearSizeMb  = null // fetched separately, size not in version endpoint
 
   const publishedDate = release?.published_at
     ? new Date(release.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
