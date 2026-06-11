@@ -27,7 +27,6 @@ export async function POST(req: NextRequest) {
       }, { status: 400 })
     }
 
-    const useEnvCreds = !!(process.env.MS_USERNAME && process.env.MS_PASSWORD)
 
     // Step 1: Get token via ROPC (Resource Owner Password Credentials)
     const tokenRes = await fetch(
