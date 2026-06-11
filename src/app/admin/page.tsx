@@ -815,6 +815,10 @@ export default function Admin() {
     const [routes, setRoutes] = useState<DriverRoute[]>([])
     const [loading, setLoading] = useState(true)
     const [uploading, setUploading] = useState(false)
+    const [syncing, setSyncing] = useState(false)
+    const [showSpModal, setShowSpModal] = useState(false)
+    const [spUser, setSpUser] = useState('')
+    const [spPass, setSpPass] = useState('')
     const [regionFilter, setRegionFilter] = useState('all')
 
     const loadDrivers = async () => {
@@ -864,6 +868,30 @@ export default function Admin() {
       toast('Driver data cleared')
     }
 
+    const handleSharePointSync = async () => {
+      if (!spUser || !spPass) { toast('Enter your Microsoft email and password', 'error'); return }
+      setSyncing(true)
+      setShowSpModal(false)
+      try {
+        const res = await fetch('/api/drivers/sharepoint', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: spUser, password: spPass }),
+        })
+        const data = await res.json()
+        if (data.success) {
+          toast(`✅ Synced from SharePoint! ${data.count} routes loaded`)
+          setSpPass('')
+          loadDrivers()
+        } else if (res.status === 404) {
+          toast(data.error || "Today's Route Driver Report not found yet — routing may not be complete", 'error')
+        } else {
+          toast(data.error || 'SharePoint sync failed', 'error')
+        }
+      } catch { toast('SharePoint sync failed', 'error') }
+      setSyncing(false)
+    }
+
     // Get unique regions
     const regions = Array.from(new Set(routes.map(r => r.region))).sort()
     const filtered = regionFilter === 'all' ? routes : routes.filter(r => r.region === regionFilter)
@@ -888,7 +916,13 @@ export default function Admin() {
               {routes.length > 0 ? `${routes.length} routes loaded • ${routes[0]?.upload_date || ''}` : 'Upload Route/Driver Report PDF'}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setShowSpModal(true)}
+              disabled={syncing}
+              className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${syncing ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-green-700 text-white hover:bg-green-600'}`}>
+              {syncing ? '⏳ Syncing...' : '🔄 Sync SharePoint'}
+            </button>
             <label className={`cursor-pointer px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${uploading ? 'bg-gray-700 text-gray-400' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
               {uploading ? '⏳ Uploading...' : '📄 Upload PDF'}
               <input type="file" accept=".pdf" onChange={handleUpload} className="hidden" disabled={uploading} />
@@ -899,6 +933,55 @@ export default function Admin() {
               </button>
             )}
           </div>
+
+          {/* SharePoint login modal */}
+          {showSpModal && (
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+              <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-6 max-w-sm w-full">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-2xl">🔄</span>
+                  <h3 className="text-white font-bold text-lg">Sync from SharePoint</h3>
+                </div>
+                <p className="text-xs text-gray-500 mb-4">
+                  Fetches today&apos;s <span className="text-amber-400 font-mono">Route Driver Report MM-DD-YYYY.pdf</span> from the Routing library. If the file doesn&apos;t exist yet, nothing will be imported.
+                </p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-gray-400 font-bold uppercase block mb-1">Microsoft Email</label>
+                    <input
+                      type="email"
+                      value={spUser}
+                      onChange={e => setSpUser(e.target.value)}
+                      placeholder="you@badgerliquor.com"
+                      className="input-field w-full"
+                      autoComplete="username"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 font-bold uppercase block mb-1">Password</label>
+                    <input
+                      type="password"
+                      value={spPass}
+                      onChange={e => setSpPass(e.target.value)}
+                      placeholder="••••••••"
+                      className="input-field w-full"
+                      autoComplete="current-password"
+                      onKeyDown={e => e.key === 'Enter' && handleSharePointSync()}
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-600 mt-3">Your credentials are sent directly to Microsoft and never stored.</p>
+                <div className="flex gap-2 mt-4">
+                  <button onClick={handleSharePointSync} className="flex-1 bg-green-700 text-white py-2 rounded-lg font-bold hover:bg-green-600 text-sm">
+                    Sync Now
+                  </button>
+                  <button onClick={() => { setShowSpModal(false); setSpPass('') }} className="bg-[#333] text-gray-400 px-4 py-2 rounded-lg text-sm hover:text-white">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Region filter chips */}
