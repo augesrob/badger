@@ -6,6 +6,16 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': 'https://badgerliquor.sharepoint.com',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: CORS_HEADERS })
+}
 export async function POST(req: NextRequest) {
   const contentType = req.headers.get('content-type') || ''
 
@@ -24,7 +34,7 @@ async function handleUpload(req: NextRequest) {
   try {
     const formData = await req.formData()
     const file = formData.get('file') as File
-    if (!file) return NextResponse.json({ error: 'No file' }, { status: 400 })
+    if (!file) return NextResponse.json({ error: 'No file' }, { status: 400, headers: CORS_HEADERS })
 
     const buffer = await file.arrayBuffer()
     const uint8 = new Uint8Array(buffer)
@@ -37,7 +47,7 @@ async function handleUpload(req: NextRequest) {
 
     const records = parseDriverReport(fullText)
     if (records.length === 0) {
-      return NextResponse.json({ error: 'No routes found in PDF' }, { status: 400 })
+      return NextResponse.json({ error: 'No routes found in PDF' }, { status: 400, headers: CORS_HEADERS })
     }
 
     // Clear old data and insert new
@@ -46,13 +56,13 @@ async function handleUpload(req: NextRequest) {
     for (let i = 0; i < records.length; i += 50) {
       const batch = records.slice(i, i + 50)
       const { error } = await supabase.from('route_drivers').insert(batch)
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: CORS_HEADERS })
     }
 
-    return NextResponse.json({ success: true, count: records.length })
+    return NextResponse.json({ success: true, count: records.length }, { headers: CORS_HEADERS })
   } catch (err) {
     console.error('Upload error:', err)
-    return NextResponse.json({ error: `Failed: ${err instanceof Error ? err.message : 'Unknown'}` }, { status: 500 })
+    return NextResponse.json({ error: `Failed: ${err instanceof Error ? err.message : 'Unknown'}` }, { status: 500, headers: CORS_HEADERS })
   }
 }
 
