@@ -944,10 +944,9 @@ export default function Admin() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={handleSharePointSync}
-              disabled={syncing}
-              className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${syncing ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-green-700 text-white hover:bg-green-600'}`}>
-              {syncing ? '⏳ Syncing...' : '🔄 Sync SharePoint'}
+              onClick={() => setShowSpModal(true)}
+              className="px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 bg-green-700 text-white hover:bg-green-600">
+              🔄 Sync SharePoint
             </button>
             <label className={`cursor-pointer px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${uploading ? 'bg-gray-700 text-gray-400' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
               {uploading ? '⏳ Uploading...' : '📄 Upload PDF'}
@@ -960,51 +959,49 @@ export default function Admin() {
             )}
           </div>
 
-          {/* SharePoint login modal - fallback only */}
+          {/* SharePoint sync — bookmarklet modal */}
           {showSpModal && (
-            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-              <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-6 max-w-sm w-full">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-2xl">🔄</span>
-                  <h3 className="text-white font-bold text-lg">Sync from SharePoint</h3>
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setShowSpModal(false)}>
+              <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-6 max-w-lg w-full" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🔄</span>
+                    <h3 className="text-white font-bold text-lg">Sync from SharePoint</h3>
+                  </div>
+                  <button onClick={() => setShowSpModal(false)} className="text-gray-500 hover:text-white text-xl">✕</button>
                 </div>
-                <p className="text-xs text-gray-500 mb-4">
-                  Fetches today&apos;s <span className="text-amber-400 font-mono">Route Driver Report MM-DD-YYYY.pdf</span> from the Routing library. If the file doesn&apos;t exist yet, nothing will be imported.
+                <p className="text-xs text-gray-400 mb-4">
+                  Because SharePoint requires you to be logged in, syncing works via a <strong className="text-white">bookmarklet</strong> — a button you save to your browser toolbar and click while on SharePoint.
                 </p>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs text-gray-400 font-bold uppercase block mb-1">Microsoft Email</label>
-                    <input
-                      type="email"
-                      value={spUser}
-                      onChange={e => setSpUser(e.target.value)}
-                      placeholder="you@badgerliquor.com"
-                      className="input-field w-full"
-                      autoComplete="username"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-400 font-bold uppercase block mb-1">Password</label>
-                    <input
-                      type="password"
-                      value={spPass}
-                      onChange={e => setSpPass(e.target.value)}
-                      placeholder="••••••••"
-                      className="input-field w-full"
-                      autoComplete="current-password"
-                      onKeyDown={e => e.key === 'Enter' && handleSharePointSync()}
-                    />
-                  </div>
+
+                {/* Step 1 — drag bookmarklet */}
+                <div className="bg-[#111] border border-[#333] rounded-lg p-4 mb-3">
+                  <div className="text-xs font-bold text-amber-500 mb-2">Step 1 — Save this button to your bookmarks bar (one time only)</div>
+                  <p className="text-xs text-gray-500 mb-3">Drag the button below to your browser&apos;s bookmarks bar, or right-click → Bookmark this link.</p>
+                  <a
+                    href={`javascript:(function(){var t=new Date(),mm=String(t.getMonth()+1).padStart(2,'0'),dd=String(t.getDate()).padStart(2,'0'),yyyy=t.getFullYear(),fn='Route Driver Report '+mm+'-'+dd+'-'+yyyy+'.pdf';fetch("https://badgerliquor.sharepoint.com/sites/operation/_api/web/GetFolderByServerRelativeUrl('/sites/operation/Routing')/Files('"+encodeURIComponent(fn)+"')?$select=Name,ServerRelativeUrl",{headers:{Accept:'application/json;odata=verbose'},credentials:'include'}).then(r=>r.json()).then(function(d){if(d.error){alert('File not found: '+fn+'\n\nRouting may not be complete yet.');return;}var dlUrl='https://badgerliquor.sharepoint.com'+d.d.ServerRelativeUrl;return fetch(dlUrl,{credentials:'include'}).then(function(r){return r.blob();}).then(function(blob){var file=new File([blob],fn,{type:'application/pdf'});var form=new FormData();form.append('file',file);return fetch('https://badger.augesrob.net/api/drivers',{method:'POST',body:form});}).then(function(r){return r.json();}).then(function(result){if(result.success){alert('Synced! '+result.count+' routes loaded.');}else{alert('Error: '+(result.error||'unknown'));}});}).catch(function(e){alert('Error: '+e.message);});})();`}
+                    className="inline-block bg-green-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold cursor-move select-none hover:bg-green-600"
+                    onClick={e => e.preventDefault()}
+                    draggable
+                  >
+                    📋 Sync Driver Report → Badger
+                  </a>
                 </div>
-                <p className="text-[10px] text-gray-600 mt-3">Your credentials are sent directly to Microsoft and never stored.</p>
-                <div className="flex gap-2 mt-4">
-                  <button onClick={handleSharePointSync} className="flex-1 bg-green-700 text-white py-2 rounded-lg font-bold hover:bg-green-600 text-sm">
-                    Sync Now
-                  </button>
-                  <button onClick={() => { setShowSpModal(false); setSpPass('') }} className="bg-[#333] text-gray-400 px-4 py-2 rounded-lg text-sm hover:text-white">
-                    Cancel
-                  </button>
+
+                {/* Step 2 — use it */}
+                <div className="bg-[#111] border border-[#333] rounded-lg p-4">
+                  <div className="text-xs font-bold text-amber-500 mb-2">Step 2 — Use it daily</div>
+                  <ol className="text-xs text-gray-400 space-y-1 list-decimal list-inside">
+                    <li>Go to <a href="https://badgerliquor.sharepoint.com/sites/operation/Routing/Forms/AllItems.aspx" target="_blank" rel="noreferrer" className="text-blue-400 underline">SharePoint Routing</a> (you must be logged in)</li>
+                    <li>Click <span className="text-white font-bold">📋 Sync Driver Report → Badger</span> in your bookmarks bar</li>
+                    <li>A popup confirms how many routes were loaded</li>
+                  </ol>
+                  <p className="text-[10px] text-gray-600 mt-3">If today&apos;s file isn&apos;t uploaded yet you&apos;ll see a &quot;File not found&quot; message — just try again later.</p>
                 </div>
+
+                <button onClick={() => setShowSpModal(false)} className="w-full mt-4 bg-[#333] text-gray-400 py-2 rounded-lg text-sm hover:text-white">
+                  Close
+                </button>
               </div>
             </div>
           )}
