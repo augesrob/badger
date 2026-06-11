@@ -961,7 +961,7 @@ export default function Admin() {
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-white truncate">{r.route_name}</div>
                           <div className="text-xs text-gray-500 flex items-center gap-2">
-                            {r.driver_name && <span>{r.driver_name}</span>}
+                            {(r.driver_name || r.transfer_driver) && <span>{r.driver_name || r.transfer_driver}</span>}
                             {r.driver_phone && <span className="text-gray-600">{r.driver_phone}</span>}
                           </div>
                         </div>
