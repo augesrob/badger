@@ -868,30 +868,53 @@ export default function Admin() {
       toast('Driver data cleared')
     }
 
-    const handleSharePointSync = async (user?: string, pass?: string) => {
+    const handleSharePointSync = async () => {
       setSyncing(true)
-      setShowSpModal(false)
       try {
-        const body = user && pass ? { username: user, password: pass } : {}
-        const res = await fetch('/api/drivers/sharepoint', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        })
-        const data = await res.json()
-        if (data.success) {
-          toast(`✅ Synced! ${data.count} routes loaded from SharePoint`)
-          setSpPass('')
-          loadDrivers()
-        } else if (data.needsCredentials) {
-          // Env vars not set — show manual login modal
-          setShowSpModal(true)
-        } else if (res.status === 404) {
-          toast(data.error || "Today's file not found yet — routing may not be complete", 'error')
-        } else {
-          toast(data.error || 'SharePoint sync failed', 'error')
+        // Build today's filename
+        const today = new Date()
+        const mm = String(today.getMonth() + 1).padStart(2, '0')
+        const dd = String(today.getDate()).padStart(2, '0')
+        const yyyy = today.getFullYear()
+        const fileName = `Route Driver Report ${mm}-${dd}-${yyyy}.pdf`
+
+        // Step 1: Check the file exists via SharePoint REST API (uses browser session — no auth needed)
+        const checkUrl = `https://badgerliquor.sharepoint.com/sites/operation/_api/web/GetFolderByServerRelativeUrl('/sites/operation/Routing')/Files('${encodeURIComponent(fileName)}')?$select=Name,ServerRelativeUrl`
+        const checkRes = await fetch(checkUrl, { headers: { Accept: 'application/json;odata=verbose' }, credentials: 'include' })
+        const checkData = await checkRes.json()
+
+        if (!checkRes.ok || checkData?.error) {
+          toast(`"${fileName}" not found yet — routing may not be complete`, 'error')
+          setSyncing(false)
+          return
         }
-      } catch { toast('SharePoint sync failed', 'error') }
+
+        const serverRelativeUrl = checkData.d.ServerRelativeUrl
+
+        // Step 2: Download the PDF bytes directly from SharePoint (uses browser session)
+        const downloadUrl = `https://badgerliquor.sharepoint.com/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(serverRelativeUrl)}`
+        const pdfRes = await fetch(downloadUrl, { credentials: 'include' })
+        if (!pdfRes.ok) { toast('Failed to download PDF from SharePoint', 'error'); setSyncing(false); return }
+
+        const blob = await pdfRes.blob()
+        const file = new File([blob], fileName, { type: 'application/pdf' })
+
+        // Step 3: POST to existing /api/drivers upload endpoint
+        const form = new FormData()
+        form.append('file', file)
+        const uploadRes = await fetch('/api/drivers', { method: 'POST', body: form })
+        const uploadData = await uploadRes.json()
+
+        if (uploadData.success) {
+          toast(`✅ Synced from SharePoint! ${uploadData.count} routes loaded`)
+          loadDrivers()
+        } else {
+          toast(uploadData.error || 'Parse failed', 'error')
+        }
+      } catch (e) {
+        toast('SharePoint sync failed — make sure you are logged into SharePoint in this browser', 'error')
+        console.error(e)
+      }
       setSyncing(false)
     }
 
@@ -921,7 +944,7 @@ export default function Admin() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={() => handleSharePointSync()}
+              onClick={handleSharePointSync}
               disabled={syncing}
               className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${syncing ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-green-700 text-white hover:bg-green-600'}`}>
               {syncing ? '⏳ Syncing...' : '🔄 Sync SharePoint'}
@@ -937,7 +960,7 @@ export default function Admin() {
             )}
           </div>
 
-          {/* SharePoint login modal */}
+          {/* SharePoint login modal - fallback only */}
           {showSpModal && (
             <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
               <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-6 max-w-sm w-full">
