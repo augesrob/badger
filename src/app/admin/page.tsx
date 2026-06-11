@@ -815,10 +815,7 @@ export default function Admin() {
     const [routes, setRoutes] = useState<DriverRoute[]>([])
     const [loading, setLoading] = useState(true)
     const [uploading, setUploading] = useState(false)
-    const [syncing, setSyncing] = useState(false)
     const [showSpModal, setShowSpModal] = useState(false)
-    const [spUser, setSpUser] = useState('')
-    const [spPass, setSpPass] = useState('')
     const [regionFilter, setRegionFilter] = useState('all')
 
     const loadDrivers = async () => {
@@ -868,55 +865,6 @@ export default function Admin() {
       toast('Driver data cleared')
     }
 
-    const handleSharePointSync = async () => {
-      setSyncing(true)
-      try {
-        // Build today's filename
-        const today = new Date()
-        const mm = String(today.getMonth() + 1).padStart(2, '0')
-        const dd = String(today.getDate()).padStart(2, '0')
-        const yyyy = today.getFullYear()
-        const fileName = `Route Driver Report ${mm}-${dd}-${yyyy}.pdf`
-
-        // Step 1: Check the file exists via SharePoint REST API (uses browser session — no auth needed)
-        const checkUrl = `https://badgerliquor.sharepoint.com/sites/operation/_api/web/GetFolderByServerRelativeUrl('/sites/operation/Routing')/Files('${encodeURIComponent(fileName)}')?$select=Name,ServerRelativeUrl`
-        const checkRes = await fetch(checkUrl, { headers: { Accept: 'application/json;odata=verbose' }, credentials: 'include' })
-        const checkData = await checkRes.json()
-
-        if (!checkRes.ok || checkData?.error) {
-          toast(`"${fileName}" not found yet — routing may not be complete`, 'error')
-          setSyncing(false)
-          return
-        }
-
-        const serverRelativeUrl = checkData.d.ServerRelativeUrl
-
-        // Step 2: Download the PDF bytes directly from SharePoint (uses browser session)
-        const downloadUrl = `https://badgerliquor.sharepoint.com/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(serverRelativeUrl)}`
-        const pdfRes = await fetch(downloadUrl, { credentials: 'include' })
-        if (!pdfRes.ok) { toast('Failed to download PDF from SharePoint', 'error'); setSyncing(false); return }
-
-        const blob = await pdfRes.blob()
-        const file = new File([blob], fileName, { type: 'application/pdf' })
-
-        // Step 3: POST to existing /api/drivers upload endpoint
-        const form = new FormData()
-        form.append('file', file)
-        const uploadRes = await fetch('/api/drivers', { method: 'POST', body: form })
-        const uploadData = await uploadRes.json()
-
-        if (uploadData.success) {
-          toast(`✅ Synced from SharePoint! ${uploadData.count} routes loaded`)
-          loadDrivers()
-        } else {
-          toast(uploadData.error || 'Parse failed', 'error')
-        }
-      } catch (e) {
-        toast('SharePoint sync failed — make sure you are logged into SharePoint in this browser', 'error')
-        console.error(e)
-      }
-      setSyncing(false)
-    }
 
     // Get unique regions
     const regions = Array.from(new Set(routes.map(r => r.region))).sort()
