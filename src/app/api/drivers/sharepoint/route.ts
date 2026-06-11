@@ -6,8 +6,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-// Badger Liquor's Microsoft tenant (from the SharePoint URL: badgerliquor.sharepoint.com)
-const TENANT = 'badgerliquor.onmicrosoft.com'
 // Microsoft's well-known client ID for Office desktop apps — works for ROPC with no app registration
 const CLIENT_ID = 'd3590ed6-52b3-4102-aeff-aad2292ab01c'
 const SHAREPOINT_SITE = 'badgerliquor.sharepoint.com'
@@ -28,9 +26,10 @@ export async function POST(req: NextRequest) {
     }
 
 
-    // Step 1: Get token via ROPC (Resource Owner Password Credentials)
+    // Step 1: Get token via ROPC — use 'common' endpoint so any tenant works
+    const tenant = username.includes('@') ? username.split('@')[1] : 'common'
     const tokenRes = await fetch(
-      `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token`,
+      `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
