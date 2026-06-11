@@ -144,8 +144,20 @@ function parseDriverReport(text: string): Record<string, unknown>[] {
       driverName = dW.join(' ')
     }
 
-    // Split on region code: "...beforeRegion REGION afterRegion..."
-    const regionSplit = rest.match(/^(.+?)\s+(FDL|GREENBAY|WAUSAU|MKE|EC)\s+(.+)$/)
+    // Split on LAST occurrence of region code — handles "CPU GREENBAY ( ) - GREENBAY Billy..."
+    // where the region name appears in both the route name and as the transfer region marker
+    const regionPattern = /^(.+?)\s+(FDL|GREENBAY|WAUSAU|MKE|EC)\s+(.+)$/
+    let regionSplit = null
+    // Try to find the LAST region match by working from the right
+    const regionMatches = [...rest.matchAll(/\b(FDL|GREENBAY|WAUSAU|MKE|EC)\b/g)]
+    if (regionMatches.length >= 2) {
+      // Multiple region tokens — use the last one as the real split point
+      const lastMatch = regionMatches[regionMatches.length - 1]
+      const before = rest.slice(0, lastMatch.index).trimEnd()
+      const after  = rest.slice(lastMatch.index + lastMatch[0].length).trimStart()
+      if (after.length > 0) regionSplit = [rest, before, lastMatch[0], after]
+    }
+    if (!regionSplit) regionSplit = rest.match(/^(.+?)\s+(FDL|GREENBAY|WAUSAU|MKE|EC)\s+(.+)$/)
     if (regionSplit) {
       const beforeRegion = regionSplit[1]
       const afterRegion = regionSplit[3]
