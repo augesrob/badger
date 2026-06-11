@@ -148,7 +148,10 @@ function parseDriverReport(text: string): Record<string, unknown>[] {
     // where the region name appears in both the route name and as the transfer region marker
     let regionSplit = null
     // Try to find the LAST region match by working from the right
-    const regionMatches = [...rest.matchAll(/\b(FDL|GREENBAY|WAUSAU|MKE|EC)\b/g)]
+    const regionRe = /\b(FDL|GREENBAY|WAUSAU|MKE|EC)\b/g
+    const regionMatches: RegExpExecArray[] = []
+    let rm: RegExpExecArray | null
+    while ((rm = regionRe.exec(rest)) !== null) regionMatches.push(rm)
     if (regionMatches.length >= 2) {
       // Multiple region tokens — use the last one as the real split point
       const lastMatch = regionMatches[regionMatches.length - 1]
