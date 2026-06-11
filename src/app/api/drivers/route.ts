@@ -146,7 +146,6 @@ function parseDriverReport(text: string): Record<string, unknown>[] {
 
     // Split on LAST occurrence of region code — handles "CPU GREENBAY ( ) - GREENBAY Billy..."
     // where the region name appears in both the route name and as the transfer region marker
-    const regionPattern = /^(.+?)\s+(FDL|GREENBAY|WAUSAU|MKE|EC)\s+(.+)$/
     let regionSplit = null
     // Try to find the LAST region match by working from the right
     const regionMatches = [...rest.matchAll(/\b(FDL|GREENBAY|WAUSAU|MKE|EC)\b/g)]
