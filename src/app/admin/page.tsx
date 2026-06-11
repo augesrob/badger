@@ -868,23 +868,26 @@ export default function Admin() {
       toast('Driver data cleared')
     }
 
-    const handleSharePointSync = async () => {
-      if (!spUser || !spPass) { toast('Enter your Microsoft email and password', 'error'); return }
+    const handleSharePointSync = async (user?: string, pass?: string) => {
       setSyncing(true)
       setShowSpModal(false)
       try {
+        const body = user && pass ? { username: user, password: pass } : {}
         const res = await fetch('/api/drivers/sharepoint', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: spUser, password: spPass }),
+          body: JSON.stringify(body),
         })
         const data = await res.json()
         if (data.success) {
-          toast(`✅ Synced from SharePoint! ${data.count} routes loaded`)
+          toast(`✅ Synced! ${data.count} routes loaded from SharePoint`)
           setSpPass('')
           loadDrivers()
+        } else if (data.needsCredentials) {
+          // Env vars not set — show manual login modal
+          setShowSpModal(true)
         } else if (res.status === 404) {
-          toast(data.error || "Today's Route Driver Report not found yet — routing may not be complete", 'error')
+          toast(data.error || "Today's file not found yet — routing may not be complete", 'error')
         } else {
           toast(data.error || 'SharePoint sync failed', 'error')
         }
@@ -918,7 +921,7 @@ export default function Admin() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={() => setShowSpModal(true)}
+              onClick={() => handleSharePointSync()}
               disabled={syncing}
               className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${syncing ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-green-700 text-white hover:bg-green-600'}`}>
               {syncing ? '⏳ Syncing...' : '🔄 Sync SharePoint'}
@@ -972,7 +975,7 @@ export default function Admin() {
                 </div>
                 <p className="text-[10px] text-gray-600 mt-3">Your credentials are sent directly to Microsoft and never stored.</p>
                 <div className="flex gap-2 mt-4">
-                  <button onClick={handleSharePointSync} className="flex-1 bg-green-700 text-white py-2 rounded-lg font-bold hover:bg-green-600 text-sm">
+                  <button onClick={() => handleSharePointSync(spUser, spPass)} className="flex-1 bg-green-700 text-white py-2 rounded-lg font-bold hover:bg-green-600 text-sm">
                     Sync Now
                   </button>
                   <button onClick={() => { setShowSpModal(false); setSpPass('') }} className="bg-[#333] text-gray-400 px-4 py-2 rounded-lg text-sm hover:text-white">

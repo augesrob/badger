@@ -15,10 +15,19 @@ const ROUTING_PATH = '/sites/operation/Routing'
 
 export async function POST(req: NextRequest) {
   try {
-    const { username, password } = await req.json()
+    // Use env vars if configured, otherwise fall back to request body
+    const body = await req.json().catch(() => ({}))
+    const username = process.env.MS_USERNAME || body.username
+    const password = process.env.MS_PASSWORD || body.password
+
     if (!username || !password) {
-      return NextResponse.json({ error: 'Username and password required' }, { status: 400 })
+      return NextResponse.json({
+        error: 'Microsoft credentials not configured. Add MS_USERNAME and MS_PASSWORD to Vercel environment variables, or enter them manually.',
+        needsCredentials: true,
+      }, { status: 400 })
     }
+
+    const useEnvCreds = !!(process.env.MS_USERNAME && process.env.MS_PASSWORD)
 
     // Step 1: Get token via ROPC (Resource Owner Password Credentials)
     const tokenRes = await fetch(
