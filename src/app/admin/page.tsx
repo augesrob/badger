@@ -998,7 +998,7 @@ export default function Admin() {
                 </div>
                 <p className="text-[10px] text-gray-600 mt-3">Your credentials are sent directly to Microsoft and never stored.</p>
                 <div className="flex gap-2 mt-4">
-                  <button onClick={() => handleSharePointSync(spUser, spPass)} className="flex-1 bg-green-700 text-white py-2 rounded-lg font-bold hover:bg-green-600 text-sm">
+                  <button onClick={handleSharePointSync} className="flex-1 bg-green-700 text-white py-2 rounded-lg font-bold hover:bg-green-600 text-sm">
                     Sync Now
                   </button>
                   <button onClick={() => { setShowSpModal(false); setSpPass('') }} className="bg-[#333] text-gray-400 px-4 py-2 rounded-lg text-sm hover:text-white">
