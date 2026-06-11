@@ -26,10 +26,9 @@ export async function POST(req: NextRequest) {
     }
 
 
-    // Step 1: Get token via ROPC — use 'common' endpoint so any tenant works
-    const tenant = username.includes('@') ? username.split('@')[1] : 'common'
+    // Step 1: Get token via ROPC — use 'organizations' endpoint which works for all work/school accounts
     const tokenRes = await fetch(
-      `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`,
+      `https://login.microsoftonline.com/organizations/oauth2/v2.0/token`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
