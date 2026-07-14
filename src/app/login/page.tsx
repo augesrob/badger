@@ -52,6 +52,10 @@ export default function LoginPage() {
           <p className="text-xs text-muted mt-1">Truck Management System</p>
         </div>
 
+        <div className="mb-6 rounded-xl border border-red-800 bg-red-950/60 text-red-300 text-center text-sm font-bold px-4 py-3">
+          🔒 Closed till further notice
+        </div>
+
         <div className="flex rounded-xl overflow-hidden border border-[#333] mb-6">
           {(['signin','signup'] as const).map(m => (
             <button key={m} onClick={() => { setMode(m); setError('') }}

@@ -1,15 +1,24 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
 
+// ── LOCKDOWN ─────────────────────────────────────────────────────────────────
+// Site is closed pending IT approval. Only this account may access anything.
+// To reopen: set LOCKDOWN to false (and redeploy).
+const LOCKDOWN = true
+const LOCKDOWN_ALLOWED_EMAIL = 'rfa1991@gmail.com'
+
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname
 
-  // Skip auth check for public paths
+  // Skip auth check for public paths.
+  // NOTE: while LOCKDOWN is on, /drivers, /weather and /download are NOT public —
+  // they fall through to the auth + allowed-email check below.
   if (
     pathname.startsWith('/login') ||
-    pathname.startsWith('/download') ||
-    pathname === '/drivers' ||
-    pathname === '/weather' ||
+    pathname.startsWith('/closed') ||
+    (!LOCKDOWN && pathname.startsWith('/download')) ||
+    (!LOCKDOWN && pathname === '/drivers') ||
+    (!LOCKDOWN && pathname === '/weather') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/favicon') ||
@@ -41,6 +50,12 @@ export async function middleware(req: NextRequest) {
     const loginUrl = new URL('/login', req.url)
     loginUrl.searchParams.set('redirect', pathname)
     return NextResponse.redirect(loginUrl)
+  }
+
+  // LOCKDOWN: any authenticated user other than the allowed account is
+  // shown the closed page — no data pages are reachable
+  if (LOCKDOWN && (user.email ?? '').trim().toLowerCase() !== LOCKDOWN_ALLOWED_EMAIL) {
+    return NextResponse.redirect(new URL('/closed', req.url))
   }
 
   return res
