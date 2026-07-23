@@ -2,10 +2,15 @@ import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
 
 // ── LOCKDOWN ─────────────────────────────────────────────────────────────────
-// Site is closed pending IT approval. Only this account may access anything.
+// Site is closed pending IT approval. Only these accounts may access anything.
 // To reopen: set LOCKDOWN to false (and redeploy).
 const LOCKDOWN = true
-const LOCKDOWN_ALLOWED_EMAIL = 'rfa1991@gmail.com'
+const LOCKDOWN_ALLOWED_EMAILS = new Set([
+  'rfa1991@gmail.com',
+  'sam@badgerliquor.com',
+  'felipe@badgerliquor.com',
+  'millerjo1986@gmail.com',
+])
 
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname
@@ -52,9 +57,9 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
-  // LOCKDOWN: any authenticated user other than the allowed account is
-  // shown the closed page — no data pages are reachable
-  if (LOCKDOWN && (user.email ?? '').trim().toLowerCase() !== LOCKDOWN_ALLOWED_EMAIL) {
+  // LOCKDOWN: any authenticated user not on the allowlist is shown the
+  // closed page — no data pages are reachable
+  if (LOCKDOWN && !LOCKDOWN_ALLOWED_EMAILS.has((user.email ?? '').trim().toLowerCase())) {
     return NextResponse.redirect(new URL('/closed', req.url))
   }
 
